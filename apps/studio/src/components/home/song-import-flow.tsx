@@ -74,7 +74,8 @@ export function SongImportFlow(props: {
 
   createEffect(
     () => state().step === "saving" || state().step === "importing",
-    (busy) => props.onBusyChange?.(busy),
+    // An effect may only return a cleanup; a signal setter returns the value it set.
+    (busy) => void props.onBusyChange?.(busy),
   );
 
   createEffect(

@@ -1,0 +1,128 @@
+/**
+ * The editor's playback: the song, its vocals or its music (one audio element each, all on the project's media URLs),
+ * one playing at a time. Switching keeps the position and whether it plays. While playing, the time is read on every
+ * animation frame (an audio element's own `timeupdate` comes only about four times a second).
+ */
+import { createSignal } from "solid-js";
+
+export const PLAYBACK_SOURCES = ["audio", "vocals", "instrumental"] as const;
+export type PlaybackSource = (typeof PLAYBACK_SOURCES)[number];
+
+export const SOURCE_LABELS: Record<PlaybackSource, string> = {
+  audio: "Song",
+  vocals: "Vocals",
+  instrumental: "Music",
+};
+
+/** `onFrame` gets the time on every frame while playing (to follow the playhead). */
+export function createPlayback(
+  urls: Partial<Record<PlaybackSource, string>>,
+  onFrame: (seconds: number) => void = () => {},
+) {
+  const available = PLAYBACK_SOURCES.filter((source) => urls[source]);
+  const [source, setSource] = createSignal<PlaybackSource | null>(available[0] ?? null);
+  const [time, setTime] = createSignal(0);
+  const [playing, setPlaying] = createSignal(false);
+  const [duration, setDuration] = createSignal(0);
+  /** Made on first use, so nothing loads before the editor is shown. */
+  const elements = new Map<PlaybackSource, HTMLAudioElement>();
+  let frame = 0;
+  /** The source playing now: signals written just now still read their old value. */
+  let current = available[0] ?? null;
+
+  const element = (which: PlaybackSource) => {
+    let audio = elements.get(which);
+    if (!audio) {
+      audio = new Audio(urls[which]);
+      audio.preload = "auto";
+      audio.addEventListener("loadedmetadata", () => {
+        if (Number.isFinite(audio!.duration)) setDuration(Math.max(duration(), audio!.duration));
+      });
+      audio.addEventListener("ended", () => {
+        if (which === current) stopTicking(audio!.duration);
+      });
+      elements.set(which, audio);
+    }
+    return audio;
+  };
+
+  const tick = () => {
+    if (current) {
+      const now = element(current).currentTime;
+      setTime(now);
+      onFrame(now);
+    }
+    frame = requestAnimationFrame(tick);
+  };
+
+  function stopTicking(at: number) {
+    cancelAnimationFrame(frame);
+    setPlaying(false);
+    setTime(at);
+  }
+
+  const play = () => {
+    if (!current) return;
+    const audio = element(current);
+    setPlaying(true);
+    audio.play().catch(() => stopTicking(audio.currentTime));
+    cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(tick);
+  };
+
+  const pause = () => {
+    if (!current) return;
+    const audio = element(current);
+    // While playing, the position is what is heard; pausing moves it on to the end of the audio already handed to the
+    // speakers (up to a few hundred ms on Bluetooth), so resuming would skip that. Pausing keeps what was heard.
+    const heard = audio.currentTime;
+    audio.pause();
+    audio.currentTime = heard;
+    stopTicking(heard);
+  };
+
+  return {
+    /** The sources this project has, in the order they are offered. */
+    available,
+    source,
+    time,
+    playing,
+    /** The longest of the sources, once known (0 before). */
+    duration,
+    play,
+    pause,
+    toggle: () => (playing() ? pause() : play()),
+    seek: (seconds: number) => {
+      const at = Math.max(0, seconds);
+      if (current) element(current).currentTime = at;
+      setTime(at);
+    },
+    /** Plays another source from the same position, playing if this one was. */
+    setSource: (next: PlaybackSource) => {
+      if (!urls[next] || next === current) return;
+      const was = current ? element(current) : null;
+      const at = was?.currentTime ?? time();
+      const resume = playing();
+      was?.pause();
+      current = next;
+      setSource(next);
+      element(next).currentTime = at;
+      if (resume) play();
+    },
+    /** Loads the first source so its length is known. */
+    load: () => {
+      if (current) element(current);
+    },
+    dispose: () => {
+      cancelAnimationFrame(frame);
+      for (const audio of elements.values()) {
+        audio.pause();
+        audio.removeAttribute("src");
+        audio.load();
+      }
+      elements.clear();
+    },
+  };
+}
+
+export type Playback = ReturnType<typeof createPlayback>;

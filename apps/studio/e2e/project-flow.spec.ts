@@ -33,9 +33,15 @@ test("imports a song folder, exports it, and reopens the project from recents", 
   await expect(dialog.getByTestId("song-file")).toHaveCount(2);
   await dialog.getByTestId("song-create").click();
 
-  // The project screen.
+  // The project opens in the editor: every note in view, each line's text, the transport.
   await expect(page.getByTestId("project")).toBeVisible();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Night Signals");
+  await expect(page.getByTestId("roll-note")).toHaveCount(5);
+  await expect(page.getByTestId("lyrics-line")).toHaveCount(2);
+  await expect(page.getByTestId("transport")).toBeVisible();
+
+  // The song's details are in the Song panel.
+  await page.getByTestId("song-panel-toggle").click();
   await expect(page.getByTestId("project-artist")).toHaveText("Test Artist");
   await expect(page.getByTestId("stat-notes")).toHaveText("5");
   await expect(page.getByTestId("stat-lines")).toHaveText("2");
@@ -45,7 +51,6 @@ test("imports a song folder, exports it, and reopens the project from recents", 
   // The cover comes through media:// (the CSP allows it) and decodes.
   const cover = page.locator('[data-slot="project-cover"] img');
   await expect.poll(() => cover.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(64);
-  await expect(page.getByTestId("audio-preview")).toBeVisible();
 
   // Export, then export again: the folder exists, so it asks before replacing.
   const exports = path.join(song.dir, "Exports");

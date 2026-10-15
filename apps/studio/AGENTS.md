@@ -186,6 +186,16 @@ resources/icons/          # App icon (icon.svg is the source of icon.png)
 - Progress to the renderer is throttled at the source (`Downloads.file` reports at most every 100 ms): one message per network chunk kept the renderer too busy to repaint while models downloaded.
 - Tests use `fakeNative` and `fakeModels` (`electron/testing.ts`); the real addon only runs in manual checks.
 
+### The editor (`src/screens/project.$id.tsx`, `src/components/editor/`, `src/lib/editor/`)
+
+- An open project is the editor (read-only so far; the plan is editing, then lines and lyrics, then the sung-pitch trace). The route loads `project.overview` and `project.chart` (`readEditorChart`: singers, lines and notes with their row ids, plus #BPM/#GAP).
+- Layout: overview bar (every line, the view window; drag to scroll), time ruler (click to seek), piano roll, lyrics lane, transport. Everything else (cover, chart stats and Make the chart, details, media, lyrics, import notes) is the Song panel, opened from the title bar; it opens by itself when the chart is empty.
+- `view.ts` holds the maths (time↔px, zoom at a point, clamping, ruler steps, pitch rows, `visibleItems`): only notes and lines in view are rendered. The pitch range is the whole chart's (±3, at least 18 rows), so rows don't jump while scrolling.
+- Playback (`playback.ts`): one `Audio` per source (song, vocals, music) on the project's `media://` URLs; switching keeps position and play state; the time is read every animation frame while playing, and the view follows page by page unless the user scrolled away. Pausing puts the element back to the position read just before it: Chromium moves `currentTime` on to the end of what was already sent to the device when pausing, so resuming would skip ahead (worst on Bluetooth).
+- Playhead (`playhead.tsx`): one lime line over the ruler, break strip, roll and lyrics lane, with a head in the ruler to drag; pressing or dragging along the ruler scrubs too. The view zooms out no further than the whole song. Line breaks are dashed markers at their switch times (fainter for the default timing, `lineBreaks`), with handles in the strip above the roll; no line shading.
+- Grid: notes stay in seconds; the export grid step is 15 / #BPM seconds from #GAP; edits will snap to it, with no snap-off (the file can only hold grid steps). Tempo changes are left to the even grid, like every UltraStar editor; the detected beats can be drawn as an overlay later.
+- Keys (not while typing or in a dialog): Space play/pause, `,` / `.` previous/next line, F fits the current line; Cmd/Ctrl+wheel or pinch zooms at the pointer, wheel and Shift+wheel scroll time.
+
 ### Making the chart (`electron/charting/`, `native/src/{aligner,pitch,beats,ctc,game,numpy_rng,harmonics,refiners,runtime}.rs`)
 
 - "Make the chart" in the project's Chart panel (`MakeChart`, `project.makeChart`): the project's vocals, song and lyrics through the auto-tuner PoC's chart pipeline (its defaults: aligner fine-tuned on singing, syllable-start head, GAME notes, pitch corrector, learned note ends), replacing the project's singers, lines and notes and its BPM/GAP in one transaction (`replaceChart`), after asking when there are notes. Needs the lyrics and the `[VOC]` stem; English and German only so far (`chartLanguage`).
@@ -208,7 +218,7 @@ resources/icons/          # App icon (icon.svg is the source of icon.png)
 - Recent projects are **placeholder fixtures** (`src/lib/recent-projects/fixtures.ts`), loaded by the route loader
 - Start options open stub dialogs (`components/home/flow-dialogs.tsx`) that end in a "Not implemented yet" note;
   project menu actions show toasts. Removing from recents works in memory, with undo
-- No app shortcuts yet; add them only where they clearly help. Projects take Enter, Shift+F10 / menu key and Delete
+- Shortcuts only where they clearly help (the editor's are listed under The editor). Projects take Enter, Shift+F10 / menu key and Delete
 - No "coming soon" placeholders: show only what exists
 
 ### Dev loop (`bun run dev`)

@@ -8,6 +8,46 @@ import type { ModelFeature } from "../models";
 /** The parts of a song a project's media can play. */
 export type MediaRole = "audio" | "vocals" | "instrumental" | "video" | "cover" | "background";
 
+/** How a note is sung and scored. */
+export type NoteType = "normal" | "golden" | "freestyle" | "rap" | "golden-rap";
+
+/** A note in the editor: times in seconds of the main audio, pitch as MIDI (UltraStar pitch + 60). */
+export interface EditorNote {
+  id: number;
+  start: number;
+  duration: number;
+  pitch: number;
+  /** The syllable exactly as sung, spaces kept. */
+  lyric: string;
+  type: NoteType;
+  /** Changed by hand since it was imported or generated. */
+  edited: boolean;
+}
+
+/** A line of a singer's part: its notes in order, and when the next line appears (both null: automatically). */
+export interface EditorLine {
+  id: number;
+  switchStart: number | null;
+  switchEnd: number | null;
+  notes: EditorNote[];
+}
+
+export interface EditorSinger {
+  id: number;
+  /** 1 or 2 (P1, P2 in a duet). */
+  index: number;
+  name: string | null;
+  lines: EditorLine[];
+}
+
+/** The chart as the editor works on it, with the grid it is exported on (a grid step is 15 / bpm seconds from gap). */
+export interface EditorChart {
+  bpm: number;
+  /** Seconds. */
+  gap: number;
+  singers: EditorSinger[];
+}
+
 /** A project in the recent projects list. */
 export interface RecentProjectEntry {
   /** The `.tunestudio` file. */

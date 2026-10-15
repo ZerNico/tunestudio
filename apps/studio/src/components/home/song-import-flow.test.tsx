@@ -110,6 +110,36 @@ describe("SongImportFlow", () => {
     );
   });
 
+  it("reports when it is busy, whatever the listener returns", async () => {
+    native.song.inspect.mockResolvedValue(inspection());
+    native.dialogs.chooseProjectLocation.mockResolvedValue("/Projects/Night Signals.tunestudio");
+    const opened = { id: "session-1", path: "/Projects/Night Signals.tunestudio" };
+    native.song.import.mockResolvedValue(progress([{ step: "Copying song.mp3", done: 10, total: 20 }], opened));
+    const busy: boolean[] = [];
+    const onOpened = vi.fn();
+    render(() => (
+      <Dialog open>
+        <DialogContent>
+          <SongImportFlow
+            path="/Songs/Night Signals"
+            open
+            onOpened={onOpened}
+            // A signal setter returns the value it set; the flow must not hand that back as an effect cleanup.
+            onBusyChange={(value) => {
+              busy.push(value);
+              return value as never;
+            }}
+            header={() => <h2>Import</h2>}
+          />
+        </DialogContent>
+      </Dialog>
+    ));
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Create project…" }));
+    await vi.waitFor(() => expect(onOpened).toHaveBeenCalledExactlyOnceWith(opened));
+    expect(busy).toContain(true);
+  });
+
   it("goes back to the summary when the save dialog is cancelled", async () => {
     native.song.inspect.mockResolvedValue(inspection());
     native.dialogs.chooseProjectLocation.mockResolvedValue(null);

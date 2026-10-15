@@ -14,6 +14,7 @@ import type {
   ChosenImage,
   CoverCandidate,
   DownloadedDraft,
+  EditorChart,
   FoundLyrics,
   HeardLyrics,
   MadeChart,
@@ -190,6 +191,8 @@ export const contract = {
     open: oc.input(Schema.toStandardSchemaV1(PathInput)).output(type<OpenedProject>()),
     overview: oc.input(Schema.toStandardSchemaV1(ProjectInput)).output(type<ProjectOverview>()),
     close: oc.input(Schema.toStandardSchemaV1(ProjectInput)),
+    /** The chart with its row ids, for the editor. */
+    chart: oc.input(Schema.toStandardSchemaV1(ProjectInput)).output(type<EditorChart>()),
     /** Writes the project as an UltraStar song folder. */
     exportSong: oc.input(Schema.toStandardSchemaV1(ExportInput)).output(type<ExportResult>()),
     /**

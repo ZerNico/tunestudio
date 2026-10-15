@@ -51,7 +51,7 @@ export function ChartStats(props: { overview: ProjectOverview }) {
   ];
   return (
     <div class="flex flex-col gap-4">
-      <dl class="m-0 grid grid-cols-4 gap-2">
+      <dl class="m-0 grid grid-cols-2 gap-2">
         <For each={stats()}>
           {(stat) => (
             <div class="flex flex-col gap-1 rounded-lg border border-border-soft bg-gray-12 px-3 py-2.5">
