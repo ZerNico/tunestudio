@@ -106,8 +106,11 @@ export interface PitchRange {
   high: number;
 }
 
-/** Room above and below the chart's notes, and the fewest rows shown. */
-const PITCH_MARGIN = 3;
+/**
+ * Room above and below the chart's notes (a row: notes don't touch the edges, and changing the highest or lowest note
+ * moves the rows little), and the fewest rows shown.
+ */
+const PITCH_MARGIN = 1;
 const MIN_ROWS = 18;
 
 /** The rows for a chart: its lowest to highest note with some room, at least an octave and a half. */

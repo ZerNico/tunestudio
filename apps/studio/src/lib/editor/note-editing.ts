@@ -65,6 +65,9 @@ const FLAG_KEYS: Record<string, { flag: NoteFlag; label: string }> = {
   f: { flag: "freestyle", label: "Freestyle" },
 };
 
+/** Held past the roll's top or bottom, a dragged note goes a semitone further this often (ms), the rows growing along. */
+const EDGE_STEP_MS = 90;
+
 /** A press that moves less than this is a click, not a drag (px). */
 const DRAG_PX = 3;
 
@@ -109,6 +112,14 @@ function stepsLabel(steps: number): string {
 export interface RollScale {
   pxPerSecond: number;
   rowHeight: number;
+  /**
+   * The pitch (fractional; a row's middle is its pitch) at a pointer height, as the roll is drawn now, past its edges
+   * too. A drag goes by it rather than by `rowHeight`, so the note stays under the pointer when the rows change while
+   * it is dragged.
+   */
+  pitchAt?: (clientY: number) => number;
+  /** The rows drawn now (MIDI): past them, a drag goes on a semitone at a time. */
+  rows?: () => { low: number; high: number };
 }
 
 export interface PointerPress {
@@ -347,6 +358,39 @@ export function createNoteEditing(options: {
           ? startLimits(placed, ids, unit)
           : lengthLimits(placed, ids, unit);
     const pitch = pitchLimits(current, ids);
+    /** Where the press was, as a pitch in the roll as it was drawn then. */
+    const pressPitch = scale.pitchAt?.(press.clientY);
+    /**
+     * Held past the top or bottom: which way, and the pressed note's pitch there (a semitone further each step; the
+     * rows grow to it). Going by the pointer instead would run away: the rows grow, the same spot is a further pitch.
+     */
+    let edge: { way: 1 | -1; pitch: number; timer: ReturnType<typeof setInterval> } | null = null;
+    const leaveEdge = () => {
+      if (edge) clearInterval(edge.timer);
+      edge = null;
+    };
+    /** How far the pointer has moved in pitch, by the rows as drawn now (null: no rows given, go by px). */
+    const pitchMoved = (event: Event, clientY: number): number | null => {
+      if (pressPitch === undefined || !scale.pitchAt) return null;
+      const at = scale.pitchAt(clientY);
+      const rows = scale.rows?.();
+      const way = !rows ? 0 : at > rows.high + 0.5 ? 1 : at < rows.low - 0.5 ? -1 : 0;
+      if (way === 0) {
+        leaveEdge();
+        return at - pressPitch;
+      }
+      if (edge?.way !== way) {
+        leaveEdge();
+        // One past the last row, then on.
+        const start = (way === 1 ? rows!.high : rows!.low) + way;
+        const timer = setInterval(() => {
+          if (edge) edge.pitch += way;
+          move(event);
+        }, EDGE_STEP_MS);
+        edge = { way, pitch: start, timer };
+      }
+      return edge.pitch - note.pitch;
+    };
     const target = options.pointerTarget ?? window;
     const startView = options.viewStart?.() ?? 0;
     let dragging = false;
@@ -367,7 +411,10 @@ export function createNoteEditing(options: {
       if (pointer.shiftKey && part === "body") locked ??= Math.abs(dx) >= Math.abs(dy) ? "time" : "pitch";
       else locked = null;
       const seconds = locked === "pitch" ? 0 : snapDelta(dx / scale.pxPerSecond + scrolled, unit, time);
-      const semitones = part !== "body" || locked === "time" ? 0 : snapDelta(-dy / scale.rowHeight, 1, pitch);
+      const semitones =
+        part !== "body" || locked === "time"
+          ? 0
+          : snapDelta(pitchMoved(event, pointer.clientY) ?? -dy / scale.rowHeight, 1, pitch);
       const steps = Math.round(seconds / unit);
       const label =
         part === "body"
@@ -379,6 +426,7 @@ export function createNoteEditing(options: {
     };
     const stop = () => {
       options.autoScroll?.end();
+      leaveEdge();
       target.removeEventListener("pointermove", move);
       target.removeEventListener("pointerup", up);
       target.removeEventListener("pointercancel", cancel);

@@ -655,4 +655,65 @@ describe("note editing", () => {
     draw(5, 70);
     expect(onPitch).toHaveBeenLastCalledWith(70);
   });
+
+  it("keeps a dragged note under the pointer when the rows change during the drag", () => {
+    const { editing, pointer, find } = setup();
+    /** The roll as drawn: rows of `row` px from pitch `high` down. */
+    let roll = { high: 70, row: 10 };
+    const pitchAt = (clientY: number) => roll.high + 0.5 - clientY / roll.row;
+    const note = find(100)!;
+    // Pressed in the middle of its row (64: 6 rows down).
+    editing.noteDown(note, { clientX: 0, clientY: 65, shiftKey: false, metaKey: false, ctrlKey: false }, "body", {
+      pxPerSecond: 100,
+      rowHeight: 10,
+      pitchAt,
+    });
+    pointer.dispatchEvent(Object.assign(new Event("pointermove"), { clientX: 0, clientY: 25 }));
+    flush();
+    expect(editing.drag()?.pitch).toBe(4);
+    // The rows grow by three at the top and get smaller: the same point is a higher pitch now, and the note goes there.
+    roll = { high: 73, row: 8 };
+    pointer.dispatchEvent(Object.assign(new Event("pointermove"), { clientX: 0, clientY: 25 }));
+    flush();
+    expect(64 + editing.drag()!.pitch).toBe(Math.round(pitchAt(25)));
+    pointer.dispatchEvent(new Event("pointerup"));
+  });
+
+  it("goes a semitone at a time while held past the roll's bottom, and follows the pointer back inside", () => {
+    vi.useFakeTimers();
+    try {
+      const { editing, pointer, find } = setup();
+      // Rows 70 down to 61, 10 px each: the roll is 100 px high.
+      const rows = { low: 61, high: 70 };
+      const pitchAt = (clientY: number) => rows.high + 0.5 - clientY / 10;
+      editing.noteDown(
+        find(100)!,
+        { clientX: 0, clientY: 65, shiftKey: false, metaKey: false, ctrlKey: false },
+        "body",
+        { pxPerSecond: 100, rowHeight: 10, pitchAt, rows: () => rows },
+      );
+      const moveTo = (clientY: number) => {
+        pointer.dispatchEvent(Object.assign(new Event("pointermove"), { clientX: 0, clientY }));
+        flush();
+      };
+      // Far below the roll: one row past it, not as far as the pointer.
+      moveTo(300);
+      expect(64 + editing.drag()!.pitch).toBe(60);
+      moveTo(320);
+      expect(64 + editing.drag()!.pitch).toBe(60);
+      // Held there: a semitone each step.
+      vi.advanceTimersByTime(90 * 3);
+      flush();
+      expect(64 + editing.drag()!.pitch).toBe(57);
+      // Back inside: the pointer again, and no more steps.
+      moveTo(55);
+      expect(64 + editing.drag()!.pitch).toBe(65);
+      vi.advanceTimersByTime(500);
+      flush();
+      expect(64 + editing.drag()!.pitch).toBe(65);
+      pointer.dispatchEvent(new Event("pointerup"));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

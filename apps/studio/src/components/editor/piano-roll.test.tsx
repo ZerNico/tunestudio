@@ -59,6 +59,27 @@ function rollArea() {
 }
 
 describe("PianoRoll", () => {
+  it("names every row when the rows are tall enough, else only the C's", () => {
+    const shown = () =>
+      screen
+        .getAllByTestId("pitch-label")
+        .filter((label) => !label.hidden)
+        .map((label) => label.textContent);
+    // 18 rows (G3 to C5) in 180 px: 10 px each.
+    const { unmount } = render(() => (
+      <PianoRoll notes={[]} breaks={[]} range={range} view={view} width={800} height={180} {...handlers()} />
+    ));
+    expect(shown()).toEqual(["C5", "C4"]);
+    unmount();
+    // In 360 px: 20 px each, every name; the black keys' dimmer.
+    render(() => (
+      <PianoRoll notes={[]} breaks={[]} range={range} view={view} width={800} height={360} {...handlers()} />
+    ));
+    expect(shown()).toHaveLength(18);
+    const sharp = screen.getAllByTestId("pitch-label").find((label) => label.textContent === "C♯4")!;
+    expect(sharp).toHaveAttribute("data-sharp");
+  });
+
   it("places each note by time and pitch, coloured by singer and type", () => {
     render(() => (
       <PianoRoll
@@ -156,7 +177,7 @@ describe("PianoRoll", () => {
       />
     ));
     const [wide, narrow] = screen.getAllByTestId("roll-note");
-    const scale = { pxPerSecond: 100, rowHeight: 10 };
+    const scale = expect.objectContaining({ pxPerSecond: 100, rowHeight: 10 });
     fireEvent.pointerDown(wide!, { button: 0, shiftKey: true });
     expect(props.onNoteDown).toHaveBeenLastCalledWith(
       expect.objectContaining({ id: 1 }),
@@ -216,10 +237,11 @@ describe("PianoRoll tools", () => {
   it("draws with a press on empty space in the Draw tool, with the time and pitch there", () => {
     const { props, area } = roll({ tool: "draw" });
     fireEvent.pointerDown(area, { button: 0, clientX: 250, clientY: 85, pointerId: 1 });
-    expect(props.onDrawDown).toHaveBeenCalledWith({ time: 12.5, pitch: 64 }, expect.anything(), {
-      pxPerSecond: 100,
-      rowHeight: 10,
-    });
+    expect(props.onDrawDown).toHaveBeenCalledWith(
+      { time: 12.5, pitch: 64 },
+      expect.anything(),
+      expect.objectContaining({ pxPerSecond: 100, rowHeight: 10 }),
+    );
     expect(props.onEmptyClick).not.toHaveBeenCalled();
   });
 

@@ -47,6 +47,11 @@ function noteLabel(note: DrawnNote, overlaps: boolean): string {
 }
 
 /** How wide the pitch labels at the roll's left are; the other lanes leave the same room. */
+/** Rows at least this tall (px) get every pitch's name; thinner ones only the C's. */
+const LABEL_ALL_PX = 14;
+/** Pitch classes of the black keys (named as sharps), whose names are dimmer. */
+const SHARPS = new Set([1, 3, 6, 8, 10]);
+
 export const GUTTER_PX = 40;
 
 /**
@@ -140,7 +145,13 @@ export function PianoRoll(props: {
       pitch: yToPitch(props.range, rowHeight(), event.clientY - rect.top),
     };
   };
-  const scale = (): RollScale => ({ pxPerSecond: props.view.pxPerSecond, rowHeight: rowHeight() });
+  const scale = (): RollScale => ({
+    pxPerSecond: props.view.pxPerSecond,
+    rowHeight: rowHeight(),
+    // Read when asked, so a drag sees the rows as they are then.
+    pitchAt: (clientY) => props.range.high + 0.5 - (clientY - area!.getBoundingClientRect().top) / rowHeight(),
+    rows: () => props.range,
+  });
   const rowHeight = () => props.height / rowCount(props.range);
   /** Where the drag's label goes: just above the pressed note, as it is drawn now. */
   const dragLabel = () => {
@@ -252,9 +263,13 @@ export function PianoRoll(props: {
         <For each={rows()}>
           {(pitch, i) => (
             <span
-              class="absolute right-1.5 font-mono text-[9px] leading-none text-faint-foreground"
+              class="absolute right-1.5 font-mono text-[9px] leading-none text-faint-foreground data-c:text-muted-foreground data-sharp:opacity-55"
               style={{ top: `${i() * rowHeight() + rowHeight() / 2 - 4}px` }}
-              hidden={pitch % 12 !== 0 && pitch % 12 !== 4}
+              data-c={pitch % 12 === 0 ? "" : undefined}
+              data-sharp={SHARPS.has(pitch % 12) ? "" : undefined}
+              // Every row's name when there is room for it, else the octaves' (C).
+              hidden={rowHeight() < LABEL_ALL_PX && pitch % 12 !== 0}
+              data-testid="pitch-label"
             >
               {pitchName(pitch)}
             </span>
@@ -279,6 +294,7 @@ export function PianoRoll(props: {
           {(pitch, i) => (
             <div
               data-c={pitch % 12 === 0 ? "" : undefined}
+              data-testid="roll-row"
               class="pointer-events-none absolute inset-x-0 border-b border-border-soft even:bg-sage-11 data-c:bg-sage-13"
               style={{ top: `${i() * rowHeight()}px`, height: `${rowHeight()}px` }}
             />

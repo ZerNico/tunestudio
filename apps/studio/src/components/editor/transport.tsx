@@ -114,13 +114,7 @@ export function Transport(props: {
         </ToggleGroup>
       </Show>
       <div class="ml-auto flex items-center gap-1">
-        <ToggleButton
-          label="Loop the range marked on the ruler"
-          shortcut="L"
-          pressed={props.looping}
-          onClick={() => props.onLoop()}
-          testid="loop"
-        >
+        <ToggleButton label="Loop" shortcut="L" pressed={props.looping} onClick={() => props.onLoop()} testid="loop">
           <RepeatIcon />
         </ToggleButton>
         <Select
@@ -144,19 +138,14 @@ export function Transport(props: {
           </SelectContent>
         </Select>
         <ToggleButton
-          label="Follow the playhead while playing"
+          label="Follow playhead"
           pressed={props.following}
           onClick={() => props.onFollow(!props.following)}
           testid="follow"
         >
           <LocateFixedIcon />
         </ToggleButton>
-        <ToggleButton
-          label="Hear the notes as tones (while playing and changing their pitch)"
-          pressed={props.tones}
-          onClick={() => props.onTones(!props.tones)}
-          testid="tones"
-        >
+        <ToggleButton label="Tones" pressed={props.tones} onClick={() => props.onTones(!props.tones)} testid="tones">
           <MusicIcon />
         </ToggleButton>
         <Show when={props.showPitch !== undefined}>

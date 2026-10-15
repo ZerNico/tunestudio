@@ -81,8 +81,10 @@ describe("ruler", () => {
 });
 
 describe("pitch rows", () => {
-  it("spans the chart's notes with room, at least an octave and a half", () => {
-    expect(pitchRange([60, 72])).toEqual({ low: 57, high: 75 });
+  it("spans the chart's notes with a row of room, at least an octave and a half", () => {
+    expect(pitchRange([50, 80])).toEqual({ low: 49, high: 81 });
+    // An octave: made up to 18 rows.
+    expect(pitchRange([60, 72])).toEqual({ low: 58, high: 75 });
     const narrow = pitchRange([64]);
     expect(narrow.high - narrow.low + 1).toBe(18);
     expect(narrow.low).toBeLessThan(64);

@@ -122,23 +122,6 @@ export default function ProjectScreen() {
   const chart = () => doc().chart();
   const notes = createMemo(() => drawnNotes(chart()));
   const lines = createMemo(() => lineSpans(chart()));
-  /**
-   * The pitch rows: they grow to fit notes moved past them, but don't shrink while editing (the roll would jump); a
-   * chart loaded again starts over.
-   */
-  let shownRange: PitchRange | null = null;
-  let rangeFor: unknown = null;
-  const range = createMemo(() => {
-    if (rangeFor !== doc()) {
-      rangeFor = doc();
-      shownRange = null;
-    }
-    const fitted = pitchRange(notes().map((note) => note.pitch));
-    shownRange = shownRange
-      ? { low: Math.min(shownRange.low, fitted.low), high: Math.max(shownRange.high, fitted.high) }
-      : fitted;
-    return shownRange;
-  });
   const selectedIds = createMemo(() => new Set(selection()));
   const overlaps = createMemo(() => overlapping(chart()));
   const longestNote = createMemo(() => longest(notes()));
@@ -371,6 +354,25 @@ export default function ProjectScreen() {
     remove: () => editing.commands.remove(),
     selectAll: () => editing.commands.selectAll(),
   };
+
+  /**
+   * The pitch rows: the notes' lowest to highest with some room. While a note is dragged they only grow, and just to
+   * fit the dragged notes (no room added: the pointer's spot would become a further pitch and the note run off); held
+   * past the top or bottom, the drag goes on a semitone at a time. Let go, they fit the notes again.
+   */
+  let shownRange: PitchRange | null = null;
+  const range = createMemo(() => {
+    const drag = editing.drag();
+    if (!drag || !shownRange) return (shownRange = pitchRange(notes().map((note) => note.pitch)));
+    const moved = notes()
+      .filter((note) => drag.ids.has(note.id))
+      .map((note) => note.pitch + drag.pitch);
+    shownRange = {
+      low: Math.min(shownRange.low, ...moved),
+      high: Math.max(shownRange.high, ...moved),
+    };
+    return shownRange;
+  });
 
   const tools = createTools();
   const onKeyUp = (event: KeyboardEvent) => tools.keyUp(event);

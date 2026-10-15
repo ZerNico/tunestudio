@@ -152,6 +152,26 @@ test("a drag on the ruler loops a range, L loops the selected notes, a double-cl
   expect(Math.abs(rangeBox.x + rangeBox.width - (noteBox.x + noteBox.width))).toBeLessThan(3);
 });
 
+test("the rows grow while a note is dragged past them, and fit the notes again after", async () => {
+  await openSong();
+  const { page } = studio;
+  const rows = page.getByTestId("roll-row");
+  const before = await rows.count();
+  const note = (await page.getByTestId("roll-note").nth(2).boundingBox())!;
+  const area = (await page.getByTestId("roll-area").boundingBox())!;
+  await page.mouse.move(note.x + note.width / 2, note.y + note.height / 2);
+  await page.mouse.down();
+  // Held above the roll: the rows grow a semitone at a time before it is let go.
+  await page.mouse.move(note.x + note.width / 2, area.y - 30, { steps: 6 });
+  await expect.poll(() => rows.count()).toBeGreaterThan(before + 2);
+  await page.mouse.up();
+  const grown = await rows.count();
+  // Undone: the notes are where they were, and so are the rows.
+  await page.getByTestId("undo").click();
+  await expect(rows).toHaveCount(before);
+  expect(grown).toBeGreaterThan(before);
+});
+
 test("scrubbing to the roll's edge scrolls the view, and the playhead goes on with it", async () => {
   await openSong();
   const { page } = studio;

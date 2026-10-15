@@ -12,6 +12,9 @@ class FakeContext {
     const param = { value: 1, setValueAtTime() {}, linearRampToValueAtTime() {} };
     return { gain: param, connect: (next: unknown) => next, disconnect() {} };
   }
+  createBiquadFilter() {
+    return { type: "", frequency: { value: 0 }, connect: (next: unknown) => next };
+  }
   createOscillator() {
     const record = { frequency: 0, start: -1, stop: -1, stopped: false };
     this.oscillators.push(record);

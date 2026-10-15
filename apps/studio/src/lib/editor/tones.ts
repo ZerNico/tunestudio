@@ -20,7 +20,13 @@ const LOOKAHEAD = 0.2;
 /** A time further from the expected one than this is a jump (seconds). */
 const JUMP = 0.3;
 const PREVIEW_SECONDS = 0.25;
-const VOLUME = 0.14;
+const VOLUME = 0.22;
+/**
+ * Sung notes are often around 100-300 Hz, which laptop speakers barely play: a sawtooth's overtones carry the pitch
+ * (heard as the same note), softened by a low-pass so it doesn't buzz.
+ */
+const WAVE: OscillatorType = "sawtooth";
+const BRIGHTNESS_HZ = 2200;
 
 export function midiToHz(midi: number): number {
   return 440 * 2 ** ((midi - 69) / 12);
@@ -53,7 +59,10 @@ export function createTones(options: {
       context = options.context?.() ?? new AudioContext();
       output = context.createGain();
       output.gain.value = VOLUME;
-      output.connect(context.destination);
+      const filter = context.createBiquadFilter();
+      filter.type = "lowpass";
+      filter.frequency.value = BRIGHTNESS_HZ;
+      output.connect(filter).connect(context.destination);
     }
     if (context.state === "suspended") void context.resume();
     return { context, output: output! };
@@ -65,7 +74,7 @@ export function createTones(options: {
     const { context: ctx, output: out } = audio();
     const oscillator = ctx.createOscillator();
     const envelope = ctx.createGain();
-    oscillator.type = "triangle";
+    oscillator.type = WAVE;
     oscillator.frequency.value = midiToHz(midi);
     const fade = Math.min(0.02, seconds / 4);
     envelope.gain.setValueAtTime(0, at);
