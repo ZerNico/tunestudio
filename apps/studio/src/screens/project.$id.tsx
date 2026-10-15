@@ -23,11 +23,14 @@ import { platform, revealLabel } from "~/lib/desktop";
 import { isTyping, runEditCommand, setEditHandler } from "~/lib/edit-commands";
 import { chartEnd, drawnNotes, lineBreaks, lineIndexAt, lineSpans, longest, stepLine } from "~/lib/editor/chart";
 import { createChartDocument } from "~/lib/editor/document";
+import { overlapping } from "~/lib/editor/edits";
+import { createNoteEditing } from "~/lib/editor/note-editing";
 import { createPlayback } from "~/lib/editor/playback";
 import {
   clampView,
   fitRange,
   follow,
+  type PitchRange,
   pitchRange,
   scrollBy,
   type TimeView,
@@ -62,7 +65,8 @@ const FIRST_VIEW_SECONDS = 12;
 /**
  * An open project: the chart editor. The editing area shows the song at a glance (overview), the notes against time
  * and pitch, and each line's text, with playback of the song, its vocals or its music. Everything else about the song
- * (details, media, lyrics, making the chart) is in the Song panel. Read-only so far.
+ * (details, media, lyrics, making the chart) is in the Song panel. Notes are edited with the keys and clicks in
+ * `note-editing.ts`.
  */
 export default function ProjectScreen() {
   const data = route.useLoaderData();
@@ -99,7 +103,17 @@ export default function ProjectScreen() {
   const chart = () => doc().chart();
   const notes = createMemo(() => drawnNotes(chart()));
   const lines = createMemo(() => lineSpans(chart()));
-  const range = createMemo(() => pitchRange(notes().map((note) => note.pitch)));
+  /** The pitch rows: they grow to fit notes moved past them, but don't shrink while editing (the roll would jump). */
+  let shownRange: PitchRange | null = null;
+  const range = createMemo(() => {
+    const fitted = pitchRange(notes().map((note) => note.pitch));
+    shownRange = shownRange
+      ? { low: Math.min(shownRange.low, fitted.low), high: Math.max(shownRange.high, fitted.high) }
+      : fitted;
+    return shownRange;
+  });
+  const selectedIds = createMemo(() => new Set(selection()));
+  const overlaps = createMemo(() => overlapping(chart()));
   const longestNote = createMemo(() => longest(notes()));
   const longestLine = createMemo(() => longest(lines()));
   const duet = () => chart().singers.length > 1;
@@ -159,6 +173,23 @@ export default function ProjectScreen() {
     else if (!onScreen)
       setView(clampView({ ...current, start: line.start - visibleSeconds(current, width()) * 0.1 }, width(), length()));
   };
+
+  const editing = createNoteEditing({
+    doc,
+    notes,
+    selection,
+    setSelection,
+    length,
+    playheadTime: () => playback.time(),
+    onReveal: (note) => {
+      if (!playback.playing()) seek(note.start);
+      const current = view();
+      const seconds = visibleSeconds(current, width());
+      if (note.start < current.start || note.start + note.duration > current.start + seconds)
+        setView(clampView({ ...current, start: note.start - seconds * 0.25 }, width(), length()));
+    },
+    onRefused: (message) => toast.add({ title: message }),
+  });
 
   let editArea: HTMLDivElement | undefined;
   let rollArea: HTMLDivElement | undefined;
@@ -226,6 +257,10 @@ export default function ProjectScreen() {
         runEditCommand(command);
         return;
       }
+      if (editing.key(event)) {
+        event.preventDefault();
+        return;
+      }
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       if (event.key === " ") {
         event.preventDefault();
@@ -234,7 +269,7 @@ export default function ProjectScreen() {
       } else if (event.key === "." || event.key === ",") {
         event.preventDefault();
         goToLine(stepLine(lines(), playback.time(), event.key === "." ? 1 : -1));
-      } else if (event.key === "f" || event.key === "F") {
+      } else if (event.key === "z" || event.key === "Z") {
         event.preventDefault();
         goToLine(lines()[lineIndexAt(lines(), playback.time())], true);
       }
@@ -356,7 +391,15 @@ export default function ProjectScreen() {
                 width={width()}
                 height={size().height}
                 pitch={showPitch() ? pitch() : null}
-                onSeek={seek}
+                selected={selectedIds()}
+                overlapping={overlaps()}
+                onNoteDown={(note, event, part, scale) => editing.noteDown(note, event, part, scale)}
+                drag={editing.drag()}
+                onEmptyClick={(seconds) => {
+                  editing.emptyClick();
+                  seek(seconds);
+                }}
+                onBox={(area, add) => editing.box(area, add)}
               />
             </div>
             <LyricsLane lines={visibleLines()} all={lines()} view={view()} duet={duet()} />

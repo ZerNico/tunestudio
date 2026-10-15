@@ -134,6 +134,11 @@ export function pitchToY(range: PitchRange, rowHeight: number, pitch: number): n
   return (range.high - pitch) * rowHeight;
 }
 
+/** The pitch whose row is at `y`. */
+export function yToPitch(range: PitchRange, rowHeight: number, y: number): number {
+  return range.high - Math.floor(y / rowHeight);
+}
+
 const NAMES = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"];
 
 /** "E4" for 64 (MIDI, C4 = 60). */

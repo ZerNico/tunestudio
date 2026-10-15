@@ -1,6 +1,8 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "@fontsource-variable/dm-sans";
+/* Italic for rap notes (`roll-note`); faux italics are off (`font-synthesis`). */
+@import "@fontsource-variable/dm-sans/wght-italic.css";
 @import "@fontsource/ibm-plex-mono/400.css";
 @import "@fontsource/ibm-plex-mono/500.css";
 
@@ -87,6 +89,29 @@
   --warning-soft: #3a3222;
   --info: #7fa6d8;
   --segment: #121517;           /* segmented control well (tool switch, lyrics mode) */
+
+  /* Notes in the piano roll (the spike's look): see `roll-note`. Singer 2 is violet. */
+  --note: #245a46;
+  --note-border: #45856a;
+  --note-top: #639879;          /* a lighter top edge */
+  --note-text: #d4ecdd;
+  --note-hover: #327d58;
+  --note-hover-border: #a9d794;
+  --note-selected: #63954c;
+  --note-selected-border: #c7f493;
+  --note-selected-text: #f4ffe9;
+  --note-grip: #d5efaa77;       /* resize grips on a selected note */
+  --note-glow: #9fce3d18;
+  --note-rap-stripe: #ffffff1c;  /* rap notes' stripes */
+  --note-freestyle: #1f322b;     /* dimmer: freestyle notes aren't scored */
+  --note-freestyle-text: #a9bfb3;
+  --note-freestyle-selected: #3f5c34;
+  --note-edge: #111a0c;
+  --note-2: #35314e;
+  --note-2-border: #5d5577;
+  --note-2-hover: #433d63;
+  --note-2-selected: #6e63b4;
+  --note-2-selected-border: #d6cff5;
   --segment-border: #30363a;
 
   /* Palette scale for component chrome (family-L*): generated from former hardcoded values. */
@@ -429,6 +454,58 @@
 /* Small reusable helpers used by the app shell. */
 @utility eyebrow { font-size: 9px; font-weight: 650; letter-spacing: 1.5px; text-transform: uppercase; color: var(--sage-63); }
 @utility scrollbar-thin { scrollbar-width: thin; scrollbar-color: var(--sage-30-2) transparent; }
+/* A note in the piano roll: data-singer, data-type (golden, golden-rap, rap, freestyle), data-selected="true",
+   data-overlap (overlaps another note: red border; the label says ⚠). */
+@utility roll-note {
+  position: absolute;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  border-radius: 3px;
+  border: 1px solid var(--note-border);
+  border-top-color: var(--note-top);
+  background-color: var(--note);
+  color: var(--note-text);
+  padding: 0 5px;
+  font-size: 10px;
+  text-shadow: 0 1px 1px #0009;
+  box-shadow: 0 1px 2px #0004;
+  transition: background-color 0.1s, border-color 0.1s;
+  &:hover { background-color: var(--note-hover); border-color: var(--note-hover-border); color: #fff; z-index: 4; }
+  &[data-singer="2"] { background-color: var(--note-2); border-color: var(--note-2-border); color: var(--violet-text); }
+  &[data-singer="2"]:hover { background-color: var(--note-2-hover); }
+  &[data-type="golden"], &[data-type="golden-rap"] { background-color: var(--warning-soft); border-color: var(--amber-33); color: var(--amber-73); }
+  &[data-type="golden"]:hover, &[data-type="golden-rap"]:hover { background-color: var(--amber-33); border-color: var(--amber-73); }
+  /* Rap is a texture (golden is a colour, freestyle a dashed border and a dim fill), so it shows at a glance, at any zoom, with any of them. */
+  &[data-type="rap"], &[data-type="golden-rap"] {
+    font-style: italic;
+    background-image: repeating-linear-gradient(135deg, var(--note-rap-stripe) 0 3px, transparent 3px 7px);
+  }
+  &[data-type="freestyle"] { border-style: dashed; background-color: var(--note-freestyle); color: var(--note-freestyle-text); }
+  &[data-selected="true"] {
+    background-color: var(--note-selected);
+    border-color: var(--note-selected-border);
+    color: var(--note-selected-text);
+    box-shadow: 0 0 0 1px var(--note-edge), 0 0 14px var(--note-glow);
+    z-index: 3;
+  }
+  &[data-selected="true"][data-singer="2"] { background-color: var(--note-2-selected); border-color: var(--note-2-selected-border); }
+  &[data-selected="true"]:is([data-type="golden"], [data-type="golden-rap"]) { background-color: var(--amber-33); border-color: var(--note-selected-border); color: #fff4d0; }
+  &[data-selected="true"][data-type="freestyle"] { background-color: var(--note-freestyle-selected); border-color: var(--note-selected-border); }
+  &[data-selected="true"]::before, &[data-selected="true"]::after {
+    content: "";
+    position: absolute;
+    top: 25%;
+    bottom: 25%;
+    width: 1px;
+    background-color: var(--note-grip);
+  }
+  &[data-selected="true"]::before { left: 2px; }
+  &[data-selected="true"]::after { right: 2px; }
+  /* A problem shows whatever else the note is (selected, golden). */
+  &[data-overlap] { border-color: var(--destructive) !important; }
+}
+
 @utility app-drag { -webkit-app-region: drag; }
 @utility app-no-drag { -webkit-app-region: no-drag; }
 

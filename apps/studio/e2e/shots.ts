@@ -81,6 +81,28 @@ try {
     if (name === "Night Signals") {
       await page.mouse.move(0, 0);
       await shot(studio, "03-project-1440x900");
+      // Editing: one note lengthened into the next (an overlap).
+      const notes = page.getByTestId("roll-note");
+      await notes.nth(1).click();
+      for (let i = 0; i < 12; i++) await page.keyboard.press("Shift+ArrowRight");
+      // A golden and a rap note, then a range selected.
+      await notes.nth(3).click();
+      await page.keyboard.press("g");
+      await notes.nth(4).click();
+      await page.keyboard.press("r");
+      await notes.nth(1).click();
+      await page.keyboard.press("f");
+      await notes.nth(0).click();
+      await notes.nth(4).click({ modifiers: ["ControlOrMeta"] });
+      await page.mouse.move(0, 0);
+      await shot(studio, "03b-project-editing");
+      // Halfway through dragging "good" right and up: the preview and its label.
+      const box = (await notes.nth(3).boundingBox())!;
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2 - 70, { steps: 5 });
+      await shot(studio, "03c-project-dragging");
+      await page.mouse.up();
       await page.getByTestId("export-song").waitFor();
     }
     await page.getByTestId("close-project").click();
