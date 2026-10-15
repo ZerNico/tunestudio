@@ -1,0 +1,16 @@
+dist
+# Electron main/preload bundles and packaging output
+dist-electron
+release
+.electron-app
+.tanstack
+test-results
+playwright-report
+.repro
+
+# Native addon build output (index.cjs and index.d.ts are generated too, but committed)
+native/target
+native/*.node
+native/*.dylib
+native/*.so
+native/*.dll

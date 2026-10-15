@@ -1,0 +1,7 @@
+{
+  "extends": "../electron/tsconfig.json",
+  "include": ["./**/*.ts", "../playwright.config.ts"],
+  "compilerOptions": {
+    "allowImportingTsExtensions": true
+  }
+}

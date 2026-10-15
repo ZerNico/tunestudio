@@ -1,0 +1,37 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "printWidth": 120,
+  "tabWidth": 2,
+  "useTabs": false,
+  "endOfLine": "lf",
+  "sortImports": {},
+  "ignorePatterns": [
+    "**/routeTree.gen.ts",
+    "**/migrations.gen.ts",
+    "apps/studio/native/index.cjs",
+    "apps/studio/native/index.d.ts",
+    "apps/studio/native/target/**",
+    "**/drizzle/**/snapshot.json",
+    "**/styles.css",
+    "**/dist/**",
+    "**/dist-electron/**",
+    "**/release/**",
+    "**/.electron-app/**",
+    "**/.tanstack/**",
+    "**/test-results/**",
+    ".local/**",
+    "**/.repro/**",
+    "bun.lock"
+  ],
+  "overrides": [
+    {
+      "files": ["apps/studio/src/**/*.{js,jsx,ts,tsx}"],
+      "options": {
+        "sortTailwindcss": {
+          "stylesheet": "./apps/studio/src/styles.css",
+          "functions": ["cn", "cva"]
+        }
+      }
+    }
+  ]
+}

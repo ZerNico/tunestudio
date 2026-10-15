@@ -1,0 +1,40 @@
+[package]
+name = "tunestudio_native"
+version = "0.1.0"
+description = "Native half of Tune Studio: the models that listen to songs (Whisper first)"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[build-dependencies]
+napi-build = "2.6"
+
+[dependencies]
+napi = { version = "3.14", default-features = false, features = ["napi8"] }
+napi-derive = "3.6"
+whisper-rs = "0.16"
+ort = "=2.0.0-rc.14"
+realfft = "3.5"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# Whisper on the Apple GPU.
+whisper-rs = { version = "0.16", features = ["metal"] }
+
+# The separation model on the GPU where ort ships a runtime for it (see `gpu` in build.rs): WebGPU
+# on Apple Silicon and x64 Windows and Linux, DirectML on Windows on ARM. ort has no runtime for
+# Intel Macs at all, and only the CPU on Linux on ARM.
+[target.'cfg(any(all(target_os = "macos", target_arch = "aarch64"), all(target_arch = "x86_64", any(target_os = "windows", target_os = "linux"))))'.dependencies]
+ort = { version = "=2.0.0-rc.14", features = ["webgpu"] }
+
+[target.'cfg(all(target_os = "windows", target_arch = "aarch64"))'.dependencies]
+ort = { version = "=2.0.0-rc.14", features = ["directml"] }
+
+# Inference runs in whisper.cpp and our loops over samples; keep dependencies optimized in
+# debug builds so development runs take seconds, not minutes.
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+lto = true

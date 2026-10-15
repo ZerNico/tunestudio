@@ -1,0 +1,84 @@
+import { randomUUID } from "node:crypto";
+
+import { Context, Effect, FileSystem, Layer, Path, Ref } from "effect";
+
+import { DraftGone, type FileError, mapFileError } from "../errors";
+import type { DownloadedMedia } from "../youtube/youtube";
+
+/** A new project being set up: its working folder and what has been downloaded into it. */
+export interface Draft {
+  readonly id: string;
+  readonly folder: string;
+  readonly videoId: string;
+  readonly media: DownloadedMedia | null;
+}
+
+interface DraftsShape {
+  /** A new, empty draft for a video. */
+  readonly create: (videoId: string) => Effect.Effect<Draft, FileError>;
+  readonly get: (id: string) => Effect.Effect<Draft, DraftGone>;
+  /** Records what was downloaded into a draft. */
+  readonly setMedia: (id: string, media: DownloadedMedia) => Effect.Effect<void, DraftGone>;
+  /** Removes a draft and its files. Discarding one that is gone does nothing. */
+  readonly discard: (id: string) => Effect.Effect<void>;
+}
+
+/**
+ * New projects while they are set up, before the user saves them: downloads land in a draft
+ * folder, and the project file is only written at the end. Cancelling discards the draft.
+ */
+export class Drafts extends Context.Service<Drafts, DraftsShape>()("studio/Drafts") {}
+
+/**
+ * Drafts in `folder` (in the app's data directory). Whatever is there when the app starts was
+ * left by a crash, since only one Tune Studio runs at a time, so it is removed; so is every
+ * draft when the app quits.
+ */
+export function draftsLayer(folder: string) {
+  return Layer.effect(
+    Drafts,
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const paths = yield* Path.Path;
+      const clear = fs.remove(folder, { recursive: true, force: true }).pipe(Effect.ignore);
+      yield* clear;
+      yield* Effect.addFinalizer(() => clear);
+      const drafts = yield* Ref.make(new Map<string, Draft>());
+
+      const get = (id: string) =>
+        Effect.flatMap(Ref.get(drafts), (all) => {
+          const draft = all.get(id);
+          return draft
+            ? Effect.succeed(draft)
+            : Effect.fail(new DraftGone({ message: "This new project was closed. Start it again." }));
+        });
+
+      return {
+        create: (videoId) =>
+          Effect.gen(function* () {
+            const id = randomUUID();
+            const draft: Draft = { id, folder: paths.join(folder, id), videoId, media: null };
+            yield* fs
+              .makeDirectory(draft.folder, { recursive: true })
+              .pipe(mapFileError("the new project's folder", "create"));
+            yield* Ref.update(drafts, (all) => new Map(all).set(id, draft));
+            return draft;
+          }),
+        get,
+        setMedia: (id, media) =>
+          Effect.flatMap(get(id), (draft) => Ref.update(drafts, (all) => new Map(all).set(id, { ...draft, media }))),
+        discard: (id) =>
+          Effect.gen(function* () {
+            const draft = (yield* Ref.get(drafts)).get(id);
+            if (!draft) return;
+            yield* Ref.update(drafts, (all) => {
+              const next = new Map(all);
+              next.delete(id);
+              return next;
+            });
+            yield* fs.remove(draft.folder, { recursive: true, force: true }).pipe(Effect.ignore);
+          }),
+      } satisfies DraftsShape;
+    }),
+  );
+}

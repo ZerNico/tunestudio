@@ -1,0 +1,10 @@
+node_modules
+.turbo
+.DS_Store
+.env
+*.local
+
+# Local screenshots, scratch files and test output
+.local
+test-results
+playwright-report
