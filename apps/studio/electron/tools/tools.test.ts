@@ -12,7 +12,7 @@ import { TestClock } from "effect/testing";
 import type { ToolProgress } from "../../src/lib/native/types";
 import { AppLog } from "../services/app-log";
 import { tempDir, zipOf } from "../testing";
-import { DownloadFailed, Downloads, downloadsLayer } from "./downloads";
+import { type DownloadLimits, DownloadFailed, Downloads, downloadsLayer } from "./downloads";
 import { btbnAsset, latestRelease, quickJsAsset, riedlVersion, ytDlpAsset } from "./sources";
 import { CHECK_INTERVAL, Tools, toolsLayer } from "./tools";
 
@@ -302,10 +302,18 @@ describe("Tools", () => {
 });
 
 describe("downloads", () => {
-  /** A local server: `/file` sends bytes, `/hop` redirects to `/file`, `/away` redirects to another host. */
+  /**
+   * A local server: `/file` sends bytes, `/stream` sends them without saying how many, `/hop`
+   * redirects to `/file`, `/localhost` to `/file` on "localhost", `/away` to another host.
+   */
   function server(bytes: Uint8Array) {
     const instance = http.createServer((request, response) => {
       if (request.url === "/hop") return response.writeHead(302, { location: "/file" }).end();
+      if (request.url === "/localhost") {
+        const port = (instance.address() as { port: number }).port;
+        return response.writeHead(302, { location: `http://localhost:${port}/file` }).end();
+      }
+      if (request.url === "/stream") return response.writeHead(200).end(bytes);
       if (request.url === "/away") return response.writeHead(302, { location: "https://example.com/x" }).end();
       if (request.url === "/file") return response.writeHead(200, { "content-length": bytes.byteLength }).end(bytes);
       response.writeHead(404).end();
@@ -351,6 +359,26 @@ describe("downloads", () => {
     );
     expect(error._tag).toBe("DownloadFailed");
     expect(error.message).toMatch(/ENOTDIR/);
+  });
+
+  it("keeps to one download's own hosts and size, also when the server doesn't say the size", async () => {
+    const base = await server(Buffer.alloc(300_000, 7));
+    const { dir, cleanup } = tempDir();
+    cleanups.push(cleanup);
+    const layer = downloadsLayer({ hosts: ["127.0.0.1", "localhost"], allowHttp: true });
+    const fetchFile = (route: string, limits: DownloadLimits) =>
+      Effect.runPromise(
+        Effect.flip(
+          Downloads.use((d) => d.file(`${base}${route}`, path.join(dir, "file"), () => Effect.void, limits)).pipe(
+            Effect.provide(layer),
+          ),
+        ),
+      );
+    expect((await fetchFile("/localhost", { hosts: ["127.0.0.1"] })).message).toBe(
+      "Downloads from localhost aren't allowed.",
+    );
+    expect((await fetchFile("/file", { maxBytes: 1000 })).message).toBe("The file is larger than expected.");
+    expect((await fetchFile("/stream", { maxBytes: 1000 })).message).toBe("The file is larger than expected.");
   });
 
   it("refuses plain HTTP and hosts outside the list, including after a redirect", async () => {

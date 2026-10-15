@@ -5,6 +5,7 @@ import type { Settings, VideoFormat } from "../../src/lib/settings";
 import { suggestSongDetails } from "../../src/lib/youtube";
 import { VideoDownloadFailed, VideoUnavailable } from "../errors";
 import { AppLog } from "../services/app-log";
+import { THUMBNAIL_HOSTS } from "../tools/downloads";
 import { Tools } from "../tools/tools";
 import { previewImage } from "./covers";
 import { lastLine, rewriteLoudness, writeGainTags } from "./loudness";
@@ -189,7 +190,7 @@ export function inspectVideo(videoId: string) {
     }
 
     const thumbnailUrl = previewThumbnail(info);
-    const thumbnail = thumbnailUrl ? yield* previewImage(thumbnailUrl) : null;
+    const thumbnail = thumbnailUrl ? yield* previewImage(thumbnailUrl, THUMBNAIL_HOSTS) : null;
     const channel = info.channel ?? info.uploader ?? "";
     const suggested = suggestSongDetails({ title: info.title, channel, artist: info.artist, track: info.track });
     return {

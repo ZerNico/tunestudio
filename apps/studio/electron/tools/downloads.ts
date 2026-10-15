@@ -12,6 +12,14 @@ export class DownloadFailed extends Schema.TaggedError<DownloadFailed>()("Downlo
   message: Schema.String,
 }) {}
 
+/** Tighter rules for one download than the app-wide host list. */
+export interface DownloadLimits {
+  /** Only these hosts, for the request and every redirect. */
+  readonly hosts?: readonly string[];
+  /** Fails once the file grows past this many bytes. */
+  readonly maxBytes?: number;
+}
+
 interface DownloadsShape {
   /** Fetches and parses a JSON document. */
   readonly json: (url: string) => Effect.Effect<unknown, DownloadFailed>;
@@ -26,6 +34,7 @@ interface DownloadsShape {
     url: string,
     file: string,
     onBytes: (received: number, total: number | null) => Effect.Effect<void>,
+    limits?: DownloadLimits,
   ) => Effect.Effect<{ sha256: string; size: number }, DownloadFailed>;
 }
 
@@ -98,11 +107,12 @@ export function downloadsLayer(options: { hosts: readonly string[]; allowHttp?: 
   };
 
   /** Follows redirects by hand, so each hop is checked against the allowed hosts. */
-  const request = (url: string, signal: AbortSignal, follow = true): Promise<Response> =>
+  const request = (url: string, signal: AbortSignal, follow = true, hosts?: readonly string[]): Promise<Response> =>
     (async () => {
       let current = url;
       for (let hop = 0; hop < 8; hop++) {
-        if (!allowed(current)) throw failure(url, `Downloads from ${new URL(current).hostname} aren't allowed.`);
+        if (!allowed(current) || (hosts && !hostAllowed(new URL(current).hostname, hosts)))
+          throw failure(url, `Downloads from ${new URL(current).hostname} aren't allowed.`);
         const response = await fetch(current, { redirect: "manual", signal, headers: { "user-agent": USER_AGENT } });
         const location = response.headers.get("location");
         if (response.status >= 300 && response.status < 400 && location) {
@@ -127,11 +137,17 @@ export function downloadsLayer(options: { hosts: readonly string[]; allowHttp?: 
         if (!location) throw failure(url, "The download link didn't point anywhere.");
         return location;
       }),
-    file: (url, file, onBytes) =>
+    file: (url, file, onBytes, limits) =>
       attempt(url, async (signal) => {
-        const response = await request(url, signal);
+        const response = await request(url, signal, true, limits?.hosts);
         if (!response.body) throw failure(url, "The server sent nothing.");
         const total = Number(response.headers.get("content-length")) || null;
+        const maxBytes = limits?.maxBytes ?? Infinity;
+        const tooLarge = () => failure(url, "The file is larger than expected.");
+        if (total !== null && total > maxBytes) {
+          await response.body.cancel();
+          throw tooLarge();
+        }
         const hash = createHash("sha256");
         let received = 0;
         // `pipeline` handles errors on both ends (a full disk, a dropped connection) and closes
@@ -142,6 +158,7 @@ export function downloadsLayer(options: { hosts: readonly string[]; allowHttp?: 
             for await (const chunk of chunks) {
               hash.update(chunk);
               received += chunk.byteLength;
+              if (received > maxBytes) throw tooLarge();
               await Effect.runPromise(onBytes(received, total));
               yield chunk;
             }

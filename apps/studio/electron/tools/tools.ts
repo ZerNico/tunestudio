@@ -13,7 +13,7 @@ import {
   ToolUnsupported,
 } from "../errors";
 import { AppLog } from "../services/app-log";
-import { Downloads } from "./downloads";
+import { Downloads, TOOL_HOSTS } from "./downloads";
 import { latestRelease, type Platform, TOOL_LABELS, TOOL_NAMES, type ToolName, type ToolRelease } from "./sources";
 import { isZip, unzip } from "./unzip";
 
@@ -148,8 +148,11 @@ export function toolsLayer(options: { folder: string; platform: Platform }) {
             for (const [index, download] of release.downloads.entries()) {
               const file = paths.join(work, `download-${index}`);
               const result = yield* downloads
-                .file(download.url, file, (received, total) =>
-                  onProgress({ tool, phase: "downloading", received, total }),
+                .file(
+                  download.url,
+                  file,
+                  (received, total) => onProgress({ tool, phase: "downloading", received, total }),
+                  { hosts: TOOL_HOSTS },
                 )
                 .pipe(
                   Effect.mapError(

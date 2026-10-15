@@ -12,12 +12,25 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const native = path.join(root, "native");
 const release = process.argv.includes("--release");
 
-/** ONNX Runtime's WebGPU (Dawn), downloaded by the `ort` crate next to the build. */
-const LIBRARIES: Partial<Record<NodeJS.Platform, string>> = {
-  darwin: "libwebgpu_dawn.dylib",
-  linux: "libwebgpu_dawn.so",
-  win32: "webgpu_dawn.dll",
+/**
+ * The GPU libraries ONNX Runtime loads, which the `ort` crate downloads next to the build (see
+ * Cargo.toml for which runtime each system gets): WebGPU's Dawn, with DirectX's shader compiler
+ * on Windows, and DirectML on Windows on ARM. Linux on ARM runs on the CPU and needs none.
+ */
+const LIBRARIES: Record<string, string[]> = {
+  "darwin-arm64": ["libwebgpu_dawn.dylib"],
+  "linux-x64": ["libwebgpu_dawn.so"],
+  "linux-arm64": [],
+  "win32-x64": ["webgpu_dawn.dll", "dxcompiler.dll"],
+  "win32-arm64": ["DirectML.dll"],
 };
+
+const system = `${process.platform}-${process.arch}`;
+const libraries = LIBRARIES[system];
+if (!libraries) {
+  // Intel Macs among them: ONNX Runtime publishes no build for them.
+  throw new Error(`The native addon can't be built on ${system}: ONNX Runtime has no build for it.`);
+}
 
 // Releases run on other machines: otherwise whisper.cpp targets this processor exactly, and older
 // ones crash. Off, x64 needs AVX2 and FMA, ARM the base set. Applies when whisper-rs-sys is rebuilt.
@@ -41,16 +54,12 @@ execFileSync(
   { cwd: root, stdio: "inherit", shell: process.platform === "win32", env },
 );
 
-const library = LIBRARIES[process.platform];
-if (library) {
-  // napi builds into target/<target triple>/<profile>; the newest copy is this build's.
-  const profile = release ? "release" : "debug";
-  const target = path.join(native, "target");
-  const built = fs
-    .readdirSync(target)
-    .map((triple) => path.join(target, triple, profile, library))
-    .filter((file) => fs.existsSync(file))
-    .toSorted((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0];
-  // Only builds with WebGPU have it (see Cargo.toml); the others run on the CPU or DirectML.
-  if (built) fs.copyFileSync(built, path.join(native, library));
+// napi builds for this machine into target/<its target triple>/<profile>.
+const triple = /^host: (\S+)$/m.exec(execFileSync("rustc", ["-vV"], { encoding: "utf8" }))?.[1];
+if (!triple) throw new Error("Couldn't tell this machine's target from `rustc -vV`.");
+const built = path.join(native, "target", triple, release ? "release" : "debug");
+for (const library of libraries) {
+  const file = path.join(built, library);
+  if (!fs.existsSync(file)) throw new Error(`${library} is missing from ${built}: the GPU runtime wouldn't load.`);
+  fs.copyFileSync(file, path.join(native, library));
 }

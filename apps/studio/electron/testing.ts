@@ -172,7 +172,16 @@ export function testRuntime(dir: string) {
 }
 
 /** One entry of a test zip: a file with its bytes and mode, a folder, or a symlink. */
-export type ZipEntry = { name: string; data?: string | Uint8Array; mode?: number; link?: string };
+export type ZipEntry = {
+  name: string;
+  data?: string | Uint8Array;
+  mode?: number;
+  link?: string;
+  /** What the zip claims, instead of the truth: for damaged or hostile zips. */
+  size?: number;
+  crc?: number;
+  encrypted?: boolean;
+};
 
 /** A zip file as Info-ZIP on Unix writes it (deflated files, Unix modes, symlinks). */
 export function zipOf(entries: ZipEntry[]): Buffer {
@@ -187,15 +196,18 @@ export function zipOf(entries: ZipEntry[]): Buffer {
     const method = entry.link || folder ? 0 : 8;
     const type = entry.link ? 0o120000 : folder ? 0o040000 : 0o100000;
     const mode = type | (entry.mode ?? (folder ? 0o755 : 0o644));
-    const crc = crc32(content);
+    const crc = entry.crc ?? crc32(content);
+    const size = entry.size ?? content.length;
+    const flags = entry.encrypted ? 1 : 0;
 
     const local = Buffer.alloc(30);
     local.writeUInt32LE(0x04034b50, 0);
     local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(flags, 6);
     local.writeUInt16LE(method, 8);
     local.writeUInt32LE(crc, 14);
     local.writeUInt32LE(compressed.length, 18);
-    local.writeUInt32LE(content.length, 22);
+    local.writeUInt32LE(size, 22);
     local.writeUInt16LE(name.length, 26);
     locals.push(local, name, compressed);
 
@@ -203,10 +215,11 @@ export function zipOf(entries: ZipEntry[]): Buffer {
     header.writeUInt32LE(0x02014b50, 0);
     header.writeUInt16LE((3 << 8) | 30, 4);
     header.writeUInt16LE(20, 6);
+    header.writeUInt16LE(flags, 8);
     header.writeUInt16LE(method, 10);
     header.writeUInt32LE(crc, 16);
     header.writeUInt32LE(compressed.length, 20);
-    header.writeUInt32LE(content.length, 24);
+    header.writeUInt32LE(size, 24);
     header.writeUInt16LE(name.length, 28);
     header.writeUInt32LE((mode << 16) >>> 0, 38);
     header.writeUInt32LE(offset, 42);

@@ -582,6 +582,20 @@ describe("covers", () => {
     expect(screen.getByTestId("cover-loading")).toBeInTheDocument();
   });
 
+  it("doesn't save a picked cover for the old details while the new search hasn't answered", async () => {
+    native.youtube.findCovers.mockResolvedValueOnce([COVER]).mockReturnValue(new Promise(() => {}));
+    const { user, onOpened } = setup();
+    await user.click(await screen.findByRole("radio", { name: /^Rick Astley, / }));
+    await user.type(screen.getByTestId("youtube-title"), " (Live)");
+    await toLyrics(user);
+    await user.click(screen.getByTestId("youtube-create"));
+    await vi.waitFor(() => expect(onOpened).toHaveBeenCalledWith(PROJECT));
+    expect(native.youtube.create).toHaveBeenCalledWith(
+      expect.objectContaining({ cover: { kind: "thumbnail" }, year: null, genre: null }),
+      expect.anything(),
+    );
+  });
+
   it("won't make a project from a video that is far too long for a song", async () => {
     native.youtube.inspect.mockResolvedValue({ ...VIDEO, duration: 3 * 60 * 60 });
     setup();

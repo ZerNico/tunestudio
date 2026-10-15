@@ -2,7 +2,7 @@ import { Effect, FileSystem, Schedule, Schema, Semaphore } from "effect";
 
 import type { CoverCandidate } from "../../src/lib/native/types";
 import { Desktop } from "../services/desktop";
-import { Downloads } from "../tools/downloads";
+import { COVER_HOSTS, Downloads } from "../tools/downloads";
 
 /*
  * Covers for a song from iTunes (in the user's store), Deezer and MusicBrainz with the Cover Art
@@ -383,14 +383,17 @@ const quietly = <A, E, R>(search: Effect.Effect<A[], E, R>) =>
     Effect.orElseSucceed((): A[] => []),
   );
 
-/** A small JPEG data URL of an image on the internet, or null when it can't be had. */
-export function previewImage(url: string) {
+/** Covers and thumbnails are a few MB at most; anything bigger isn't one. */
+export const MOST_IMAGE_BYTES = 20 * 1024 ** 2;
+
+/** A small JPEG data URL of an image from one of `hosts`, or null when it can't be had. */
+export function previewImage(url: string, hosts: readonly string[]) {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const downloads = yield* Downloads;
     const desktop = yield* Desktop;
     const file = yield* fs.makeTempFileScoped({ prefix: "tunestudio-preview-" });
-    yield* downloads.file(url, file, () => Effect.void);
+    yield* downloads.file(url, file, () => Effect.void, { hosts, maxBytes: MOST_IMAGE_BYTES });
     return yield* desktop.thumbnail(yield* fs.readFile(file));
   }).pipe(
     Effect.scoped,
@@ -449,7 +452,7 @@ export function findCovers(song: { artist: string; title: string; duration: numb
       (entries) =>
         Effect.gen(function* () {
           for (const entry of entries) {
-            const preview = yield* previewImage(entry.match.preview);
+            const preview = yield* previewImage(entry.match.preview, COVER_HOSTS);
             if (!preview) continue;
             return {
               url: entry.match.url,

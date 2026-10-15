@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import type { ProjectOverview } from "~/lib/native/types";
 
-import { ChartStats, ImportNotes, MediaList, SongDetails } from "./project-panels";
+import { ChartStats, ImportNotes, LyricsList, MediaList, SongDetails } from "./project-panels";
 
 const overview: ProjectOverview = {
   id: "s",
@@ -89,5 +89,28 @@ describe("project panels", () => {
     ));
     expect(screen.getByText("This project has no media.")).toBeInTheDocument();
     expect(screen.getByTestId("import-notes")).toHaveTextContent("The cover is missing.");
+  });
+});
+
+describe("LyricsList", () => {
+  it("shows every line's text, also when the chorus repeats", () => {
+    const chorus = ["Du brauchst ein bisschen mehr Liebe", "Schenk dir ein bisschen mehr Liebe"];
+    render(() => (
+      <LyricsList
+        lines={[
+          { start: 33.08, text: chorus[0]! },
+          { start: 36.28, text: chorus[1]! },
+          { start: 46.74, text: chorus[0]! },
+          { start: 49.91, text: chorus[1]! },
+        ]}
+      />
+    ));
+    const items = within(screen.getByRole("list", { name: "Lyrics" })).getAllByRole("listitem");
+    expect(items.map((item) => item.textContent)).toEqual([
+      `0:33${chorus[0]}`,
+      `0:36${chorus[1]}`,
+      `0:47${chorus[0]}`,
+      `0:50${chorus[1]}`,
+    ]);
   });
 });

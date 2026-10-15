@@ -4,7 +4,7 @@ import { Context, Effect, FileSystem, Layer, Path, Semaphore } from "effect";
 
 import { type FileError, mapFileError, ModelDownloadFailed } from "../errors";
 import { AppLog } from "../services/app-log";
-import { Downloads } from "../tools/downloads";
+import { Downloads, MODEL_HOSTS } from "../tools/downloads";
 
 export const MODEL_NAMES = ["separation", "whisper"] as const;
 export type ModelName = (typeof MODEL_NAMES)[number];
@@ -92,7 +92,10 @@ export function modelsLayer(options: { folder: string; sources?: Record<ModelNam
           const partial = paths.join(options.folder, `.${source.file}.${randomUUID().slice(0, 8)}.download`);
           return yield* Effect.gen(function* () {
             const result = yield* downloads
-              .file(source.url, partial, (received, total) => onBytes(received, total ?? source.size))
+              .file(source.url, partial, (received, total) => onBytes(received, total ?? source.size), {
+                hosts: MODEL_HOSTS,
+                maxBytes: source.size,
+              })
               .pipe(
                 Effect.mapError(
                   (error) =>

@@ -16,6 +16,7 @@ import { Drafts } from "../services/drafts";
 import { AppSettings } from "../services/settings";
 import { COVER_HOSTS, Downloads, hostAllowed } from "../tools/downloads";
 import { Tools } from "../tools/tools";
+import { MOST_IMAGE_BYTES } from "./covers";
 import { downloadVideo, watchUrl } from "./youtube";
 
 /** A chart has to name a tempo; this one gives 50 ms beats until the chart is made. */
@@ -226,7 +227,7 @@ function downloadCover(url: string, folder: string) {
     // The URL comes from the renderer: only the cover catalogs, not every host downloads may use.
     if (!URL.canParse(url) || !hostAllowed(new URL(url).hostname, COVER_HOSTS)) return null;
     const file = path.join(folder, "chosen-cover");
-    yield* downloads.file(url, file, () => Effect.void);
+    yield* downloads.file(url, file, () => Effect.void, { hosts: COVER_HOSTS, maxBytes: MOST_IMAGE_BYTES });
     const bytes = yield* fs.readFile(file);
     const extension = imageExtension(bytes);
     if (!extension) return null;

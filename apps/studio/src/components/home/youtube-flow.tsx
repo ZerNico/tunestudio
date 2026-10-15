@@ -244,9 +244,16 @@ export function YoutubeFlow(props: {
    */
   const songSource = () => covers()?.find((candidate) => candidate.confident) ?? null;
 
-  /** What main is told about the cover. */
+  /**
+   * What main is told about the cover. A found cover counts only while the current search
+   * offers it: after artist or title changed, the old pick waits for the new search, and saving
+   * before that answers uses the thumbnail.
+   */
   const coverChoice = (): CoverChoice => {
     const selection = cover();
+    if (selection.kind === "found" && !covers()?.some((candidate) => candidate.url === selection.url)) {
+      return { kind: "thumbnail" };
+    }
     return selection.kind === "file" ? { kind: "file", path: selection.image.path } : selection;
   };
 

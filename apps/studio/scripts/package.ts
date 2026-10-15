@@ -89,7 +89,8 @@ const config: Configuration = {
     {
       from: path.join(root, "native"),
       to: "native",
-      filter: ["index.cjs", "*.node", "libwebgpu_dawn.*", "webgpu_dawn.dll"],
+      // The addon and the GPU libraries `scripts/native.ts` put next to it.
+      filter: ["index.cjs", "*.node", "*.dylib", "*.so", "*.dll"],
     },
   ],
   npmRebuild: false,
