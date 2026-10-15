@@ -1,38 +1,54 @@
-import { eventIterator, oc, type } from "@orpc/contract";
 import { Schema } from "effect";
+import { Rpc, RpcGroup } from "effect/rpc";
 
+import * as Errors from "../errors";
 import { MODEL_FEATURES } from "../models";
 import { Settings } from "../settings";
-import type {
-  ExportResult,
-  ImportProgress,
-  OpenedProject,
-  ProjectOverview,
-  RecentProjectEntry,
-  SongInspection,
-  ToolProgress,
+import {
   ChosenImage,
   CoverCandidate,
   DownloadedDraft,
   EditorChart,
-  SungPitch,
+  ExportResult,
   FoundLyrics,
   HeardLyrics,
+  ImportProgress,
   MadeChart,
   ModelFeatureStatus,
   ModelStatus,
+  OpenedProject,
+  ProjectOverview,
+  RecentProjectEntry,
+  SongInspection,
+  SungPitch,
+  ToolName,
+  ToolProgress,
   ToolStatus,
   YoutubeVideo,
 } from "./types";
 
 /**
- * The contract between the renderer and Electron's main process, served over a MessagePort
- * (see `electron/rpc`). Inputs are Effect schemas, validated on the main side through Standard
- * Schema; outputs come from trusted main-process code and are typed only (`types.ts`).
+ * The calls between the renderer and Electron's main process, as an Effect RPC group (`NativeRpcs`), served over a
+ * MessagePort (`electron/rpc`, `client.ts`). Inputs, outputs (`types.ts`) and errors are schemas: main decodes what
+ * the renderer sends and the renderer decodes what main answers. Every call can fail with one of the user-facing
+ * errors (`src/lib/errors.ts`), which arrive as those classes.
  *
- * Paths the renderer sends must have come from a dialog or a drop in this session, or from the
- * recent projects list; main refuses any other path.
+ * Calls that report progress are streams: progress events, then one `Done` event with the result (`progress`). The
+ * renderer's client turns them back into an iterator that yields the progress and returns the result.
+ *
+ * Paths the renderer sends must have come from a dialog or a drop in this session, or from the recent projects list;
+ * main refuses any other path.
  */
+
+/** Every failure a call can end with: the user-facing errors (`src/lib/errors.ts`). */
+export const UserError = Schema.Union(
+  Object.values(Errors).filter((value): value is (typeof Errors)[keyof typeof Errors] => Schema.isSchema(value)),
+);
+
+/** A call's progress events, then its result. */
+export function progress<P extends Schema.Top, R extends Schema.Top>(event: P, result: R) {
+  return Schema.Union([Schema.TaggedStruct("Progress", { progress: event }), Schema.TaggedStruct("Done", { result })]);
+}
 
 export const LogEntry = Schema.Struct({
   level: Schema.Literals(["warn", "error"]),
@@ -83,7 +99,7 @@ export const RecentEntryInput = Schema.Struct({
 });
 
 export const ToolsInput = Schema.Struct({
-  tools: Schema.Array(Schema.Literals(["yt-dlp", "quickjs", "ffmpeg"])),
+  tools: Schema.Array(ToolName),
   /** Check for newer versions even if the last check was recent. */
   force: Schema.optional(Schema.Boolean),
 });
@@ -152,7 +168,7 @@ export const DraftProjectInput = Schema.Struct({
 });
 export type DraftProjectInput = typeof DraftProjectInput.Type;
 
-export const ToolInput = Schema.Struct({ tool: Schema.Literals(["yt-dlp", "quickjs", "ffmpeg"]) });
+export const ToolInput = Schema.Struct({ tool: ToolName });
 
 export const ModelFeatureInput = Schema.Struct({ feature: Schema.Literals(MODEL_FEATURES) });
 
@@ -226,126 +242,115 @@ export const SongSearchInput = Schema.Struct({
   duration: Schema.NullOr(Schema.Number),
 });
 
-export const contract = {
-  app: {
-    /** Forwards renderer warnings and errors to the log file. */
-    log: oc.input(Schema.toStandardSchemaV1(LogEntry)),
-  },
-  dialogs: {
-    /** Picks a song folder or chart to import. `null` when cancelled. */
-    chooseSong: oc.output(type<string | null>()),
-    /** Picks a `.tunestudio` file to open. */
-    chooseProject: oc.output(type<string | null>()),
-    /** Asks where to save a new project, suggesting `~/Music/Tune Studio/<name>.tunestudio`. */
-    chooseProjectLocation: oc.input(Schema.toStandardSchemaV1(SaveLocationInput)).output(type<string | null>()),
-    /** Picks a JPEG or PNG for a cover, with a preview. `null` when cancelled. */
-    chooseCoverImage: oc.output(type<ChosenImage | null>()),
-    /** Picks the folder an UltraStar export goes into. */
-    chooseExportFolder: oc.output(type<string | null>()),
-  },
-  song: {
-    /** Reads a song folder (or chart) and reports what an import would bring in. */
-    inspect: oc.input(Schema.toStandardSchemaV1(SongInput)).output(type<SongInspection>()),
-    /** Imports a song into a new project file, reporting progress, and opens it. */
-    import: oc
-      .input(Schema.toStandardSchemaV1(ImportInput))
-      .output(eventIterator(type<ImportProgress>(), type<OpenedProject>())),
-  },
-  project: {
-    open: oc.input(Schema.toStandardSchemaV1(PathInput)).output(type<OpenedProject>()),
-    overview: oc.input(Schema.toStandardSchemaV1(ProjectInput)).output(type<ProjectOverview>()),
-    close: oc.input(Schema.toStandardSchemaV1(ProjectInput)),
-    /**
-     * What is sung in the project's vocals (stored, or worked out now, getting the pitch model first if needed),
-     * reporting progress; null without vocals.
-     */
-    pitch: oc
-      .input(Schema.toStandardSchemaV1(ProjectInput))
-      .output(eventIterator(type<ImportProgress>(), type<SungPitch | null>())),
-    /** Writes one edit (or its undo) to the project in one transaction; fails, writing nothing, if it is out of step. */
-    applyChanges: oc.input(Schema.toStandardSchemaV1(ChartChangesInput)),
-    /** The chart with its row ids, for the editor. */
-    chart: oc.input(Schema.toStandardSchemaV1(ProjectInput)).output(type<EditorChart>()),
-    /** Writes the project as an UltraStar song folder. */
-    exportSong: oc.input(Schema.toStandardSchemaV1(ExportInput)).output(type<ExportResult>()),
-    /**
-     * Makes the chart from the project's vocals, song and lyrics, replacing its notes, reporting progress (the chart
-     * models download on first use). Returns the updated overview.
-     */
-    makeChart: oc
-      .input(Schema.toStandardSchemaV1(ProjectInput))
-      .output(eventIterator(type<ImportProgress>(), type<ProjectOverview>())),
-  },
-  recents: {
-    /** The recent projects, newest first; files that no longer exist are dropped. */
-    list: oc.output(type<RecentProjectEntry[]>()),
-    remove: oc.input(Schema.toStandardSchemaV1(PathInput)),
-    /** Puts a removed project back (undo). */
-    restore: oc.input(Schema.toStandardSchemaV1(RecentEntryInput)),
-  },
-  files: {
-    /** Shows a project file or an exported folder in Finder / Explorer. */
-    reveal: oc.input(Schema.toStandardSchemaV1(PathInput)),
-  },
-  youtube: {
-    /** Reads a video's details and thumbnail with yt-dlp, installing the download tools first if needed. */
-    inspect: oc.input(Schema.toStandardSchemaV1(VideoInput)).output(type<YoutubeVideo>()),
-    /** Album covers for the song from iTunes and MusicBrainz, best match first. */
-    findCovers: oc.input(Schema.toStandardSchemaV1(SongSearchInput)).output(type<CoverCandidate[]>()),
-    /** Line-synced lyrics from LRCLIB for the version closest in length, or null. */
-    findLyrics: oc.input(Schema.toStandardSchemaV1(SongSearchInput)).output(type<FoundLyrics | null>()),
-    /** Downloads the song as the settings say into a new draft, reporting progress. */
-    download: oc
-      .input(Schema.toStandardSchemaV1(VideoInput))
-      .output(eventIterator(type<ImportProgress>(), type<DownloadedDraft>())),
-  },
-  /** A new project being set up, whatever its song came from. */
-  drafts: {
-    /** What Whisper hears in the draft's vocals, reporting progress. */
-    listen: oc
-      .input(Schema.toStandardSchemaV1(ListenInput))
-      .output(eventIterator(type<ImportProgress>(), type<HeardLyrics>())),
-    /**
-     * Makes the chart from the draft's vocals and these lyrics, reporting progress (the chart models download on first
-     * use), and keeps it for `drafts.create`.
-     */
-    makeChart: oc
-      .input(Schema.toStandardSchemaV1(DraftChartInput))
-      .output(eventIterator(type<ImportProgress>(), type<MadeChart>())),
-    /** Saves the draft as a new project with the user's choices, reporting progress, and opens it. */
-    create: oc
-      .input(Schema.toStandardSchemaV1(DraftProjectInput))
-      .output(eventIterator(type<ImportProgress>(), type<OpenedProject>())),
-    /** Throws a new project's draft away (the user cancelled). */
-    discard: oc.input(Schema.toStandardSchemaV1(DraftInput)),
-  },
-  settings: {
-    get: oc.output(type<Settings>()),
-    /** Saves all settings and returns them as stored. */
-    set: oc.input(Schema.toStandardSchemaV1(Settings)).output(type<Settings>()),
-  },
-  tools: {
-    /** What is installed of yt-dlp, QuickJS and FFmpeg. */
-    status: oc.output(type<ToolStatus[]>()),
-    /** Installs or updates the given tools as needed, reporting progress. */
-    prepare: oc
-      .input(Schema.toStandardSchemaV1(ToolsInput))
-      .output(eventIterator(type<ToolProgress>(), type<ToolStatus[]>())),
-    /** Deletes a tool to free the space (it is installed again when needed); then what is installed. */
-    remove: oc.input(Schema.toStandardSchemaV1(ToolInput)).output(type<ToolStatus[]>()),
-  },
-  models: {
-    /** Which models are downloaded. */
-    status: oc.output(type<ModelStatus>()),
-    /** How much of each feature's models is downloaded, for the settings screen. */
-    list: oc.output(type<ModelFeatureStatus[]>()),
-    /** Downloads a feature's missing models, reporting progress; then how every feature stands. */
-    download: oc
-      .input(Schema.toStandardSchemaV1(ModelFeatureInput))
-      .output(eventIterator(type<ImportProgress>(), type<ModelFeatureStatus[]>())),
-    /** Deletes a feature's models to free the space; then how every feature stands. */
-    remove: oc.input(Schema.toStandardSchemaV1(ModelFeatureInput)).output(type<ModelFeatureStatus[]>()),
-  },
-};
+/** A call that answers with `success`. */
+const call = <const Tag extends string, P extends Schema.Top, S extends Schema.Top>(tag: Tag, payload: P, success: S) =>
+  Rpc.make(tag, { payload, success, error: UserError });
 
-export type NativeContract = typeof contract;
+/** A call that answers with nothing. */
+const command = <const Tag extends string, P extends Schema.Top>(tag: Tag, payload: P) =>
+  Rpc.make(tag, { payload, error: UserError });
+
+/** A call without input. */
+const query = <const Tag extends string, S extends Schema.Top>(tag: Tag, success: S) =>
+  Rpc.make(tag, { success, error: UserError });
+
+/** A call that reports progress (`P`) on the way to its result. */
+const withProgress = <const Tag extends string, P extends Schema.Top, E extends Schema.Top, S extends Schema.Top>(
+  tag: Tag,
+  payload: P,
+  event: E,
+  result: S,
+) => Rpc.make(tag, { payload, success: progress(event, result), error: UserError, stream: true });
+
+const nullable = Schema.NullOr;
+
+export class NativeRpcs extends RpcGroup.make(
+  /** Forwards renderer warnings and errors to the log file. */
+  command("app.log", LogEntry),
+
+  /** Picks a song folder or chart to import. `null` when cancelled. */
+  query("dialogs.chooseSong", nullable(Schema.String)),
+  /** Picks a `.tunestudio` file to open. */
+  query("dialogs.chooseProject", nullable(Schema.String)),
+  /** Asks where to save a new project, suggesting `~/Music/Tune Studio/<name>.tunestudio`. */
+  call("dialogs.chooseProjectLocation", SaveLocationInput, nullable(Schema.String)),
+  /** Picks a JPEG or PNG for a cover, with a preview. `null` when cancelled. */
+  query("dialogs.chooseCoverImage", nullable(ChosenImage)),
+  /** Picks the folder an UltraStar export goes into. */
+  query("dialogs.chooseExportFolder", nullable(Schema.String)),
+
+  /** Reads a song folder (or chart) and reports what an import would bring in. */
+  call("song.inspect", SongInput, SongInspection),
+  /** Imports a song into a new project file, reporting progress, and opens it. */
+  withProgress("song.import", ImportInput, ImportProgress, OpenedProject),
+
+  call("project.open", PathInput, OpenedProject),
+  call("project.overview", ProjectInput, ProjectOverview),
+  command("project.close", ProjectInput),
+  /**
+   * What is sung in the project's vocals (stored, or worked out now, getting the pitch model first if needed),
+   * reporting progress; null without vocals.
+   */
+  withProgress("project.pitch", ProjectInput, ImportProgress, nullable(SungPitch)),
+  /** Writes one edit (or its undo) to the project in one transaction; fails, writing nothing, if it is out of step. */
+  command("project.applyChanges", ChartChangesInput),
+  /** The chart with its row ids, for the editor. */
+  call("project.chart", ProjectInput, EditorChart),
+  /** Writes the project as an UltraStar song folder. */
+  call("project.exportSong", ExportInput, ExportResult),
+  /**
+   * Makes the chart from the project's vocals, song and lyrics, replacing its notes, reporting progress (the chart
+   * models download on first use). Returns the updated overview.
+   */
+  withProgress("project.makeChart", ProjectInput, ImportProgress, ProjectOverview),
+
+  /** The recent projects, newest first; files that no longer exist are dropped. */
+  query("recents.list", Schema.Array(RecentProjectEntry)),
+  command("recents.remove", PathInput),
+  /** Puts a removed project back (undo). */
+  command("recents.restore", RecentEntryInput),
+
+  /** Shows a project file or an exported folder in Finder / Explorer. */
+  command("files.reveal", PathInput),
+
+  /** Reads a video's details and thumbnail with yt-dlp, installing the download tools first if needed. */
+  call("youtube.inspect", VideoInput, YoutubeVideo),
+  /** Album covers for the song from iTunes and MusicBrainz, best match first. */
+  call("youtube.findCovers", SongSearchInput, Schema.Array(CoverCandidate)),
+  /** Line-synced lyrics from LRCLIB for the version closest in length, or null. */
+  call("youtube.findLyrics", SongSearchInput, nullable(FoundLyrics)),
+  /** Downloads the song as the settings say into a new draft, reporting progress. */
+  withProgress("youtube.download", VideoInput, ImportProgress, DownloadedDraft),
+
+  /** What Whisper hears in the draft's vocals, reporting progress. */
+  withProgress("drafts.listen", ListenInput, ImportProgress, HeardLyrics),
+  /**
+   * Makes the chart from the draft's vocals and these lyrics, reporting progress (the chart models download on first
+   * use), and keeps it for `drafts.create`.
+   */
+  withProgress("drafts.makeChart", DraftChartInput, ImportProgress, MadeChart),
+  /** Saves the draft as a new project with the user's choices, reporting progress, and opens it. */
+  withProgress("drafts.create", DraftProjectInput, ImportProgress, OpenedProject),
+  /** Throws a new project's draft away (the user cancelled). */
+  command("drafts.discard", DraftInput),
+
+  query("settings.get", Settings),
+  /** Saves all settings and returns them as stored. */
+  call("settings.set", Settings, Settings),
+
+  /** What is installed of yt-dlp, QuickJS and FFmpeg. */
+  query("tools.status", Schema.Array(ToolStatus)),
+  /** Installs or updates the given tools as needed, reporting progress. */
+  withProgress("tools.prepare", ToolsInput, ToolProgress, Schema.Array(ToolStatus)),
+  /** Deletes a tool to free the space (it is installed again when needed); then what is installed. */
+  call("tools.remove", ToolInput, Schema.Array(ToolStatus)),
+
+  /** Which models are downloaded. */
+  query("models.status", ModelStatus),
+  /** How much of each feature's models is downloaded, for the settings screen. */
+  query("models.list", Schema.Array(ModelFeatureStatus)),
+  /** Downloads a feature's missing models, reporting progress; then how every feature stands. */
+  withProgress("models.download", ModelFeatureInput, ImportProgress, Schema.Array(ModelFeatureStatus)),
+  /** Deletes a feature's models to free the space; then how every feature stands. */
+  call("models.remove", ModelFeatureInput, Schema.Array(ModelFeatureStatus)),
+) {}

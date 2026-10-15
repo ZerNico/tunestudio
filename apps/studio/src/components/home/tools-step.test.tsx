@@ -1,8 +1,8 @@
-import { ORPCError } from "@orpc/client";
 import { render, screen } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { ToolDownloadFailed } from "~/lib/errors";
 import type { ToolProgress, ToolStatus } from "~/lib/native/types";
 
 import { ToolsStep } from "./tools-step";
@@ -10,7 +10,6 @@ import { ToolsStep } from "./tools-step";
 // The main process isn't there in jsdom: its client is the one thing replaced.
 const native = vi.hoisted(() => ({ tools: { prepare: vi.fn() } }));
 vi.mock("~/lib/native/client", () => ({ native }));
-vi.mock("~/lib/native/effect-client", () => ({ effectNative: native }));
 
 /** Yields `steps`, waiting for `gate` before finishing, so a test can look at the progress. */
 async function* progress(steps: ToolProgress[], gate: Promise<void>): AsyncGenerator<ToolProgress, ToolStatus[]> {
@@ -41,7 +40,7 @@ describe("ToolsStep", () => {
 
   it("explains a failure and tries again", async () => {
     native.tools.prepare.mockRejectedValueOnce(
-      new ORPCError("BAD_REQUEST", { message: "Couldn't check for yt-dlp: No connection." }),
+      new ToolDownloadFailed({ message: "Couldn't check for yt-dlp: No connection." }),
     );
     native.tools.prepare.mockResolvedValueOnce(progress([], Promise.resolve()));
     const onReady = vi.fn();

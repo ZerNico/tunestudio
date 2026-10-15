@@ -75,11 +75,15 @@ describe("line breaks", () => {
     expect(breaks).toEqual([
       { lineId: 10, singer: 1, time: expect.closeTo(3.1), auto: true, gapStart: expect.closeTo(2.1), gapEnd: 5 },
     ]);
-    const stored = structuredClone(chart);
-    stored.singers[0]!.lines[0]!.switchStart = 4;
-    expect(lineBreaks(stored)[0]).toMatchObject({ time: 4, auto: false });
+    const storing = (switchStart: number): EditorChart => ({
+      ...chart,
+      singers: chart.singers.map((singer, s) => ({
+        ...singer,
+        lines: singer.lines.map((line, l) => (s === 0 && l === 0 ? { ...line, switchStart } : line)),
+      })),
+    });
+    expect(lineBreaks(storing(4))[0]).toMatchObject({ time: 4, auto: false });
     // A stored switch outside the gap is drawn at its edge.
-    stored.singers[0]!.lines[0]!.switchStart = 9;
-    expect(lineBreaks(stored)[0]!.time).toBe(5);
+    expect(lineBreaks(storing(9))[0]!.time).toBe(5);
   });
 });

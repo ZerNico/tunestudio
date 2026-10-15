@@ -63,7 +63,7 @@ function Option(props: {
  * while searching.
  */
 export function CoverPicker(props: {
-  covers: CoverCandidate[] | null;
+  covers: readonly CoverCandidate[] | null;
   thumbnail: string | null;
   /** The image the user picked, offered as an option once there is one. */
   custom: ChosenImage | null;

@@ -6,7 +6,7 @@ import { Effect, FileSystem, Path } from "effect";
 
 import { CHART_STEPS, GETTING_CHART_MODELS, READING_SONG } from "../../src/lib/chart-steps";
 import type { ImportProgress } from "../../src/lib/native/types";
-import { ChartFailed } from "../errors";
+import { ChartFailed, mapFileError } from "../errors";
 import { CHART_MODELS, Models } from "../models/models";
 import { Native } from "../native/native";
 import { readChart, replaceChart } from "../project/chart";
@@ -67,7 +67,9 @@ export function chartFromFiles(
     const addon = yield* (yield* Native).addon;
 
     yield* onProgress({ step: READING_SONG, done: 0, total: 100, unit: "percent" });
-    const folder = yield* fs.makeTempDirectoryScoped({ prefix: "tunestudio-chart-" });
+    const folder = yield* fs
+      .makeTempDirectoryScoped({ prefix: "tunestudio-chart-" })
+      .pipe(mapFileError("a temporary folder", "create"));
     const vocals16k = yield* decodeMono(ffmpeg, source.vocalsFile, PITCH_SAMPLE_RATE, folder);
     const vocals44k = yield* decodeMono(ffmpeg, source.vocalsFile, GAME_SAMPLE_RATE, folder);
     const mix22k = yield* decodeMono(ffmpeg, source.audioFile, BEAT_SAMPLE_RATE, folder);
@@ -136,7 +138,9 @@ export function generateChart(session: ProjectSession, onProgress: (progress: Im
     if (!audio) return yield* new ChartFailed({ message: "The song has no audio." });
     if (!vocals) return yield* new ChartFailed({ message: "The song needs its vocals separated first." });
 
-    const folder = yield* fs.makeTempDirectoryScoped({ prefix: "tunestudio-media-" });
+    const folder = yield* fs
+      .makeTempDirectoryScoped({ prefix: "tunestudio-media-" })
+      .pipe(mapFileError("a temporary folder", "create"));
     const extension = (fileName: string) => paths.extname(fileName) || ".audio";
     const vocalsFile = paths.join(folder, `vocals${extension(vocals.fileName)}`);
     const audioFile = paths.join(folder, `song${extension(audio.fileName)}`);

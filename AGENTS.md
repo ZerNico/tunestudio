@@ -3,7 +3,7 @@
 ## Project Snapshot
 
 - **Monorepo** (Bun workspaces + Turborepo): a desktop UltraStar chart editor in the TunePerfect family
-- **Stack**: TypeScript, Electron, Solid 2, base-ui-solid, Tailwind CSS v4, TanStack Router, oRPC
+- **Stack**: TypeScript, Electron, Solid 2, base-ui-solid, Tailwind CSS v4, TanStack Router, Effect RPC
 - **Linter/Formatter**: Oxc (`oxlint.config.ts`, `.oxfmtrc.json`)
 - Sub-packages have their own `AGENTS.md`; always check the nearest one first
 
@@ -25,9 +25,9 @@ bun run test:e2e     # build, then the Playwright Electron end-to-end tests
   instead of `classList`, lowercase attributes (`tabindex`), ARIA booleans as strings. Read
   `node_modules/solid-js/CHEATSHEET.md` when unsure
 - **Formatting**: Oxfmt, 2-space indent, 120 line width, LF endings, sorted imports and Tailwind classes
-- **Effect 4**: main-process services and domain logic run as Effects; **Effect Schema** validates RPC inputs,
+- **Effect 4**: main-process services and domain logic run as Effects; **Effect Schema** validates RPC inputs and outputs,
   route search params and everything persisted (see `apps/studio/AGENTS.md`)
-- **RPC**: oRPC between the renderer and Electron's main process
+- **RPC**: Effect RPC (`effect/rpc`) between the renderer and Electron's main process, over a MessagePort
 - **Routing**: TanStack Router (Solid) with file-based routes
 - **Styling**: Tailwind CSS v4 with `class-variance-authority` for variants; colours only from theme tokens
 - **UI primitives**: base-ui-solid (maintained by the repo owner: report bugs with a minimal repro, don't hide them)
@@ -67,7 +67,7 @@ bun run test:e2e     # build, then the Playwright Electron end-to-end tests
 ```bash
 rg -n "createFileRoute" apps/*/src/routes      # find routes
 rg -n "export function" apps/studio/src/components/ui   # find UI primitives
-rg -n "\.handler\(" apps/studio/electron/rpc   # find RPC implementations
+rg -n '^  "[a-z]+\.[a-zA-Z]+":' apps/studio/electron/rpc/procedures.ts   # find RPC handlers
 ```
 
 ## Definition of Done

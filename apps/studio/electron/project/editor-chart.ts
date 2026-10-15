@@ -2,7 +2,7 @@
 import { asc } from "drizzle-orm";
 import { Effect } from "effect";
 
-import type { EditorChart, EditorLine, EditorSinger } from "../../src/lib/native/types";
+import type { EditorChart, EditorLine, EditorNote, EditorSinger } from "../../src/lib/native/types";
 import { ProjectDamaged } from "../errors";
 import type { Queryable } from "./database";
 import { lines, notes, singers, song } from "./schema";
@@ -20,10 +20,10 @@ export function readEditorChart(db: Queryable): Effect.Effect<EditorChart, Proje
       .pipe(Effect.orDie);
     const noteRows = yield* db.select().from(notes).orderBy(asc(notes.lineId), asc(notes.position)).pipe(Effect.orDie);
 
-    const linesById = new Map<number, EditorLine>();
+    const linesById = new Map<number, EditorLine & { notes: EditorNote[] }>();
     const bySinger = new Map<number, EditorLine[]>();
     for (const row of lineRows) {
-      const line: EditorLine = { id: row.id, switchStart: row.switchStart, switchEnd: row.switchEnd, notes: [] };
+      const line = { id: row.id, switchStart: row.switchStart, switchEnd: row.switchEnd, notes: [] as EditorNote[] };
       linesById.set(row.id, line);
       bySinger.set(row.singerId, [...(bySinger.get(row.singerId) ?? []), line]);
     }

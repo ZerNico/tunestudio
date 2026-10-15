@@ -13,7 +13,6 @@ const native = vi.hoisted(() => ({
   settings: { get: vi.fn() },
 }));
 vi.mock("~/lib/native/client", () => ({ native }));
-vi.mock("~/lib/native/effect-client", () => ({ effectNative: native }));
 
 /** Tools that are prepared once `gate` resolves. */
 async function* tools(gate: Promise<void>): AsyncGenerator<ToolProgress, ToolStatus[]> {

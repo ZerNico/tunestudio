@@ -4,7 +4,7 @@
 
 - **`@tunestudio/studio`**: the Tune Studio desktop app ("Tune Studio", `org.tuneperfect.studio`)
 - **Renderer**: Solid 2, TanStack Router, base-ui-solid + shadcn-style components, Tailwind CSS v4
-- **Main process**: Electron (`electron/`), talks to the renderer over a typed oRPC contract on a MessagePort
+- **Main process**: Electron (`electron/`), talks to the renderer over Effect RPC (a schema contract) on a MessagePort
 
 ## Setup & Run
 
@@ -40,7 +40,7 @@ src/
 │   ├── brand-mark.tsx    # The Tune Studio mark
 │   └── title-bar.tsx     # App-drawn title bar (the window has no native one)
 ├── lib/
-│   ├── native/           # oRPC contract, MessagePort channel name, typed client
+│   ├── native/           # RPC contract and output schemas, MessagePort channel name, client
 │   ├── recent-projects/  # Recent projects loader; fixtures.ts is PLACEHOLDER data
 │   ├── desktop.ts        # platform + version, provided synchronously by the preload
 │   ├── import-files.ts   # Classifies picked/dropped files and folders (names only, nothing is read)
@@ -54,7 +54,7 @@ electron/
 ├── main.ts               # App lifecycle, window, permissions, navigation rules
 ├── preload.ts            # Hands the renderer's MessagePort to main; exposes platform + version
 ├── protocols/            # app:// scheme serving dist/ with the CSP; originOf()
-├── rpc/                  # Contract implementation (procedures.ts) and the MessagePort listener
+├── rpc/                  # Handlers (procedures.ts), server and MessagePort protocol, the connection listener
 ├── csp.ts                # Content Security Policy (also applied to the dev server's pages)
 ├── dev-reload.ts         # Dev-only: reload windows when only the preload was rebuilt
 ├── identity.ts           # Product name, app ID, window background
@@ -100,8 +100,19 @@ resources/icons/          # App icon (icon.svg is the source of icon.png)
 
 ### Main process
 
-- The renderer reaches main only through `native` from `~/lib/native/client`. Adding a call: extend
-  `src/lib/native/contract.ts`, implement it in `electron/rpc/procedures.ts`
+- The renderer reaches main only through `native` from `~/lib/native/client`. Adding a call: add an `Rpc` to
+  `NativeRpcs` in `src/lib/native/contract.ts` (`call`, `command`, `query`, or `withProgress` for a call that reports
+  progress; outputs are schemas in `types.ts`) and its handler to `nativeHandlers` in `electron/rpc/procedures.ts`.
+  `native.<group>.<name>` appears by itself, named after the tag (`"project.open"`)
+- Calls are Effect RPC over the MessagePort (`electron/rpc/port-protocol.ts` in main, `portProtocol` in `client.ts`),
+  values encoded as for JSON (nothing is transferred: Electron's MessagePortMain only transfers ports). The facade
+  keeps Effect out of components: a call returns a promise; one with progress returns a promise of an iterator that
+  yields the progress and returns the result. Both take `{ signal }`; aborting interrupts the work in main and rejects
+  with an AbortError (`isAbort`). Progress calls are streams of `Progress` events and one `Done` (`progressStream` in
+  main); the client reads on to the end after `Done`, so a result main finished but the renderer never read goes to
+  `onUndelivered` (a download is discarded)
+- Dialogs belong to the calling window: handlers get it with `windowOf(client)` (the `Callers` service, by the
+  connection's client id)
 - Only the app's own top-level frame on the app origin may open an RPC connection (`electron/rpc/index.ts`)
 - Renderers are sandboxed with context isolation; permissions are denied except clipboard writes; the window never
   navigates away from the app origin and never opens new windows (https links go to the browser)
@@ -114,11 +125,13 @@ resources/icons/          # App icon (icon.svg is the source of icon.png)
   layers from `Layer.succeed` / `Layer.effect`, use with `X.use((x) => ...)` or `yield* X`. Everything is provided once
   in `electron/runtime.ts` (`ManagedRuntime`, disposed on quit); Node's file system, path and child processes come
   from `NodeServices`, so use `FileSystem` / `Path` / `ChildProcessSpawner` instead of `node:fs` in services
-- Procedures call `runRpc(runtime, effect, signal)` (`electron/rpc/base.ts`): typed failures reach the renderer as
-  `BAD_REQUEST` with their message, so write that message for the user; defects stay internal; aborting a call
-  interrupts its Effect
+- Every call can fail with the user-facing errors (`UserError`, the classes in `src/lib/errors.ts`, shared with the
+  renderer, which gets them as those classes): write their message for the user. A handler failing with anything
+  else doesn't type-check (map file system errors with `mapFileError`). Defects (bugs, answers that don't fit
+  their schema) are written to the log with their stack by the server's error reporter (`electron/rpc/server.ts`) and
+  reach the renderer as a generic message (`errorMessage`)
 - Errors users can act on are `Schema.TaggedError` classes with a `message`; bugs are defects (`Effect.die`, thrown)
-- **Effect Schema** replaces Valibot: RPC inputs (`Schema.toStandardSchemaV1(...)` in `src/lib/native/contract.ts`),
+- **Effect Schema** replaces Valibot: RPC inputs and outputs (`src/lib/native/contract.ts`, `types.ts`),
   route search params, and every format we persist
 - The UI stays plain Solid: components and stores don't import `Effect`; they get promises from `native` (Schema is
   fine in the renderer for validation)
@@ -152,7 +165,7 @@ resources/icons/          # App icon (icon.svg is the source of icon.png)
 
 ### New projects (`src/components/new-project/`, `electron/drafts/`)
 
-- A new project goes through stages (`Stage`, run by `createFlow`/`FlowView` in `flow-runner.tsx`): each has a header tag, a body, a primary button and maybe a job run on it (download, chart, save) whose progress the body shows. Back stops a running job (the stage stays), else goes back a stage; there is no Stop button. Saving can't be stopped (`stoppable: false`). A download that finishes as it is cancelled is discarded by main (`withProgress`'s `onUndelivered`). The dialog's Cancel and close stop it too. What the stages collect lives in `createNewProject()` (`new-project.ts`): details, cover, language, lyrics, the draft and the made chart. A source brings its own first stage (`youtubeSongStage`; an audio file import gets its own later) and shares Lyrics, Chart and Finish (`stages.tsx`).
+- A new project goes through stages (`Stage`, run by `createFlow`/`FlowView` in `flow-runner.tsx`): each has a header tag, a body, a primary button and maybe a job run on it (download, chart, save) whose progress the body shows. Back stops a running job (the stage stays), else goes back a stage; there is no Stop button. Saving can't be stopped (`stoppable: false`). A download that finishes as it is cancelled is discarded by main (`progressStream`'s `onUndelivered`). The dialog's Cancel and close stop it too. What the stages collect lives in `createNewProject()` (`new-project.ts`): details, cover, language, lyrics, the draft and the made chart. A source brings its own first stage (`youtubeSongStage`; an audio file import gets its own later) and shares Lyrics, Chart and Finish (`stages.tsx`).
 - Language: chosen on the first stage ("Sung in", `LanguageSelect`) and carried through: offered from the source (YouTube's `language`, else its one `-orig` automatic captions, `videoLanguage`), else the last new project's (`settings.newProject.language`, saved by `drafts.create`), else "Don't know", which falls back to what Whisper heard or `guessLyricsLanguage`. Listening listens in it; heard or found lyrics that seem to be in another language get a warning (`languageMismatch`, with "Listen again in …" for heard ones). Codes are ISO 639-1 in the renderer and RPCs (`src/lib/languages.ts`); projects store the English name.
 - Chart stage: "Make the chart now" or "Leave it empty"; **Next** makes it (`drafts.makeChart`, `makeDraftChart`: `chartFromFiles` on the draft's files with placeholder details) and keeps it in the draft with `chartInputsKey(lines, language)`. Going back and on again doesn't remake it unless the lyrics or language changed. A chart that fails says why; the user can leave it empty instead.
 - Finish stage: a summary of what the project gets (Back leads to where each was chosen), and **Create project…**: save dialog, then `drafts.create` (`createDraftProject`) writes the draft into the project (the made chart with the chosen details, or an empty one; the language, lyrics, audio, vocals, instrumental, video, cover; source from the draft, the stems `generated`). `chart: "made"` must match the draft's chart key, else `ChartOutdated`. Cancelling the save dialog stays on Finish.
@@ -248,6 +261,9 @@ resources/icons/          # App icon (icon.svg is the source of icon.png)
   cover it without a DOM; a test that needs a timeout or sleep to pass is wrong
 - Effects are tested with `@effect/vitest` (`it.effect`), providing test layers for services
   (`Layer.succeed(AppLog, ...)`) instead of mocking; see `electron/rpc/procedures.test.ts`
+- RPC handlers are tested through the renderer's real client over a Node MessageChannel (`connectClient` in
+  `electron/rpc/test-client.ts`), so encoding, errors and cancelling are covered; component tests mock
+  `~/lib/native/client` instead
 - Playwright e2e (`e2e/*.spec.ts`) drives the built Electron app; keep it to smoke flows that need the real shell
 - E2e and `bun run shots` launch the app with `TUNESTUDIO_BACKGROUND=1`: the window is never shown and never takes
   focus (no Dock icon), pages still render for screenshots. `TUNESTUDIO_E2E_SHOW=1` shows it when debugging. Take

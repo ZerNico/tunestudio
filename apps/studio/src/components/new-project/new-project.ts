@@ -47,7 +47,7 @@ export function createNewProject() {
   /** Which models are downloaded, checked when the song is downloaded. */
   const [models, setModels] = createSignal<ModelStatus | null>(null);
   /** Found covers, or null while searching. */
-  const [covers, setCovers] = createSignal<CoverCandidate[] | null>(null);
+  const [covers, setCovers] = createSignal<readonly CoverCandidate[] | null>(null);
   /** The chosen cover: the source's own picture until the user picks another. */
   const [cover, setCover] = createSignal<CoverSelection>({ kind: "thumbnail" });
   /** An image the user picked from their files. */
@@ -96,7 +96,7 @@ export function createNewProject() {
     setCovers(null);
     const results = await native.youtube
       .findCovers({ artist: song.artist.trim(), title: song.title.trim(), duration: song.duration })
-      .catch((): CoverCandidate[] => []);
+      .catch((): readonly CoverCandidate[] => []);
     if (search !== coverSearch) return;
     setCovers(results);
     // The source's picture stays chosen until the user picks a cover; a picked one that a new search no longer

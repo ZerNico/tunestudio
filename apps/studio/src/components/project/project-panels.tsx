@@ -210,7 +210,7 @@ function MediaRow(props: { media: ProjectMedia }) {
 }
 
 /** The project's media files: role, original name, size and length. */
-export function MediaList(props: { media: ProjectMedia[] }) {
+export function MediaList(props: { media: readonly ProjectMedia[] }) {
   return (
     <Show
       when={props.media.length > 0}
@@ -227,7 +227,7 @@ export function MediaList(props: { media: ProjectMedia[] }) {
 }
 
 /** What importing the song reported, kept with the project. */
-export function ImportNotes(props: { warnings: string[] }) {
+export function ImportNotes(props: { warnings: readonly string[] }) {
   return (
     <ul
       class="m-0 flex list-none flex-col gap-2 p-0 text-[11.5px] leading-[1.6] text-amber-73"
@@ -246,7 +246,7 @@ export function ImportNotes(props: { warnings: string[] }) {
 }
 
 /** The song's lyrics, line by line, with each line's start when they are synced. */
-export function LyricsList(props: { lines: LyricsLine[] }) {
+export function LyricsList(props: { lines: readonly LyricsLine[] }) {
   return (
     <ol
       aria-label="Lyrics"

@@ -13,7 +13,6 @@ import { toast } from "~/components/ui/toast";
 import { formatFileSize, formatRelativeTime } from "~/lib/format";
 import { MODEL_FEATURE_INFO, type ModelFeature } from "~/lib/models";
 import { native } from "~/lib/native/client";
-import { effectNative } from "~/lib/native/effect-client";
 import { errorMessage, isAbort } from "~/lib/native/errors";
 import type { ImportProgress, ModelFeatureStatus, ToolName, ToolProgress, ToolStatus } from "~/lib/native/types";
 import {
@@ -254,7 +253,7 @@ function ChoiceRow<V extends string | number>(props: {
 }
 
 /** What is installed of the download tools, with a way to check for updates now. */
-function ToolsSection(props: { initial: ToolStatus[] }) {
+function ToolsSection(props: { initial: readonly ToolStatus[] }) {
   const [status, setStatus] = createSignal<readonly ToolStatus[]>(props.initial);
   const [progress, setProgress] = createSignal<ToolProgress | null>(null);
   const [checking, setChecking] = createSignal(false);
@@ -282,7 +281,7 @@ function ToolsSection(props: { initial: ToolStatus[] }) {
     setChecking(true);
     setProgress(null);
     try {
-      const iterator = await effectNative.tools.prepare(
+      const iterator = await native.tools.prepare(
         { tools: TOOLS.map((entry) => entry.tool), force: true },
         { signal: controller.signal },
       );
@@ -390,8 +389,8 @@ export function describeModels(status: ModelFeatureStatus): { state: string; det
  * The models, by what they are for: whether they are downloaded, where they come from and under which license, with
  * a way to download them ahead of time or remove them to free the space.
  */
-function ModelsSection(props: { initial: ModelFeatureStatus[] }) {
-  const [status, setStatus] = createSignal(props.initial);
+function ModelsSection(props: { initial: readonly ModelFeatureStatus[] }) {
+  const [status, setStatus] = createSignal<readonly ModelFeatureStatus[]>(props.initial);
   /** The feature being downloaded or removed, and how far a download is. */
   const [busy, setBusy] = createSignal<{ feature: ModelFeature; progress: ImportProgress | null } | null>(null);
   let controller: AbortController | undefined;

@@ -3,7 +3,7 @@ import LoaderCircleIcon from "~icons/lucide/loader-circle";
 
 import { Button } from "~/components/ui/button";
 import { formatFileSize } from "~/lib/format";
-import { effectNative } from "~/lib/native/effect-client";
+import { native } from "~/lib/native/client";
 import { errorMessage, isAbort } from "~/lib/native/errors";
 import type { ToolName, ToolProgress } from "~/lib/native/types";
 
@@ -53,7 +53,7 @@ export function ToolsStep(props: { onReady?: () => void }) {
     setState({ step: "preparing", progress: null });
     const timer = setTimeout(() => setSlow(true), SHOW_AFTER_MS);
     try {
-      const iterator = await effectNative.tools.prepare({ tools: YOUTUBE_TOOLS }, { signal: current.signal });
+      const iterator = await native.tools.prepare({ tools: YOUTUBE_TOOLS }, { signal: current.signal });
       for (;;) {
         const next = await iterator.next();
         if (next.done) break;

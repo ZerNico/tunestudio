@@ -1,10 +1,10 @@
-import { ORPCError } from "@orpc/client";
 import { cleanup, render, screen, within } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Dialog, DialogContent } from "~/components/ui/dialog";
 import { chartInputsKey } from "~/lib/chart-inputs";
+import { ChartFailed, DiskFull, ListeningFailed, LyricsUnavailable, VideoUnavailable } from "~/lib/errors";
 import type {
   CoverCandidate,
   DownloadedDraft,
@@ -37,7 +37,6 @@ const native = vi.hoisted(() => ({
   dialogs: { chooseProjectLocation: vi.fn(), chooseCoverImage: vi.fn() },
 }));
 vi.mock("~/lib/native/client", () => ({ native }));
-vi.mock("~/lib/native/effect-client", () => ({ effectNative: native }));
 
 const VIDEO: YoutubeVideo = {
   videoId: "dQw4w9WgXcQ",
@@ -197,9 +196,7 @@ describe("song stage", () => {
 
   it("explains a video that can't be used, and looks again on request", async () => {
     native.youtube.inspect
-      .mockRejectedValueOnce(
-        new ORPCError("BAD_REQUEST", { message: "This video is private, so it can't be downloaded." }),
-      )
+      .mockRejectedValueOnce(new VideoUnavailable({ message: "This video is private, so it can't be downloaded." }))
       .mockResolvedValueOnce(VIDEO);
     const { user } = setup();
     expect(await screen.findByTestId("youtube-error")).toHaveTextContent(
@@ -270,7 +267,7 @@ describe("downloading on the song stage", () => {
 
   it("explains a failed download and tries again", async () => {
     native.youtube.download
-      .mockRejectedValueOnce(new ORPCError("BAD_REQUEST", { message: "Couldn't reach YouTube." }))
+      .mockRejectedValueOnce(new VideoUnavailable({ message: "Couldn't reach YouTube." }))
       .mockImplementationOnce(async () => steps([], DRAFT));
     const { user } = setup();
     await vi.waitFor(() => expect(screen.getByTestId("flow-next")).toBeEnabled());
@@ -548,7 +545,7 @@ describe("lyrics stage and saving", () => {
 
   it("says when listening failed, offers to try again, and lets the user write their own", async () => {
     native.drafts.listen
-      .mockRejectedValueOnce(new ORPCError("BAD_REQUEST", { message: "Couldn't listen to the song: out of memory" }))
+      .mockRejectedValueOnce(new ListeningFailed({ message: "Couldn't listen to the song: out of memory" }))
       .mockImplementationOnce(async () => steps([], HEARD));
     const { user } = setup();
     await toLyrics(user);
@@ -561,7 +558,7 @@ describe("lyrics stage and saving", () => {
 
   it("says when the lyrics service can't be reached, and looks again on request", async () => {
     native.youtube.findLyrics
-      .mockRejectedValueOnce(new ORPCError("BAD_REQUEST", { message: "LRCLIB can't be reached right now." }))
+      .mockRejectedValueOnce(new LyricsUnavailable({ message: "LRCLIB can't be reached right now." }))
       .mockResolvedValueOnce(LYRICS);
     const { user } = setup();
     await toLyrics(user);
@@ -637,7 +634,7 @@ describe("lyrics stage and saving", () => {
     native.youtube.findLyrics.mockResolvedValue(LYRICS);
     native.drafts.listen
       .mockImplementationOnce(async () => steps([], HEARD))
-      .mockRejectedValueOnce(new ORPCError("BAD_REQUEST", { message: "Couldn't listen to the song: busy" }))
+      .mockRejectedValueOnce(new ListeningFailed({ message: "Couldn't listen to the song: busy" }))
       .mockImplementationOnce(async () => steps([], { ...HEARD, mixed: true }));
     const { user } = setup();
     await toLyrics(user);
@@ -881,7 +878,7 @@ describe("chart and finish stages", () => {
   it("says why the chart couldn't be made, and can go on without it", async () => {
     native.youtube.findLyrics.mockResolvedValue(LYRICS);
     native.drafts.makeChart.mockRejectedValue(
-      new ORPCError("BAD_REQUEST", { message: "The lyrics couldn't be matched to the vocals." }),
+      new ChartFailed({ message: "The lyrics couldn't be matched to the vocals." }),
     );
     const { user, onOpened } = setup();
     await toLyrics(user);
@@ -973,7 +970,7 @@ describe("chart and finish stages", () => {
 
   it("says why saving failed, and stays on the summary to try again", async () => {
     native.drafts.create.mockRejectedValueOnce(
-      new ORPCError("BAD_REQUEST", { message: "There isn't enough free disk space to save the project." }),
+      new DiskFull({ message: "There isn't enough free disk space to save the project." }),
     );
     const { user, onOpened } = setup();
     await toLyrics(user);

@@ -2,7 +2,6 @@ import { contextBridge, ipcRenderer, webUtils } from "electron";
 
 import {
   EDIT_COMMAND_CHANNEL,
-  EFFECT_RPC_CONNECT_CHANNEL,
   type EditCommand,
   GRANT_PATH_CHANNEL,
   RPC_CONNECT_CHANNEL,
@@ -13,10 +12,9 @@ import {
 // window message and hands it to the main process. Only messages the page posts to its own
 // window count.
 window.addEventListener("message", (event) => {
-  if (event.source !== window || (event.data !== RPC_CONNECT_CHANNEL && event.data !== EFFECT_RPC_CONNECT_CHANNEL))
-    return;
+  if (event.source !== window || event.data !== RPC_CONNECT_CHANNEL) return;
   const [port] = event.ports;
-  if (port) ipcRenderer.postMessage(event.data, null, [port]);
+  if (port) ipcRenderer.postMessage(RPC_CONNECT_CHANNEL, null, [port]);
 });
 
 function argument(name: string): string {

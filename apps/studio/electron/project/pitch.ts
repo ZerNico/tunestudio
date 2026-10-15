@@ -9,7 +9,7 @@ import { Effect, FileSystem, Path } from "effect";
 import type { ImportProgress, SungPitch } from "../../src/lib/native/types";
 import { decodeMono } from "../charting/audio";
 import { type FullPitchTrack, HOP_SECONDS, PITCH_SAMPLE_RATE, pitchTrack } from "../charting/pitch-track";
-import { ChartFailed } from "../errors";
+import { ChartFailed, mapFileError } from "../errors";
 import { Models } from "../models/models";
 import { Native } from "../native/native";
 import { Tools } from "../tools/tools";
@@ -109,7 +109,9 @@ export function sungPitch(
     );
     yield* onProgress({ step: FOLLOWING_THE_MELODY, done: 0, total: 0 });
     const addon = yield* (yield* Native).addon;
-    const folder = yield* fs.makeTempDirectoryScoped({ prefix: "tunestudio-pitch-" });
+    const folder = yield* fs
+      .makeTempDirectoryScoped({ prefix: "tunestudio-pitch-" })
+      .pipe(mapFileError("a temporary folder", "create"));
     const file = paths.join(folder, `vocals${paths.extname(vocals.fileName) || ".audio"}`);
     yield* writeMediaToFile(db, vocals, file);
     const samples = yield* decodeMono(ffmpeg, file, PITCH_SAMPLE_RATE, folder);
