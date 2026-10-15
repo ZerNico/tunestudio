@@ -51,3 +51,18 @@ test("the download tools show what is installed; checking offline explains the f
   await expect(page.getByText("Couldn't update the download tools")).toBeVisible();
   await expect(page.getByTestId("tools-check")).toBeEnabled();
 });
+
+test("the models show what is downloaded; downloading offline explains the failure", async () => {
+  const { page } = studio;
+  await page.getByTestId("rail-settings").click();
+  await expect(page.getByTestId("models-chart-status")).toContainText("Not downloaded");
+  await expect(page.getByTestId("models-chart")).toContainText("CC BY-NC-SA 4.0");
+  await expect(page.getByTestId("models-chart")).toContainText("v1.0.3");
+  // Nothing installed, so nothing to remove.
+  await expect(page.getByTestId("tool-yt-dlp-remove")).toHaveCount(0);
+  await expect(page.getByTestId("models-chart-remove")).toHaveCount(0);
+  await page.getByTestId("models-separation-download").click();
+  await expect(page.getByText("Couldn't download the models")).toBeVisible();
+  await expect(page.getByTestId("models-separation-download")).toBeEnabled();
+  expect(studio.problems).toEqual([]);
+});

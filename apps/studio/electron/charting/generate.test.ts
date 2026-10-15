@@ -1,0 +1,111 @@
+import fs from "node:fs";
+import path from "node:path";
+
+import { NodeServices } from "@effect/platform-node";
+import { afterEach, describe, expect, it } from "@effect/vitest";
+import { Effect, Layer } from "effect";
+
+import { readChart } from "../project/chart";
+import { writeLyrics } from "../project/lyrics";
+import { listMedia } from "../project/media";
+import { projectsLayer } from "../project/projects";
+import { AppLog } from "../services/app-log";
+import { fakeModels, fakeNative, recordingDesktop, soloChart, syntheticBytes, tempDir, writeSong } from "../testing";
+import { Tools } from "../tools/tools";
+import { importSong, inspectSong } from "../ultrastar/song-import";
+import { chartLanguage, generateChart } from "./generate";
+
+let cleanups: (() => void)[] = [];
+afterEach(() => {
+  for (const cleanup of cleanups.toReversed()) cleanup();
+  cleanups = [];
+});
+
+/** An FFmpeg that "decodes" any file to five seconds of an A3 tone at the requested rate (raw f32le, last argument). */
+const FAKE_FFMPEG = `
+const fs = require("node:fs");
+const args = process.argv.slice(2);
+const rate = Number(args[args.indexOf("-ar") + 1]);
+const samples = new Float32Array(rate * 5).map((_, i) => 0.3 * Math.sin((2 * Math.PI * 220 * i) / rate));
+fs.writeFileSync(args.at(-1), Buffer.from(samples.buffer));
+`;
+
+function setup() {
+  const { dir, cleanup } = tempDir();
+  cleanups.push(cleanup);
+  fs.writeFileSync(path.join(dir, "ffmpeg.cjs"), FAKE_FFMPEG);
+  const ffmpeg = path.join(dir, "ffmpeg");
+  fs.writeFileSync(ffmpeg, `#!/bin/sh\nexec "${process.execPath}" "${path.join(dir, "ffmpeg.cjs")}" "$@"\n`, {
+    mode: 0o755,
+  });
+  const tools = Layer.succeed(Tools, {
+    folder: path.join(dir, "tools"),
+    status: Effect.succeed([]),
+    ensure: () => Effect.succeed({ "yt-dlp": {}, quickjs: {}, ffmpeg: { ffmpeg, ffprobe: ffmpeg } }),
+    remove: () => Effect.void,
+  });
+  const log = Layer.succeed(AppLog, { write: () => Effect.void });
+  const layer = Layer.mergeAll(
+    tools,
+    log,
+    recordingDesktop(path.join(dir, "Music")).layer,
+    projectsLayer("0.0.0-test"),
+    fakeNative,
+    fakeModels,
+  ).pipe(Layer.provideMerge(NodeServices.layer));
+  const song = writeSong(dir, "Night Signals", {
+    "song.txt": soloChart("#VOCALS:vocals.m4a").replace("#LANGUAGE:English, German", "#LANGUAGE:English"),
+    "Test Artist - Night Signals.mp3": syntheticBytes(4000),
+    "vocals.m4a": syntheticBytes(3000, 2),
+  });
+  return { dir, layer, song };
+}
+
+describe("generateChart", () => {
+  it.effect("makes the chart from the project's vocals and lyrics and replaces its notes", () => {
+    const { dir, layer, song } = setup();
+    return Effect.gen(function* () {
+      const session = yield* importSong(yield* inspectSong(song), {
+        includeVideo: false,
+        target: path.join(dir, "Night.tunestudio"),
+      });
+      const audio = (yield* listMedia(session.db)).find((row) => row.role === "audio")!;
+      yield* writeLyrics(session.db, audio, {
+        source: "lrclib",
+        lines: [
+          { start: 0.5, text: "Hello there" },
+          { start: 2.5, text: "my friend" },
+        ],
+      });
+      const steps: string[] = [];
+      yield* generateChart(session, (progress) => Effect.sync(() => void steps.push(progress.step)));
+      const chart = yield* readChart(session.db);
+      const notes = chart.singers.flatMap((singer) => singer.lines.flatMap((line) => line.notes));
+      expect(notes.map((note) => note.lyric).join("")).toContain("there");
+      // The fake beats are two a second: 120 BPM, written as UltraStar's 480.
+      expect(chart.song.bpm).toBe(480);
+      expect(steps).toContain("Timing the lyrics");
+      expect(steps.at(-1)).toBe("Finishing the chart");
+    }).pipe(Effect.provide(layer));
+  });
+
+  it.effect("says what's missing instead of starting", () => {
+    const { dir, layer, song } = setup();
+    return Effect.gen(function* () {
+      const session = yield* importSong(yield* inspectSong(song), {
+        includeVideo: false,
+        target: path.join(dir, "Night.tunestudio"),
+      });
+      const error = yield* Effect.flip(generateChart(session, () => Effect.void));
+      expect(error.message).toBe("The song has no lyrics yet. Add them first.");
+    }).pipe(Effect.provide(layer));
+  });
+
+  it("supports English and German so far", () => {
+    expect(chartLanguage(["German", "English"])).toEqual({ name: "german", code: "deu" });
+    expect(chartLanguage(["Korean (romanized)"])).toBe(
+      "Charts can't be made in Korean (romanized) yet, only in English and German.",
+    );
+    expect(chartLanguage([])).toBe("Set the song's language first.");
+  });
+});

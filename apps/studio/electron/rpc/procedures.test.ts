@@ -206,6 +206,33 @@ describe("withProgress", () => {
     await iterator.next();
     expect(seen?.aborted).toBe(true);
   });
+
+  it("hands over a result that finished after the call was cancelled", async () => {
+    const controller = new AbortController();
+    let finish!: (value: string) => void;
+    const undelivered: string[] = [];
+    const iterator = withProgress<number, string>(
+      () => new Promise((resolve) => (finish = resolve)),
+      controller.signal,
+      (result) => void undelivered.push(result),
+    );
+    const pending = iterator.next();
+    controller.abort();
+    finish("draft-1");
+    await pending;
+    expect(undelivered).toEqual(["draft-1"]);
+  });
+
+  it("doesn't hand over a result that was delivered", async () => {
+    const undelivered: string[] = [];
+    const iterator = withProgress<number, string>(
+      async () => "draft-1",
+      undefined,
+      (result) => void undelivered.push(result),
+    );
+    expect(await iterator.next()).toEqual({ done: true, value: "draft-1" });
+    expect(undelivered).toEqual([]);
+  });
 });
 
 describe("runRpc", () => {

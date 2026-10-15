@@ -34,7 +34,13 @@ export const VideoSettings = Schema.Struct({
   maxFps: Schema.Literals(VIDEO_FPS),
 });
 
-export const Settings = Schema.Struct({ audio: AudioSettings, video: VideoSettings });
+/** Remembered between new projects rather than set on the settings screen. */
+export const NewProjectSettings = Schema.Struct({
+  /** The language the last new project was sung in (ISO 639-1), offered first when YouTube doesn't say. */
+  language: Schema.NullOr(Schema.String),
+});
+
+export const Settings = Schema.Struct({ audio: AudioSettings, video: VideoSettings, newProject: NewProjectSettings });
 export type Settings = typeof Settings.Type;
 export type AudioFormat = Settings["audio"]["format"];
 export type AudioNormalization = Settings["audio"]["normalization"];
@@ -44,6 +50,7 @@ export type VideoFormat = Settings["video"]["format"];
 export const DEFAULT_SETTINGS: Settings = {
   audio: { format: "m4a", bitrate: 256, normalization: "off" },
   video: { download: true, format: "mp4", maxResolution: 1080, maxFps: 60 },
+  newProject: { language: null },
 };
 
 /**
@@ -77,6 +84,7 @@ export function settingsFrom(stored: unknown): Settings {
       maxResolution: pick("video", "maxResolution", video.maxResolution),
       maxFps: pick("video", "maxFps", video.maxFps),
     },
+    newProject: { language: pick("newProject", "language", NewProjectSettings.fields.language) },
   };
 }
 

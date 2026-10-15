@@ -1,6 +1,7 @@
 import { eventIterator, oc, type } from "@orpc/contract";
 import { Schema } from "effect";
 
+import { MODEL_FEATURES } from "../models";
 import { Settings } from "../settings";
 import type {
   ExportResult,
@@ -15,6 +16,8 @@ import type {
   DownloadedDraft,
   FoundLyrics,
   HeardLyrics,
+  MadeChart,
+  ModelFeatureStatus,
   ModelStatus,
   ToolStatus,
   YoutubeVideo,
@@ -118,8 +121,16 @@ export const ListenInput = Schema.Struct({
   mixed: Schema.Boolean,
 });
 
-export const YoutubeProjectInput = Schema.Struct({
-  /** The draft from `youtube.download`. */
+export const DraftChartInput = Schema.Struct({
+  draftId: Schema.String,
+  /** The lyrics the chart is made from. */
+  lines: ProjectLyrics.fields.lines,
+  /** The language they are sung in (ISO 639-1). */
+  language: Schema.String,
+});
+
+export const DraftProjectInput = Schema.Struct({
+  /** The draft the song was downloaded into. */
   draftId: Schema.String,
   artist: Schema.String,
   title: Schema.String,
@@ -127,9 +138,21 @@ export const YoutubeProjectInput = Schema.Struct({
   genre: Schema.NullOr(Schema.String),
   cover: CoverChoice,
   lyrics: Schema.NullOr(ProjectLyrics),
+  /** The language the song is sung in (ISO 639-1), or null when unknown. */
+  language: Schema.NullOr(Schema.String),
+  /**
+   * The chart `drafts.makeChart` made (it must have been made from these lyrics and this language), or an empty one
+   * to make later.
+   */
+  chart: Schema.Literals(["made", "empty"]),
   /** The `.tunestudio` file to write, from `dialogs.chooseProjectLocation`. */
   target: Schema.String,
 });
+export type DraftProjectInput = typeof DraftProjectInput.Type;
+
+export const ToolInput = Schema.Struct({ tool: Schema.Literals(["yt-dlp", "quickjs", "ffmpeg"]) });
+
+export const ModelFeatureInput = Schema.Struct({ feature: Schema.Literals(MODEL_FEATURES) });
 
 export const SongSearchInput = Schema.Struct({
   artist: Schema.String,
@@ -169,6 +192,13 @@ export const contract = {
     close: oc.input(Schema.toStandardSchemaV1(ProjectInput)),
     /** Writes the project as an UltraStar song folder. */
     exportSong: oc.input(Schema.toStandardSchemaV1(ExportInput)).output(type<ExportResult>()),
+    /**
+     * Makes the chart from the project's vocals, song and lyrics, replacing its notes, reporting progress (the chart
+     * models download on first use). Returns the updated overview.
+     */
+    makeChart: oc
+      .input(Schema.toStandardSchemaV1(ProjectInput))
+      .output(eventIterator(type<ImportProgress>(), type<ProjectOverview>())),
   },
   recents: {
     /** The recent projects, newest first; files that no longer exist are dropped. */
@@ -188,20 +218,28 @@ export const contract = {
     findCovers: oc.input(Schema.toStandardSchemaV1(SongSearchInput)).output(type<CoverCandidate[]>()),
     /** Line-synced lyrics from LRCLIB for the version closest in length, or null. */
     findLyrics: oc.input(Schema.toStandardSchemaV1(SongSearchInput)).output(type<FoundLyrics | null>()),
-    /** What Whisper hears in a downloaded draft's vocals, reporting progress. */
-    listen: oc
-      .input(Schema.toStandardSchemaV1(ListenInput))
-      .output(eventIterator(type<ImportProgress>(), type<HeardLyrics>())),
     /** Downloads the song as the settings say into a new draft, reporting progress. */
     download: oc
       .input(Schema.toStandardSchemaV1(VideoInput))
       .output(eventIterator(type<ImportProgress>(), type<DownloadedDraft>())),
-    /** Saves a downloaded draft as a new project with the user's choices, reporting progress, and opens it. */
-    create: oc
-      .input(Schema.toStandardSchemaV1(YoutubeProjectInput))
-      .output(eventIterator(type<ImportProgress>(), type<OpenedProject>())),
   },
+  /** A new project being set up, whatever its song came from. */
   drafts: {
+    /** What Whisper hears in the draft's vocals, reporting progress. */
+    listen: oc
+      .input(Schema.toStandardSchemaV1(ListenInput))
+      .output(eventIterator(type<ImportProgress>(), type<HeardLyrics>())),
+    /**
+     * Makes the chart from the draft's vocals and these lyrics, reporting progress (the chart models download on first
+     * use), and keeps it for `drafts.create`.
+     */
+    makeChart: oc
+      .input(Schema.toStandardSchemaV1(DraftChartInput))
+      .output(eventIterator(type<ImportProgress>(), type<MadeChart>())),
+    /** Saves the draft as a new project with the user's choices, reporting progress, and opens it. */
+    create: oc
+      .input(Schema.toStandardSchemaV1(DraftProjectInput))
+      .output(eventIterator(type<ImportProgress>(), type<OpenedProject>())),
     /** Throws a new project's draft away (the user cancelled). */
     discard: oc.input(Schema.toStandardSchemaV1(DraftInput)),
   },
@@ -217,10 +255,20 @@ export const contract = {
     prepare: oc
       .input(Schema.toStandardSchemaV1(ToolsInput))
       .output(eventIterator(type<ToolProgress>(), type<ToolStatus[]>())),
+    /** Deletes a tool to free the space (it is installed again when needed); then what is installed. */
+    remove: oc.input(Schema.toStandardSchemaV1(ToolInput)).output(type<ToolStatus[]>()),
   },
   models: {
     /** Which models are downloaded. */
     status: oc.output(type<ModelStatus>()),
+    /** How much of each feature's models is downloaded, for the settings screen. */
+    list: oc.output(type<ModelFeatureStatus[]>()),
+    /** Downloads a feature's missing models, reporting progress; then how every feature stands. */
+    download: oc
+      .input(Schema.toStandardSchemaV1(ModelFeatureInput))
+      .output(eventIterator(type<ImportProgress>(), type<ModelFeatureStatus[]>())),
+    /** Deletes a feature's models to free the space; then how every feature stands. */
+    remove: oc.input(Schema.toStandardSchemaV1(ModelFeatureInput)).output(type<ModelFeatureStatus[]>()),
   },
 };
 

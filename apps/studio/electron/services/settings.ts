@@ -8,8 +8,13 @@ import { type FileError, mapFileError } from "../errors";
 interface SettingsShape {
   /** The current settings; defaults for anything not set yet. */
   readonly get: Effect.Effect<Settings>;
-  /** Replaces the settings and returns them as stored. */
+  /**
+   * Replaces the settings the settings screen shows and returns them as stored. `newProject` is main's own (see
+   * `remember`): the screen's copy of it may be old, so it is kept as stored.
+   */
   readonly set: (settings: Settings) => Effect.Effect<Settings, FileError>;
+  /** Changes what is remembered between new projects. */
+  readonly remember: (change: Partial<Settings["newProject"]>) => Effect.Effect<Settings, FileError>;
 }
 
 /** The app settings (`src/lib/settings.ts`), stored in the app's data directory. */
@@ -49,10 +54,23 @@ export function settingsLayer(file: string) {
 
       return {
         get: lock.withPermits(1)(read),
-        set: (settings) => {
-          const cleaned = settingsFrom(settings);
-          return lock.withPermits(1)(Effect.as(write(cleaned), cleaned));
-        },
+        set: (settings) =>
+          lock.withPermits(1)(
+            Effect.gen(function* () {
+              const cleaned = { ...settingsFrom(settings), newProject: (yield* read).newProject };
+              yield* write(cleaned);
+              return cleaned;
+            }),
+          ),
+        remember: (change) =>
+          lock.withPermits(1)(
+            Effect.gen(function* () {
+              const stored = yield* read;
+              const cleaned = settingsFrom({ ...stored, newProject: { ...stored.newProject, ...change } });
+              yield* write(cleaned);
+              return cleaned;
+            }),
+          ),
       } satisfies SettingsShape;
     }),
   );

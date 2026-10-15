@@ -6,8 +6,10 @@ import { NodeServices } from "@effect/platform-node";
 import { afterEach, describe, expect, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
 
+import { chartInputsKey } from "../../src/lib/chart-inputs";
 import type { ImportProgress } from "../../src/lib/native/types";
 import { DEFAULT_SETTINGS, type Settings } from "../../src/lib/settings";
+import { createDraftProject, listenToDraft, makeDraftChart } from "../drafts/draft-project";
 import { projectOverview } from "../project/overview";
 import { Projects, projectsLayer } from "../project/projects";
 import { AppLog } from "../services/app-log";
@@ -17,8 +19,8 @@ import { fakeModels, fakeNative, recordingDesktop, tempDir } from "../testing";
 import { DownloadFailed, Downloads } from "../tools/downloads";
 import { Tools } from "../tools/tools";
 import { gainTags, parseLoudness } from "./loudness";
-import { downloadVideo, inspectVideo, videoFormat, youtubeError } from "./youtube";
-import { createYoutubeProject, downloadIntoDraft, listenToDraft } from "./youtube-project";
+import { downloadVideo, inspectVideo, videoFormat, videoLanguage, youtubeError } from "./youtube";
+import { downloadIntoDraft } from "./youtube-draft";
 
 let cleanups: (() => void)[] = [];
 afterEach(() => {
@@ -164,6 +166,7 @@ function fakeTools() {
           ffmpeg: { ffmpeg: tools.ffmpeg, ffprobe: tools.ffprobe },
         };
       }),
+    remove: () => Effect.void,
   });
   return { dir, layer, behave, calls, state };
 }
@@ -204,6 +207,17 @@ const ytDlpCalls = (calls: Call[]) => calls.filter((call) => call.tool === "yt-d
 const settings = (change: { audio?: Partial<Settings["audio"]>; video?: Partial<Settings["video"]> }): Settings => ({
   audio: { ...DEFAULT_SETTINGS.audio, ...change.audio },
   video: { ...DEFAULT_SETTINGS.video, ...change.video },
+  newProject: DEFAULT_SETTINGS.newProject,
+});
+
+describe("videoLanguage", () => {
+  it("is the language the uploader set, else the one the captions were heard in", () => {
+    expect(videoLanguage({ language: "en-US", automatic_captions: { "de-orig": [] } })).toBe("en");
+    expect(videoLanguage({ language: null, automatic_captions: { de: [], "de-orig": [], en: [] } })).toBe("de");
+    // Translated captions say nothing about the song.
+    expect(videoLanguage({ automatic_captions: { de: [], en: [] } })).toBeNull();
+    expect(videoLanguage({})).toBeNull();
+  });
 });
 
 describe("inspectVideo", () => {
@@ -222,6 +236,7 @@ describe("inspectVideo", () => {
         artist: "Rick Astley",
         songTitle: "Never Gonna Give You Up",
         year: null,
+        language: null,
       });
       const [args] = ytDlpCalls(calls());
       expect(args).toContain("--ignore-config");
@@ -450,7 +465,7 @@ describe("listenToDraft", () => {
   });
 });
 
-describe("createYoutubeProject", () => {
+describe("createDraftProject", () => {
   it.effect("writes the song details, an empty chart and the media into a new project", () => {
     const { layer, dir } = setup();
     const target = path.join(dir, "Rick Astley - Never Gonna Give You Up.tunestudio");
@@ -459,7 +474,7 @@ describe("createYoutubeProject", () => {
     return Effect.gen(function* () {
       yield* AppSettings.use((stored) => stored.set(settings({ video: { download: false } })));
       const { draftId } = yield* downloadIntoDraft("dQw4w9WgXcQ");
-      const session = yield* createYoutubeProject({
+      const session = yield* createDraftProject({
         draftId,
         artist: "Rick Astley",
         title: "Never Gonna Give You Up",
@@ -470,10 +485,12 @@ describe("createYoutubeProject", () => {
           source: "lrclib",
           lrclibId: 7,
           lines: [
-            { start: 19.32, text: "We're no strangers to love" },
-            { start: 23.21, text: "You know the rules and so do I" },
+            { start: 19.32, text: "We're out walking by the sea" },
+            { start: 23.21, text: "You hold the light and so do I" },
           ],
         },
+        language: "en",
+        chart: "empty",
         target,
       });
       const overview = yield* projectOverview(session);
@@ -483,14 +500,15 @@ describe("createYoutubeProject", () => {
         title: "Never Gonna Give You Up",
         year: 1987,
         genre: "Pop",
+        language: ["English"],
       });
       expect(overview.notes).toBe(0);
       expect(overview.lyrics).toEqual({
         source: "lrclib",
         synced: true,
         lines: [
-          { start: 19.32, text: "We're no strangers to love" },
-          { start: 23.21, text: "You know the rules and so do I" },
+          { start: 19.32, text: "We're out walking by the sea" },
+          { start: 23.21, text: "You hold the light and so do I" },
         ],
       });
       expect(overview.importedFrom).toBe("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
@@ -506,13 +524,131 @@ describe("createYoutubeProject", () => {
   });
 });
 
-describe("createYoutubeProject with a chosen cover", () => {
+describe("makeDraftChart", () => {
+  const lines = [{ start: null, text: "We're out walking by the sea" }];
+
+  it.effect("fails without keeping a chart when it can't be made", () => {
+    const { layer } = setup();
+    return Effect.gen(function* () {
+      yield* AppSettings.use((stored) => stored.set(settings({ video: { download: false } })));
+      const { draftId } = yield* downloadIntoDraft("dQw4w9WgXcQ");
+      yield* Drafts.use((drafts) => drafts.setChart(draftId, { chart: tinyChart(), madeFrom: "before" }));
+      // The fake FFmpeg "decodes" a few bytes: far too little song to chart.
+      const error = yield* Effect.flip(makeDraftChart({ draftId, lines, language: "en" }));
+      expect(error._tag).toBe("ChartFailed");
+      expect((yield* Drafts.use((drafts) => drafts.get(draftId))).chart).toBeNull();
+    }).pipe(Effect.provide(layer));
+  });
+
+  it.effect("doesn't try in a language charts can't be made in yet", () => {
+    const { layer } = setup();
+    return Effect.gen(function* () {
+      const { draftId } = yield* downloadIntoDraft("dQw4w9WgXcQ");
+      const error = yield* Effect.flip(
+        makeDraftChart({ draftId, lines: [{ start: null, text: "Bonjour" }], language: "fr" }),
+      );
+      expect(error).toMatchObject({
+        _tag: "ChartFailed",
+        message: "Charts can't be made in French yet, only in English and German.",
+      });
+    }).pipe(Effect.provide(layer));
+  });
+});
+
+describe("createDraftProject with a made chart", () => {
+  const lyrics = { source: "user" as const, lines: [{ start: null, text: "We're out walking by the sea" }] };
+  const create = (draftId: string, target: string, language = "en") =>
+    createDraftProject({
+      draftId,
+      artist: "Rick Astley",
+      title: "Never Gonna Give You Up",
+      year: 1987,
+      genre: null,
+      cover: { kind: "none" },
+      lyrics,
+      language,
+      chart: "made",
+      target,
+    });
+
+  it.effect("saves the chart made for the draft with the chosen song details", () => {
+    const { layer, dir } = setup();
+    return Effect.gen(function* () {
+      const { draftId } = yield* downloadIntoDraft("dQw4w9WgXcQ");
+      const madeFrom = chartInputsKey(lyrics.lines, "en");
+      yield* Drafts.use((drafts) => drafts.setChart(draftId, { chart: tinyChart(), madeFrom }));
+      const session = yield* create(draftId, path.join(dir, "song.tunestudio"));
+      const overview = yield* projectOverview(session);
+      yield* Projects.use((projects) => projects.close(session.id));
+      expect(overview.notes).toBe(2);
+      expect(overview.song).toMatchObject({
+        artist: "Rick Astley",
+        title: "Never Gonna Give You Up",
+        year: 1987,
+        language: ["English"],
+        bpm: 400,
+      });
+      // Offered first for the next new project.
+      expect((yield* AppSettings.use((stored) => stored.get)).newProject.language).toBe("en");
+    }).pipe(Effect.provide(layer));
+  });
+
+  it.effect("refuses a chart made from other lyrics or in another language, or none", () => {
+    const { layer, dir } = setup();
+    const target = path.join(dir, "song.tunestudio");
+    return Effect.gen(function* () {
+      const { draftId } = yield* downloadIntoDraft("dQw4w9WgXcQ");
+      expect((yield* Effect.flip(create(draftId, target)))._tag).toBe("ChartOutdated");
+      yield* Drafts.use((drafts) =>
+        drafts.setChart(draftId, { chart: tinyChart(), madeFrom: chartInputsKey(lyrics.lines, "en") }),
+      );
+      expect((yield* Effect.flip(create(draftId, target, "de")))._tag).toBe("ChartOutdated");
+      expect(fs.existsSync(target)).toBe(false);
+      // The draft is still there to try again.
+      expect((yield* Drafts.use((drafts) => drafts.get(draftId))).chart).not.toBeNull();
+    }).pipe(Effect.provide(layer));
+  });
+});
+
+/** A made chart with one line of two notes; its song details are placeholders. */
+function tinyChart() {
+  const note = (start: number, lyric: string) => ({ start, duration: 0.3, pitch: 5, lyric, type: "normal" as const });
+  return {
+    song: {
+      title: "",
+      artist: "",
+      language: [],
+      year: null,
+      genre: null,
+      edition: null,
+      creator: null,
+      bpm: 400,
+      gap: 1,
+      videoGap: null,
+      start: null,
+      end: null,
+      previewStart: null,
+      medleyStart: null,
+      medleyEnd: null,
+      extraHeaders: [],
+    },
+    singers: [
+      {
+        index: 1,
+        name: null,
+        lines: [{ switchStart: null, switchEnd: null, notes: [note(1, "We're "), note(1.5, "no")] }],
+      },
+    ],
+  };
+}
+
+describe("createDraftProject with a chosen cover", () => {
   it.effect("uses the video's thumbnail and says so when the chosen cover can't be downloaded", () => {
     const { layer, dir } = setup();
     return Effect.gen(function* () {
       yield* AppSettings.use((stored) => stored.set(settings({ video: { download: false } })));
       const { draftId } = yield* downloadIntoDraft("dQw4w9WgXcQ");
-      const session = yield* createYoutubeProject({
+      const session = yield* createDraftProject({
         draftId,
         artist: "Rick Astley",
         title: "Never Gonna Give You Up",
@@ -520,6 +656,8 @@ describe("createYoutubeProject with a chosen cover", () => {
         genre: null,
         cover: { kind: "found", url: "https://is1-ssl.mzstatic.com/image/thumb/album/1200x1200bb.jpg" },
         lyrics: null,
+        language: null,
+        chart: "empty",
         target: path.join(dir, "song.tunestudio"),
       });
       const overview = yield* projectOverview(session);
@@ -534,7 +672,7 @@ describe("createYoutubeProject with a chosen cover", () => {
   });
 });
 
-describe("createYoutubeProject with a cover from elsewhere", () => {
+describe("createDraftProject with a cover from elsewhere", () => {
   it.effect("only downloads covers from the cover catalogs", () => {
     const { layer, dir } = setup();
     const requested: string[] = [];
@@ -551,7 +689,7 @@ describe("createYoutubeProject with a cover from elsewhere", () => {
     return Effect.gen(function* () {
       yield* AppSettings.use((stored) => stored.set(settings({ video: { download: false } })));
       const { draftId } = yield* downloadIntoDraft("dQw4w9WgXcQ");
-      const session = yield* createYoutubeProject({
+      const session = yield* createDraftProject({
         draftId,
         artist: "Rick Astley",
         title: "Never Gonna Give You Up",
@@ -559,6 +697,8 @@ describe("createYoutubeProject with a cover from elsewhere", () => {
         genre: null,
         cover: { kind: "found", url: "https://github.com/someone/tool/releases/download/v1/big.zip" },
         lyrics: null,
+        language: null,
+        chart: "empty",
         target: path.join(dir, "song.tunestudio"),
       }).pipe(Effect.provide(recording));
       const overview = yield* projectOverview(session);
@@ -571,12 +711,12 @@ describe("createYoutubeProject with a cover from elsewhere", () => {
   });
 });
 
-describe("createYoutubeProject with the user's cover or none", () => {
-  const create = (cover: Parameters<typeof createYoutubeProject>[0]["cover"], target: string) =>
+describe("createDraftProject with the user's cover or none", () => {
+  const create = (cover: Parameters<typeof createDraftProject>[0]["cover"], target: string) =>
     Effect.gen(function* () {
       yield* AppSettings.use((stored) => stored.set(settings({ video: { download: false } })));
       const { draftId } = yield* downloadIntoDraft("dQw4w9WgXcQ");
-      const session = yield* createYoutubeProject({
+      const session = yield* createDraftProject({
         draftId,
         artist: "Rick Astley",
         title: "Never Gonna Give You Up",
@@ -584,6 +724,8 @@ describe("createYoutubeProject with the user's cover or none", () => {
         genre: null,
         cover,
         lyrics: null,
+        language: null,
+        chart: "empty",
         target,
       });
       const overview = yield* projectOverview(session);
@@ -634,7 +776,7 @@ describe("drafts", () => {
       const folder = (yield* Drafts.use((drafts) => drafts.get(draft.draftId))).folder;
       expect(fs.readdirSync(folder)).toContain("audio.m4a");
 
-      const session = yield* createYoutubeProject({
+      const session = yield* createDraftProject({
         draftId: draft.draftId,
         artist: "Rick Astley",
         title: "Never Gonna Give You Up",
@@ -642,6 +784,8 @@ describe("drafts", () => {
         genre: null,
         cover: { kind: "none" },
         lyrics: null,
+        language: null,
+        chart: "empty",
         target: path.join(dir, "song.tunestudio"),
       });
       yield* Projects.use((projects) => projects.close(session.id));

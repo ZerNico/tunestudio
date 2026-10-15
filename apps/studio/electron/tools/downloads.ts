@@ -6,6 +6,8 @@ import type { ReadableStream as WebReadableStream } from "node:stream/web";
 
 import { Context, Effect, Layer, Schema } from "effect";
 
+/** How often a download reports its progress. */
+const PROGRESS_INTERVAL_MS = 100;
 /** A download failed: offline, a server error, or a host that isn't allowed. */
 export class DownloadFailed extends Schema.TaggedError<DownloadFailed>()("DownloadFailed", {
   url: Schema.String,
@@ -150,6 +152,9 @@ export function downloadsLayer(options: { hosts: readonly string[]; allowHttp?: 
         }
         const hash = createHash("sha256");
         let received = 0;
+        // Progress goes to the renderer: a few times a second is plenty, one message per network chunk
+        // (thousands a second) keeps it too busy to even repaint the window.
+        let reported = 0;
         // `pipeline` handles errors on both ends (a full disk, a dropped connection) and closes
         // both streams, so a failure ends the download instead of leaving it waiting.
         await pipeline(
@@ -159,13 +164,17 @@ export function downloadsLayer(options: { hosts: readonly string[]; allowHttp?: 
               hash.update(chunk);
               received += chunk.byteLength;
               if (received > maxBytes) throw tooLarge();
-              await Effect.runPromise(onBytes(received, total));
+              if (Date.now() - reported >= PROGRESS_INTERVAL_MS) {
+                reported = Date.now();
+                await Effect.runPromise(onBytes(received, total));
+              }
               yield chunk;
             }
           },
           createWriteStream(file),
           { signal },
         );
+        await Effect.runPromise(onBytes(received, total));
         return { sha256: hash.digest("hex"), size: received };
       }),
   });

@@ -58,6 +58,8 @@ interface ToolsShape {
     tools: readonly ToolName[],
     options?: { force?: boolean; onProgress?: (progress: ToolProgress) => Effect.Effect<void> },
   ) => Effect.Effect<Record<ToolName, ToolPaths>, ToolError>;
+  /** Deletes `tool` (waiting while it is installed or updated); it is installed again when needed. */
+  readonly remove: (tool: ToolName) => Effect.Effect<void, FileError>;
 }
 
 /** The download tools behind YouTube projects, kept in the app's data folder. */
@@ -315,6 +317,12 @@ export function toolsLayer(options: { folder: string; platform: Platform }) {
             }
             return result;
           }),
+        remove: (tool) =>
+          locks[tool].withPermits(1)(
+            fs
+              .remove(toolFolder(tool), { recursive: true, force: true })
+              .pipe(mapFileError(TOOL_LABELS[tool], "delete")),
+          ),
       } satisfies ToolsShape;
     }),
   );

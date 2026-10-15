@@ -3,22 +3,36 @@ import { randomUUID } from "node:crypto";
 import { Context, Effect, FileSystem, Layer, Path, Ref } from "effect";
 
 import { DraftGone, type FileError, mapFileError } from "../errors";
+import type { ProjectChart } from "../ultrastar/chart-mapping";
 import type { DownloadedMedia } from "../youtube/youtube";
 
-/** A new project being set up: its working folder and what has been downloaded into it. */
+/** Where a new project's song comes from. */
+export type DraftSource = { kind: "youtube"; videoId: string };
+
+/** A chart made for a draft, and what it was made from (`chartInputsKey`), so a changed choice can be noticed. */
+export interface DraftChart {
+  /** Its song details are placeholders: the project gets the ones chosen when it is created. */
+  readonly chart: ProjectChart;
+  readonly madeFrom: string;
+}
+
+/** A new project being set up: its working folder, what is in it so far, and the chart if one was made. */
 export interface Draft {
   readonly id: string;
   readonly folder: string;
-  readonly videoId: string;
+  readonly source: DraftSource;
   readonly media: DownloadedMedia | null;
+  readonly chart: DraftChart | null;
 }
 
 interface DraftsShape {
-  /** A new, empty draft for a video. */
-  readonly create: (videoId: string) => Effect.Effect<Draft, FileError>;
+  /** A new, empty draft. */
+  readonly create: (source: DraftSource) => Effect.Effect<Draft, FileError>;
   readonly get: (id: string) => Effect.Effect<Draft, DraftGone>;
   /** Records what was downloaded into a draft. */
   readonly setMedia: (id: string, media: DownloadedMedia) => Effect.Effect<void, DraftGone>;
+  /** Records the chart made for a draft (null forgets it). */
+  readonly setChart: (id: string, chart: DraftChart | null) => Effect.Effect<void, DraftGone>;
   /** Removes a draft and its files. Discarding one that is gone does nothing. */
   readonly discard: (id: string) => Effect.Effect<void>;
 }
@@ -54,10 +68,10 @@ export function draftsLayer(folder: string) {
         });
 
       return {
-        create: (videoId) =>
+        create: (source) =>
           Effect.gen(function* () {
             const id = randomUUID();
-            const draft: Draft = { id, folder: paths.join(folder, id), videoId, media: null };
+            const draft: Draft = { id, folder: paths.join(folder, id), source, media: null, chart: null };
             yield* fs
               .makeDirectory(draft.folder, { recursive: true })
               .pipe(mapFileError("the new project's folder", "create"));
@@ -67,6 +81,8 @@ export function draftsLayer(folder: string) {
         get,
         setMedia: (id, media) =>
           Effect.flatMap(get(id), (draft) => Ref.update(drafts, (all) => new Map(all).set(id, { ...draft, media }))),
+        setChart: (id, chart) =>
+          Effect.flatMap(get(id), (draft) => Ref.update(drafts, (all) => new Map(all).set(id, { ...draft, chart }))),
         discard: (id) =>
           Effect.gen(function* () {
             const draft = (yield* Ref.get(drafts)).get(id);

@@ -10,10 +10,11 @@ import { Button } from "~/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import { Switch } from "~/components/ui/switch";
 import { toast } from "~/components/ui/toast";
-import { formatRelativeTime } from "~/lib/format";
+import { formatFileSize, formatRelativeTime } from "~/lib/format";
+import { MODEL_FEATURE_INFO, type ModelFeature } from "~/lib/models";
 import { native } from "~/lib/native/client";
 import { errorMessage, isAbort } from "~/lib/native/errors";
-import type { ToolName, ToolProgress, ToolStatus } from "~/lib/native/types";
+import type { ImportProgress, ModelFeatureStatus, ToolName, ToolProgress, ToolStatus } from "~/lib/native/types";
 import {
   AUDIO_BITRATES,
   AUDIO_FORMAT_LABELS,
@@ -46,7 +47,7 @@ type Option<V> = { value: V; label: string };
 const options = <V extends string | number>(values: readonly V[], label: (value: V) => string): Option<V>[] =>
   values.map((value) => ({ value, label: label(value) }));
 
-/** The app settings: how YouTube downloads are saved, and the download tools. */
+/** The app settings: how YouTube downloads are saved, the download tools and the models. */
 export default function SettingsScreen() {
   const loaded = route.useLoaderData();
   const navigate = useNavigate();
@@ -170,6 +171,8 @@ export default function SettingsScreen() {
             </Section>
 
             <ToolsSection initial={loaded().tools} />
+
+            <ModelsSection initial={loaded().models} />
           </div>
         </main>
       </div>
@@ -259,6 +262,18 @@ function ToolsSection(props: { initial: ToolStatus[] }) {
   onSettled(() => () => controller?.abort());
 
   const installed = () => status().every((tool) => tool.version !== null);
+  const [removing, setRemoving] = createSignal<ToolName | null>(null);
+
+  const remove = async (tool: ToolName) => {
+    setRemoving(tool);
+    try {
+      setStatus(await native.tools.remove({ tool }));
+    } catch (error) {
+      toast.add({ type: "error", title: "Couldn't remove the tool", description: errorMessage(error) });
+    } finally {
+      setRemoving(null);
+    }
+  };
   const statusOf = (tool: ToolName) => status().find((entry) => entry.tool === tool);
 
   const check = async () => {
@@ -292,7 +307,7 @@ function ToolsSection(props: { initial: ToolStatus[] }) {
     <Section
       id="tools"
       title="Download tools"
-      description="Tune Studio keeps these up to date by itself: yt-dlp is checked daily, the others monthly."
+      description="Tune Studio keeps these up to date by itself: yt-dlp is checked daily, the others monthly. Removing one frees the space; it is installed again when needed."
     >
       <div class="flex flex-col divide-y divide-border rounded-[10px] border border-border bg-card">
         <For each={TOOLS}>
@@ -317,6 +332,17 @@ function ToolsSection(props: { initial: ToolStatus[] }) {
                   )}
                 </Show>
               </div>
+              <Show when={statusOf(entry.tool)?.version}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={checking() || removing() !== null}
+                  onClick={() => void remove(entry.tool)}
+                  data-testid={`tool-${entry.tool}-remove`}
+                >
+                  Remove
+                </Button>
+              </Show>
             </div>
           )}
         </For>
@@ -325,7 +351,7 @@ function ToolsSection(props: { initial: ToolStatus[] }) {
         <Button
           variant="outline"
           size="sm"
-          disabled={checking()}
+          disabled={checking() || removing() !== null}
           onClick={() => void check()}
           data-testid="tools-check"
         >
@@ -337,6 +363,167 @@ function ToolsSection(props: { initial: ToolStatus[] }) {
             {describeToolProgress(progress())}
           </p>
         </Show>
+      </div>
+    </Section>
+  );
+}
+
+/** How much of a feature's models is there, in two lines like a tool's version and last check. */
+export function describeModels(status: ModelFeatureStatus): { state: string; detail: string } {
+  if (status.downloaded >= status.size) {
+    return {
+      state: formatFileSize(status.size),
+      detail: status.downloadedAt
+        ? `Downloaded: ${formatRelativeTime(new Date(status.downloadedAt).toISOString())}`
+        : "Downloaded",
+    };
+  }
+  if (status.downloaded === 0) return { state: "Not downloaded", detail: `${formatFileSize(status.size)} to download` };
+  return {
+    state: "Partly downloaded",
+    detail: `${formatFileSize(status.downloaded)} of ${formatFileSize(status.size)}`,
+  };
+}
+
+/**
+ * The models, by what they are for: whether they are downloaded, where they come from and under which license, with
+ * a way to download them ahead of time or remove them to free the space.
+ */
+function ModelsSection(props: { initial: ModelFeatureStatus[] }) {
+  const [status, setStatus] = createSignal(props.initial);
+  /** The feature being downloaded or removed, and how far a download is. */
+  const [busy, setBusy] = createSignal<{ feature: ModelFeature; progress: ImportProgress | null } | null>(null);
+  let controller: AbortController | undefined;
+
+  onSettled(() => () => controller?.abort());
+
+  const download = async (feature: ModelFeature) => {
+    controller = new AbortController();
+    setBusy({ feature, progress: null });
+    try {
+      const iterator = await native.models.download({ feature }, { signal: controller.signal });
+      for (;;) {
+        const next = await iterator.next();
+        if (next.done) {
+          setStatus(next.value);
+          break;
+        }
+        setBusy({ feature, progress: next.value });
+      }
+    } catch (error) {
+      if (isAbort(error)) return;
+      toast.add({ type: "error", title: "Couldn't download the models", description: errorMessage(error) });
+      setStatus(await native.models.list().catch(() => status()));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const remove = async (feature: ModelFeature) => {
+    setBusy({ feature, progress: null });
+    try {
+      setStatus(await native.models.remove({ feature }));
+    } catch (error) {
+      toast.add({ type: "error", title: "Couldn't remove the models", description: errorMessage(error) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <Section
+      id="models"
+      title="Models"
+      description="Downloaded the first time a feature needs them, from Hugging Face and GitHub. Each version of Tune Studio uses fixed versions of them; an update brings newer ones, downloaded when next needed. Removing them frees the space."
+    >
+      <div class="flex flex-col divide-y divide-border rounded-[10px] border border-border bg-card">
+        <For each={status()}>
+          {(entry) => {
+            const info = MODEL_FEATURE_INFO[entry.feature];
+            const working = () => busy()?.feature === entry.feature;
+            const progress = () => (working() ? busy()?.progress : null);
+            return (
+              <div class="flex flex-col gap-3 px-4 py-3.5" data-testid={`models-${entry.feature}`}>
+                <div class="flex items-center gap-6">
+                  <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span class="text-[12.5px] font-medium text-foreground">{info.label}</span>
+                    <p class="m-0 text-[11px] leading-normal text-muted-foreground">{info.purpose}</p>
+                  </div>
+                  <div
+                    class="flex shrink-0 flex-col items-end gap-0.5 text-right"
+                    data-testid={`models-${entry.feature}-status`}
+                  >
+                    <span
+                      data-ready={entry.downloaded >= entry.size ? "" : undefined}
+                      class="text-[11.5px] text-muted-foreground data-ready:font-mono data-ready:text-[11px] data-ready:text-foreground"
+                    >
+                      {describeModels(entry).state}
+                    </span>
+                    <span class="text-[10.5px] text-muted-foreground">{describeModels(entry).detail}</span>
+                  </div>
+                  <div class="flex shrink-0 gap-1.5">
+                    <Show when={entry.downloaded < entry.size}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={busy() !== null}
+                        onClick={() => void download(entry.feature)}
+                        data-testid={`models-${entry.feature}-download`}
+                      >
+                        <Show when={working()}>
+                          <LoaderCircleIcon class="animate-spin" />
+                        </Show>
+                        Download
+                      </Button>
+                    </Show>
+                    <Show when={entry.downloaded > 0}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={busy() !== null}
+                        onClick={() => void remove(entry.feature)}
+                        data-testid={`models-${entry.feature}-remove`}
+                      >
+                        Remove
+                      </Button>
+                    </Show>
+                  </div>
+                </div>
+                <ul
+                  aria-label={`${info.label} models`}
+                  class="m-0 flex list-none flex-col gap-1 rounded-lg bg-muted/40 px-3 py-2"
+                >
+                  <For each={entry.models}>
+                    {(model) => (
+                      <li class="flex items-baseline gap-4 text-[10.5px] text-muted-foreground">
+                        <span class="min-w-0 flex-1 truncate">{model.credit}</span>
+                        <span class="w-16 shrink-0 font-mono text-[10px]" title="Version">
+                          {model.version}
+                        </span>
+                        <span class="w-28 shrink-0 text-right font-mono text-[10px]">{model.license}</span>
+                      </li>
+                    )}
+                  </For>
+                </ul>
+                <Show when={progress()}>
+                  {(current) => (
+                    <div class="flex items-center gap-3" aria-live="polite">
+                      <progress
+                        aria-label={`${info.label} download`}
+                        max={current().total}
+                        value={current().done}
+                        class="h-1.5 flex-1 appearance-none overflow-hidden rounded-full [&::-webkit-progress-bar]:bg-sage-22 [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-primary"
+                      />
+                      <span class="font-mono text-[10.5px] text-muted-foreground tabular-nums">
+                        {formatFileSize(current().done)} of {formatFileSize(current().total)}
+                      </span>
+                    </div>
+                  )}
+                </Show>
+              </div>
+            );
+          }}
+        </For>
       </div>
     </Section>
   );

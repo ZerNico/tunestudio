@@ -6,15 +6,17 @@
 //! CPU when there is none or it fails.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
-use ort::session::{builder::AutoDevicePolicy, Session};
+use ort::session::Session;
 use ort::value::Tensor;
 use realfft::num_complex::Complex32;
 use realfft::RealFftPlanner;
+
+use crate::runtime::{self, Device, ModelSource};
 
 /// The sample rate the model works at.
 pub const SAMPLE_RATE: u32 = 44_100;
@@ -48,15 +50,6 @@ pub struct SeparateOptions {
 }
 
 type ProgressCallback = ThreadsafeFunction<u32, (), u32, Status, false, true>;
-
-/// ONNX Runtime's process-wide environment, created on first use.
-fn environment() -> Result<&'static ort::environment::Environment> {
-    static ENVIRONMENT: OnceLock<std::result::Result<ort::environment::Environment, String>> = OnceLock::new();
-    ENVIRONMENT
-        .get_or_init(|| ort::init().with_name("tunestudio").build().map_err(|error| error.to_string()))
-        .as_ref()
-        .map_err(|error| Error::from_reason(format!("The model runtime couldn't start: {error}")))
-}
 
 pub struct Separate {
     model: String,
@@ -162,31 +155,10 @@ fn chunk_window(first: bool, last: bool) -> Vec<f32> {
     window
 }
 
-/// The GPU runtime ort ships for this system, if any (`gpu` comes from build.rs).
-fn gpu_provider() -> Option<ort::ep::ExecutionProviderDispatch> {
-    #[cfg(gpu = "webgpu")]
-    return Some(ort::ep::WebGPU::default().build().error_on_failure());
-    #[cfg(gpu = "directml")]
-    return Some(ort::ep::DirectML::default().build().error_on_failure());
-    #[allow(unreachable_code)]
-    None
-}
-
 impl Separate {
     fn session(&self, gpu: bool) -> Result<Session> {
-        fn failed<R>(error: ort::Error<R>) -> Error {
-            Error::from_reason(format!("The separation model couldn't be loaded: {error}"))
-        }
-        let builder = Session::builder(environment()?).map_err(failed)?;
-        let mut builder = if gpu {
-            let provider = gpu_provider().ok_or_else(|| Error::from_reason("No GPU runtime for this system."))?;
-            builder.with_execution_providers([provider]).map_err(failed)?
-        } else {
-            // ort's default device policy picks Core ML on macOS even with only the CPU
-            // registered (pykeio/ort#662), and Core ML can't run this model.
-            builder.with_auto_device(AutoDevicePolicy::PreferCPU).map_err(failed)?
-        };
-        builder.commit_from_file(&self.model).map_err(failed)
+        let device = if gpu { Device::Gpu } else { Device::Cpu };
+        runtime::session(ModelSource::File(&self.model), device, "The separation model")
     }
 
     /// One 8 s chunk of both channels through the model: the vocals of that chunk.

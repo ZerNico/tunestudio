@@ -3,6 +3,8 @@
  * outputs from main, so they aren't validated at runtime (inputs are, see `contract.ts`).
  */
 
+import type { ModelFeature } from "../models";
+
 /** The parts of a song a project's media can play. */
 export type MediaRole = "audio" | "vocals" | "instrumental" | "video" | "cover" | "background";
 
@@ -168,6 +170,8 @@ export interface YoutubeVideo {
   artist: string;
   songTitle: string;
   year: number | null;
+  /** The language YouTube says it is in (ISO 639-1), or null. */
+  language: string | null;
 }
 
 /** An album cover found for a song, with what the catalog knows about it. */
@@ -228,10 +232,34 @@ export interface DownloadedDraft {
   videoProblem: string | null;
 }
 
+/** A feature's models, as the settings screen lists them. */
+export interface ModelFeatureStatus {
+  feature: ModelFeature;
+  /** Bytes all of its models download. */
+  size: number;
+  /** Bytes of it that are downloaded: all of `size` when it is ready. */
+  downloaded: number;
+  /** When the newest of its models was downloaded (ms since the epoch), or null when none is. */
+  downloadedAt: number | null;
+  /** Who made its models, under which license, and the version this app uses. */
+  models: { credit: string; license: string; version: string }[];
+}
+
 /** Which models are downloaded (they are fetched on first use). */
 export interface ModelStatus {
   separation: boolean;
   whisper: boolean;
+  /** Every model the chart is made with. */
+  chart: boolean;
+}
+
+/** A chart made for a new project, kept until the project is created. */
+export interface MadeChart {
+  /** How many notes and lines it has. */
+  notes: number;
+  lines: number;
+  /** `chartInputsKey` of what it was made from. */
+  madeFrom: string;
 }
 
 /** What Whisper heard in a song's vocals, line by line. */

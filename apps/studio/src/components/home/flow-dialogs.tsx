@@ -6,6 +6,7 @@ import FileAudioIcon from "~icons/lucide/file-audio";
 import FolderOpenIcon from "~icons/lucide/folder-open";
 import YoutubeIcon from "~icons/lucide/youtube";
 
+import { YOUTUBE_STAGES, YoutubeFlow } from "~/components/new-project/youtube-flow";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
@@ -26,7 +27,6 @@ import type { AudioFileSummary } from "~/lib/import-files";
 import type { OpenedProject } from "~/lib/native/types";
 
 import { SongImportFlow } from "./song-import-flow";
-import { YOUTUBE_STEPS, YoutubeFlow } from "./youtube-flow";
 
 /** The next step of a "start a new project" option, opened from the start screen. */
 export type Flow =
@@ -36,7 +36,7 @@ export type Flow =
   | { kind: "song"; path: string };
 
 const STEPS: Record<Flow["kind"], string[]> = {
-  youtube: YOUTUBE_STEPS,
+  youtube: YOUTUBE_STAGES,
   audio: ["Import audio", "Split vocals", "Generate chart", "Edit"],
   song: ["Check song", "Choose location", "Copy into project"],
 };
@@ -110,7 +110,7 @@ export function FlowDialog(props: {
                       kind="youtube"
                       icon={<YoutubeIcon />}
                       title="New project from YouTube"
-                      description="Check the song, let Tune Studio download it, then check the lyrics."
+                      description="Check the song and its lyrics, and let Tune Studio download it and make the chart."
                       current={step}
                     />
                   )}

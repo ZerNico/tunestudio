@@ -1,4 +1,4 @@
-import { getRouteApi, useNavigate } from "@tanstack/solid-router";
+import { getRouteApi, useNavigate, useRouter } from "@tanstack/solid-router";
 import { createSignal, Show } from "solid-js";
 import DownloadIcon from "~icons/lucide/download";
 import FolderSearchIcon from "~icons/lucide/folder-search";
@@ -7,6 +7,7 @@ import XIcon from "~icons/lucide/x";
 
 import { ProjectCover } from "~/components/home/project-cover";
 import { AudioPreview } from "~/components/project/audio-preview";
+import { MakeChart } from "~/components/project/make-chart";
 import {
   ChartStats,
   ImportNotes,
@@ -35,11 +36,13 @@ function reveal(path: string) {
 
 /**
  * An open project. There is no editor yet: the screen shows what the project holds (song,
- * chart, media, import notes), plays its audio, and exports it as an UltraStar song.
+ * chart, media, import notes), plays its audio, makes the chart from the vocals and lyrics, and
+ * exports it as an UltraStar song.
  */
 export default function ProjectScreen() {
   const overview = route.useLoaderData();
   const navigate = useNavigate();
+  const router = useRouter();
   const [exporting, setExporting] = createSignal(false);
   const [replacing, setReplacing] = createSignal<{ folder: string; existing: string } | null>(null);
 
@@ -156,7 +159,10 @@ export default function ProjectScreen() {
 
           <div class="grid grid-cols-2 items-start gap-4">
             <Panel title="Chart" id="chart">
-              <ChartStats overview={overview()} />
+              <>
+                <ChartStats overview={overview()} />
+                <MakeChart overview={overview()} onDone={() => void router.invalidate()} />
+              </>
             </Panel>
             <Panel title="Song details" id="song">
               <SongDetails overview={overview()} />

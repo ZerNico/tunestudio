@@ -9,6 +9,93 @@
  */
 export declare const __napiBindingTarget: 'native' | 'wasm32-wasi' | 'wasm32-wasip1'
 
+/** The best path of a text through part of the aligner's emissions. */
+export interface AlignedPath {
+  /** The label of each frame (vocabulary ids; the blank is 0). */
+  path: Int32Array
+  /** That label's log-probability per frame. */
+  scores: Float32Array
+}
+
+/**
+ * The aligner (`aligner.onnx`) and syllable-start head (`boundary.onnx`) over a mono 16 kHz vocal
+ * track. Runs on a worker thread, reporting the percentage done; aborting `signal` stops it
+ * between windows.
+ */
+export declare function alignerOutputs(aligner: string, boundary: string, samples: Float32Array, onProgress?: (percent: number) => void, signal?: AbortSignal | undefined | null): Promise<AlignerOutputs>
+
+/** The aligner's view of a song. */
+export interface AlignerOutputs {
+  /** Log-probabilities of the aligner's 31 classes per 20 ms frame (frames × 31). */
+  emissions: Float32Array
+  /** The number of frames. */
+  frames: number
+  /** Per frame, the probability that a syllable starts there. */
+  syllableStarts: Float32Array
+}
+
+/**
+ * Beat and downbeat logits every 20 ms of a mono 22.05 kHz song, with the spectrogram model at
+ * `logmel` and Beat This! at `model`. Runs on a worker thread.
+ */
+export declare function beatLogits(logmel: string, model: string, samples: Float32Array): Promise<BeatLogits>
+
+/** Beat and downbeat logits per 20 ms frame. */
+export interface BeatLogits {
+  beat: Float32Array
+  downbeat: Float32Array
+}
+
+/**
+ * Aligns `targets` (vocabulary ids; `classes` and above count as "<star>", log-probability 0)
+ * to frames `from`..`to` of `emissions`, the aligner's log-probabilities with `classes` per
+ * frame. Fails with InvalidArg when there's no text or it can't fit in those frames.
+ */
+export declare function forcedAlignPath(emissions: Float32Array, classes: number, from: number, to: number, targets: Int32Array): Promise<AlignedPath>
+
+/** GAME's notes for every request, flattened: request k has `counts[k]` notes, in order. */
+export interface GameNotes {
+  counts: Array<number>
+  /** Seconds from the start of the request's audio. */
+  starts: Float64Array
+  ends: Float64Array
+  /** 1 where the note is sung. */
+  voiced: Uint8Array
+  /** Fractional MIDI pitch. */
+  midi: Float64Array
+}
+
+/** One line's audio and known regions. */
+export interface GameRequest {
+  /** The line's audio: samples `from`..`to` of the vocals. */
+  from: number
+  to: number
+  /** Durations (seconds) of the regions whose boundaries GAME must keep, summing to the audio's length. */
+  known: Array<number>
+}
+
+/**
+ * [down, up] per note (NaN, NaN for a note too short to measure) over mono 44.1 kHz vocals.
+ * Runs on a worker thread.
+ */
+export declare function harmonicRatios(samples: Float32Array, notes: Array<NoteSpan>): Promise<Float64Array>
+
+/** One note: its start and end in seconds and its MIDI pitch. */
+export interface NoteSpan {
+  start: number
+  end: number
+  midi: number
+}
+
+/** The note-end regressor (`ends.onnx`) on 27 features per note: seconds to add to each note's end. */
+export declare function predictNoteEnds(model: string, features: Float32Array): Promise<Float32Array>
+
+/**
+ * The pitch corrector (`notefix.onnx`) on 24 features per note: 5 probabilities per note, for
+ * shifting it by -2, -1, 0, +1 and +2 semitones.
+ */
+export declare function predictPitchShifts(model: string, features: Float32Array): Promise<Float32Array>
+
 export interface SeparateOptions {
   /** Run on the CPU only, instead of the GPU. */
   cpuOnly?: boolean
@@ -41,11 +128,25 @@ export interface TimeRange {
 }
 
 /**
+ * The pitch in Hz every 10 ms (0 where unvoiced) of a mono 16 kHz vocal track, with the FCPE
+ * model at `model`: `samples / 160 + 1` values. Runs on a worker thread.
+ */
+export declare function trackPitch(model: string, samples: Float32Array): Promise<Float32Array>
+
+/**
  * Writes down what is sung in `samples` (mono, 16 kHz) with the ggml Whisper model at
  * `model`: the whole audio or `options.ranges`, in `options.language` or the language most of
  * it is in. Runs on a worker thread; aborting `signal` stops it within a moment.
  */
 export declare function transcribe(model: string, samples: Float32Array, options: TranscribeOptions, onProgress?: (percent: number) => void, signal?: AbortSignal | undefined | null): Promise<Transcript>
+
+/**
+ * GAME's notes for each line: `folder` holds its ONNX files (encoder, segmenter, estimator,
+ * dur2bd, bd2dur), `samples` the mono 44.1 kHz vocals, `language` its language id (0 for
+ * universal). Runs on a worker thread, reporting the percentage of lines done; aborting `signal`
+ * stops it between lines.
+ */
+export declare function transcribeNotes(folder: string, samples: Float32Array, requests: Array<GameRequest>, language: number, onProgress?: (percent: number) => void, signal?: AbortSignal | undefined | null): Promise<GameNotes>
 
 export interface TranscribeOptions {
   /** ISO 639-1 code, or none to detect it. */

@@ -1,11 +1,14 @@
 import { For, Match, Show, Switch } from "solid-js";
 import LoaderCircleIcon from "~icons/lucide/loader-circle";
 
+import { Note } from "~/components/home/song-import-flow";
 import { Button } from "~/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import { Textarea } from "~/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
 import { formatFileSize } from "~/lib/format";
+import { LANGUAGES, languageName } from "~/lib/languages";
+import { guessLyricsLanguage } from "~/lib/lyrics-language";
 import type { FoundLyrics, HeardLyrics, ImportProgress } from "~/lib/native/types";
 
 /** The lyrics search: still running, done with what was found, or the lyrics service couldn't be reached. */
@@ -28,38 +31,6 @@ export type LyricsSource = "found" | "heard" | "own";
 /** Lyrics timed to a recording this much longer or shorter than the video are likely another version. */
 const OTHER_VERSION_SECONDS = 20;
 
-/** Languages offered when Whisper picked the wrong one: the ones most songs are sung in. */
-export const LANGUAGES = [
-  "en",
-  "de",
-  "es",
-  "fr",
-  "it",
-  "pt",
-  "nl",
-  "sv",
-  "no",
-  "da",
-  "fi",
-  "pl",
-  "cs",
-  "hu",
-  "ro",
-  "el",
-  "tr",
-  "ru",
-  "uk",
-  "ar",
-  "he",
-  "hi",
-  "id",
-  "ja",
-  "ko",
-  "zh",
-];
-
-const languageNames = new Intl.DisplayNames(["en"], { type: "language" });
-
 /** The language choice for a song sung in several. */
 const MIXED = "mixed";
 
@@ -67,15 +38,6 @@ const MIXED = "mixed";
 export interface HeardLanguage {
   language: string | null;
   mixed: boolean;
-}
-
-/** "German" for "de"; the code itself if it isn't one. */
-export function languageName(code: string): string {
-  try {
-    return languageNames.of(code) ?? code;
-  } catch {
-    return code;
-  }
 }
 
 const lineCount = (count: number) => `${count} ${count === 1 ? "line" : "lines"}`;
@@ -93,6 +55,34 @@ export function hasFound(search: LyricsSearch): boolean {
 /** What Whisper heard, as text. */
 export function heardText(listening: Listening): string {
   return listening.status === "done" ? listening.heard.lines.map((line) => line.text).join("\n") : "";
+}
+
+/**
+ * Why the shown lyrics may not fit the song's language: Whisper heard another one (listening again in the song's
+ * language helps), or they look like another one. Null when they fit, or either isn't known.
+ */
+export function languageMismatch(
+  language: string | null,
+  source: LyricsSource,
+  listening: Listening,
+  text: string,
+): { text: string; listenAgain: boolean } | null {
+  if (!language) return null;
+  const sung = languageName(language);
+  if (source === "heard") {
+    const heard = listening.status === "done" ? listening.heard : null;
+    if (!heard || heard.mixed || heard.lines.length === 0 || heard.language === language) return null;
+    return {
+      text: `These were heard in ${languageName(heard.language)}, but the song is sung in ${sung}, so the words are likely wrong.`,
+      listenAgain: true,
+    };
+  }
+  const looks = guessLyricsLanguage(text);
+  if (!looks || looks === language) return null;
+  return {
+    text: `These lyrics look ${languageName(looks)}, but the song is sung in ${sung}. Check that they belong to it, or change the language.`,
+    listenAgain: false,
+  };
 }
 
 /** How far listening is, in a few words. */
@@ -171,6 +161,8 @@ export function LyricsReview(props: {
   /** The user's own lyrics. */
   ownText: string;
   videoDuration: number | null;
+  /** The language the song is sung in (ISO 639-1), which listening listens for; null when unknown. */
+  language: string | null;
   disabled?: boolean;
   onSource: (source: LyricsSource) => void;
   onOwnText: (text: string) => void;
@@ -190,6 +182,8 @@ export function LyricsReview(props: {
     props.source === "own" ||
     (props.source === "found" && hasFound(props.search)) ||
     (props.source === "heard" && (heard()?.lines.length ?? 0) > 0);
+  const songLanguage = (): HeardLanguage => ({ language: props.language, mixed: false });
+  const mismatch = () => languageMismatch(props.language, props.source, props.listening, shownText());
   const languages = () => {
     const current = heard()?.language;
     return current && !LANGUAGES.includes(current) ? [current, ...LANGUAGES] : LANGUAGES;
@@ -244,8 +238,7 @@ export function LyricsReview(props: {
               onClick={() => {
                 const listening = props.listening;
                 if (props.source !== "heard") props.onRetry();
-                else
-                  props.onListen(listening.status === "failed" ? listening.request : { language: null, mixed: false });
+                else props.onListen(listening.status === "failed" ? listening.request : songLanguage());
               }}
               data-testid="lyrics-retry"
             >
@@ -284,6 +277,26 @@ export function LyricsReview(props: {
           )}
         </Show>
       </div>
+      <Show when={showsText() && mismatch()}>
+        {(found) => (
+          <Note tone="warning" testid="lyrics-language-warning">
+            <span class="flex items-center gap-3">
+              <span class="flex-1">{found().text}</span>
+              <Show when={found().listenAgain}>
+                <Button
+                  variant="outline"
+                  size="xs"
+                  disabled={props.disabled}
+                  onClick={() => props.onListen(songLanguage())}
+                  data-testid="lyrics-listen-again"
+                >
+                  Listen again in {languageName(props.language ?? "")}
+                </Button>
+              </Show>
+            </span>
+          </Note>
+        )}
+      </Show>
       <Switch>
         <Match when={showsText()}>
           <Textarea
@@ -302,11 +315,11 @@ export function LyricsReview(props: {
               <Match when={props.source === "heard" && props.listening.status === "idle"}>
                 <span>
                   Tune Studio can listen to the song and write down what is sung.
-                  {props.listeningModelMissing ? " The first time, it downloads what it needs for that (574 MB)." : ""}
+                  {props.listeningModelMissing ? " The first time, it downloads what it needs for that (547 MB)." : ""}
                 </span>
                 <Button
                   disabled={props.disabled}
-                  onClick={() => props.onListen({ language: null, mixed: false })}
+                  onClick={() => props.onListen(songLanguage())}
                   data-testid="lyrics-listen"
                 >
                   Listen to the song

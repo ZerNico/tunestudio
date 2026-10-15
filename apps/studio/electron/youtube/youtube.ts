@@ -1,5 +1,6 @@
 import { Data, Effect, FileSystem, Path, Schedule, Schema } from "effect";
 
+import { languageCode } from "../../src/lib/languages";
 import type { ImportProgress, YoutubeVideo } from "../../src/lib/native/types";
 import type { Settings, VideoFormat } from "../../src/lib/settings";
 import { suggestSongDetails } from "../../src/lib/youtube";
@@ -35,6 +36,10 @@ const VideoJson = Schema.Struct({
   track: Schema.optional(Schema.NullOr(Schema.String)),
   release_year: Schema.optional(Schema.NullOr(Schema.Number)),
   live_status: Schema.optional(Schema.NullOr(Schema.String)),
+  /** The language the uploader set, e.g. "en" or "en-US". */
+  language: Schema.optional(Schema.NullOr(Schema.String)),
+  /** YouTube's automatic captions by language; "de-orig" is the one heard in the video itself. */
+  automatic_captions: Schema.optional(Schema.NullOr(Schema.Record(Schema.String, Schema.Unknown))),
   thumbnails: Schema.optional(
     Schema.Array(
       Schema.Struct({
@@ -55,6 +60,17 @@ export interface YoutubeTools {
   readonly ffmpeg: string;
   /** yt-dlp's cache (YouTube's player code, so its checks are answered faster next time). */
   readonly cacheDir: string;
+}
+
+/**
+ * The language a video is in, as far as YouTube knows: the one its uploader set, else the one its automatic captions
+ * were heard in (the "-orig" ones; the others are translations). Null when neither says.
+ */
+export function videoLanguage(info: Pick<VideoJson, "language" | "automatic_captions">): string | null {
+  const set = languageCode(info.language);
+  if (set) return set;
+  const heard = Object.keys(info.automatic_captions ?? {}).filter((key) => key.endsWith("-orig"));
+  return heard.length === 1 ? languageCode(heard[0]) : null;
 }
 
 /** yt-dlp's options shared by every run. */
@@ -203,6 +219,7 @@ export function inspectVideo(videoId: string) {
       artist: suggested.artist,
       songTitle: suggested.title,
       year: info.release_year ?? null,
+      language: videoLanguage(info),
     } satisfies YoutubeVideo;
   });
 }

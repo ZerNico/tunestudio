@@ -194,6 +194,23 @@ describe("Tools", () => {
     }).pipe(Effect.provide(layer));
   });
 
+  it.effect("removes a tool, which is installed again when needed", () => {
+    const { internet, folder, layer } = setup();
+    internet.release("quickjs-ng/quickjs", "v0.17.0", { "qjs-darwin-arm64": script("qjs 0.17.0") });
+    return Effect.gen(function* () {
+      const tools = yield* Tools;
+      yield* tools.ensure(["quickjs"]);
+      yield* tools.remove("quickjs");
+      expect(fs.existsSync(path.join(folder, "quickjs"))).toBe(false);
+      expect((yield* tools.status).find((entry) => entry.tool === "quickjs")?.version).toBeNull();
+      // Removing what isn't there is fine.
+      yield* tools.remove("ffmpeg");
+      expect((yield* tools.ensure(["quickjs"])).quickjs).toEqual({
+        qjs: path.join(folder, "quickjs", "0.17.0", "qjs"),
+      });
+    }).pipe(Effect.provide(layer));
+  });
+
   it.effect("unpacks ffmpeg and ffprobe from a BtbN archive", () => {
     const { dir, internet, folder, layer } = setup(linux);
     const build = path.join(dir, "build", "ffmpeg-n8.1-latest-linux64-lgpl-8.1", "bin");
@@ -342,6 +359,25 @@ describe("downloads", () => {
     expect(result).toEqual({ sha256: sha256(bytes), size: bytes.byteLength });
     expect(seen.at(-1)).toBe(bytes.byteLength);
     expect(fs.readFileSync(path.join(dir, "file")).equals(bytes)).toBe(true);
+  });
+
+  it("reports progress a few times a second, not once per network chunk", async () => {
+    const bytes = Buffer.alloc(20 * 1024 * 1024, 7);
+    const base = await server(bytes);
+    const { dir, cleanup } = tempDir();
+    cleanups.push(cleanup);
+    const seen: number[] = [];
+    const started = Date.now();
+    await Effect.runPromise(
+      Downloads.use((downloads) =>
+        downloads.file(`${base}/file`, path.join(dir, "file"), (received) =>
+          Effect.sync(() => void seen.push(received)),
+        ),
+      ).pipe(Effect.provide(downloadsLayer({ hosts: ["127.0.0.1"], allowHttp: true }))),
+    );
+    // Hundreds of chunks arrive; about one report per 100 ms goes out, and the last says it all arrived.
+    expect(seen.length).toBeLessThanOrEqual(Math.ceil((Date.now() - started) / 100) + 2);
+    expect(seen.at(-1)).toBe(bytes.byteLength);
   });
 
   it("fails instead of hanging when the file can't be written", async () => {

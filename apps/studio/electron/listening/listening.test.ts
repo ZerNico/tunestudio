@@ -5,13 +5,13 @@ import { lyricsLines } from "./listening";
 describe("lyricsLines", () => {
   it("splits a verse Whisper wrote as one sentence into lines at its commas", () => {
     const text =
-      "We're no strangers to love, you know the rules, and so do I, I pull commitments while I'm thinking of, you wouldn't get this from any other guy.";
+      "We're out walking by the sea, you hold the light, and so do I, I fold the paper while I'm dreaming of, you wouldn't find this on any other shore.";
     const lines = lyricsLines([{ start: 10, end: 24.4, text: ` ${text}`, confidence: 0.9 }]);
     expect(lines.map((line) => line.text)).toEqual([
-      "We're no strangers to love",
-      "You know the rules, and so do I",
-      "I pull commitments while I'm thinking of",
-      "You wouldn't get this from any other guy.",
+      "We're out walking by the sea",
+      "You hold the light, and so do I",
+      "I fold the paper while I'm dreaming of",
+      "You wouldn't find this on any other shore.",
     ]);
     // Times follow where each line starts in the sentence.
     expect(lines[0]).toMatchObject({ start: 10 });

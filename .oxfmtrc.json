@@ -12,6 +12,8 @@
     "apps/studio/native/index.d.ts",
     "apps/studio/native/target/**",
     "**/drizzle/**/snapshot.json",
+    "apps/studio/electron/charting/data/**",
+    "apps/studio/electron/charting/fixtures/**",
     "**/styles.css",
     "**/dist/**",
     "**/dist-electron/**",

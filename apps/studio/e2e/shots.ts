@@ -39,7 +39,14 @@ async function shot(studio: Studio, name: string) {
 
 async function closeDialog(studio: Studio) {
   await studio.page.keyboard.press("Escape");
-  await studio.page.getByRole("dialog").waitFor({ state: "detached" });
+  // New projects ask before their setup is thrown away.
+  const discard = studio.page.getByTestId("discard-dialog");
+  const asked = await discard.waitFor({ timeout: 1000 }).then(
+    () => true,
+    () => false,
+  );
+  if (asked) await discard.getByRole("button", { name: "Discard" }).click();
+  await studio.page.getByRole("dialog").first().waitFor({ state: "detached" });
 }
 
 const vite = mode === "dev" ? await startVite() : null;
@@ -88,6 +95,11 @@ try {
     .click();
   await page.mouse.move(0, 0);
   await shot(studio, "05-home-list-1440x900");
+  await page.getByTestId("rail-settings").click();
+  await page.getByTestId("settings-models").scrollIntoViewIfNeeded();
+  await shot(studio, "13-settings-models-1440x900");
+  await page.getByTestId("rail-home").click();
+  await page.getByTestId("home").waitFor();
   await page
     .getByRole("radio", { name: "Grid" })
     .or(page.getByRole("button", { name: "Grid" }))

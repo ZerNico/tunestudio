@@ -10,7 +10,7 @@ import { crc32, deflateRawSync } from "node:zlib";
 
 import { Effect, Layer, ManagedRuntime } from "effect";
 
-import { Models } from "./models/models";
+import { MODELS, Models } from "./models/models";
 import { Native, type NativeAddon } from "./native/native";
 import { AppLog } from "./services/app-log";
 import { Desktop } from "./services/desktop";
@@ -18,10 +18,48 @@ import { studioServices } from "./services/layer";
 
 /**
  * A stand-in for the native addon: "separates" the vocals by halving the mix, on the GPU, and
- * reports progress halfway and at the end.
+ * reports progress halfway and at the end. The chart models give a steady A4 every frame, a beat
+ * every half second, one confident letter per frame and one GAME note per line.
  */
 const fakeAddon: NativeAddon = {
   __napiBindingTarget: "native",
+  trackPitch: async (_model, samples) => new Float32Array(Math.floor(samples.length / 160) + 1).fill(440),
+  beatLogits: async (_logmel, _model, samples) => {
+    const frames = Math.floor(samples.length / 441) + 1;
+    const beat = Float32Array.from({ length: frames }, (_, i) => (i % 25 === 0 ? 5 : -5));
+    return { beat, downbeat: beat.map((logit, i) => (i % 100 === 0 ? logit : -5)) };
+  },
+  alignerOutputs: async (_aligner, _boundary, samples, onProgress) => {
+    onProgress?.(100);
+    const frames = Math.floor(samples.length / 320);
+    return { emissions: new Float32Array(frames * 31).fill(-3), frames, syllableStarts: new Float32Array(frames) };
+  },
+  forcedAlignPath: async (_emissions, _classes, from, to, targets) => {
+    // Each target on its own frame from the start (a blank between repeated ones, as CTC needs), then blanks.
+    const labels: number[] = [];
+    for (const target of targets) {
+      if (labels.at(-1) === target) labels.push(0);
+      labels.push(target);
+    }
+    const path = Int32Array.from({ length: to - from }, (_, t) => labels[t] ?? 0);
+    return { path, scores: new Float32Array(to - from).fill(-0.1) };
+  },
+  transcribeNotes: async (_folder, _samples, requests, _language, onProgress) => {
+    onProgress?.(100);
+    const lengths = requests.map((request) => (request.to - request.from) / 44_100);
+    return {
+      counts: requests.map(() => 1),
+      starts: new Float64Array(requests.length),
+      ends: Float64Array.from(lengths),
+      voiced: new Uint8Array(requests.length).fill(1),
+      midi: new Float64Array(requests.length).fill(69),
+    };
+  },
+  predictPitchShifts: async (_model, features) =>
+    Float32Array.from({ length: (features.length / 24) * 5 }, (_, i) => (i % 5 === 2 ? 1 : 0)),
+  predictNoteEnds: async (_model, features) => new Float32Array(features.length / 27),
+  // Balanced harmonics: no reason to move any note by an octave.
+  harmonicRatios: async (_samples, notes) => new Float64Array(notes.length * 2),
   separationSampleRate: () => 44_100,
   separateVocals: async (_model, left, right, _options, onProgress) => {
     onProgress?.(50);
@@ -58,6 +96,11 @@ export const fakeNative = Layer.succeed(Native, { addon: Effect.succeed(fakeAddo
 export const fakeModels = Layer.succeed(Models, {
   installed: () => Effect.succeed(true),
   ensure: (model) => Effect.succeed(`/models/${model}`),
+  ensureAll: (models) =>
+    Effect.succeed(Object.fromEntries(models.map((model) => [model, `/models/${model}`])) as never),
+  downloadedAt: () => Effect.succeed(0),
+  source: (model) => MODELS[model],
+  remove: () => Effect.void,
 });
 
 /** A fresh temp folder, removed by `cleanup`. */

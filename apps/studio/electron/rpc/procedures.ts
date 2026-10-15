@@ -2,8 +2,11 @@ import { Effect, FileSystem, type ManagedRuntime, Path } from "effect";
 
 import { safeFileName } from "../../src/lib/file-names";
 import type { ChosenImage, OpenedProject, RecentProjectEntry } from "../../src/lib/native/types";
+import { generateChart } from "../charting/generate";
+import { createDraftProject, listenToDraft, makeDraftChart } from "../drafts/draft-project";
 import { ImageUnreadable } from "../errors";
-import { MODEL_NAMES, Models } from "../models/models";
+import { downloadFeature, modelFeatures, removeFeature } from "../models/features";
+import { CHART_MODELS, type ModelName, Models } from "../models/models";
 import { readImage } from "../project/images";
 import { projectOverview, recentEntry } from "../project/overview";
 import { Projects, type ProjectSession } from "../project/projects";
@@ -20,7 +23,7 @@ import { describeSong, importSong, inspectSong } from "../ultrastar/song-import"
 import { findCovers } from "../youtube/covers";
 import { findLyrics } from "../youtube/lyrics";
 import { inspectVideo } from "../youtube/youtube";
-import { createYoutubeProject, downloadIntoDraft, listenToDraft } from "../youtube/youtube-project";
+import { downloadIntoDraft } from "../youtube/youtube-draft";
 import { os, runRpc } from "./base";
 
 /** The default folder for new projects, under the user's Music folder. */
@@ -60,10 +63,12 @@ const remember = (session: ProjectSession) =>
 /**
  * Runs long work (an import, tool downloads), yielding its progress as it goes and returning its
  * result. Stopping the iteration (the renderer cancelled) interrupts the work, which cleans up after itself.
+ * Work that finished anyway, with a result the renderer never got, is handed to `onUndelivered`.
  */
 export async function* withProgress<P, A>(
   start: (onProgress: (progress: P) => Effect.Effect<void>, signal: AbortSignal) => Promise<A>,
   signal: AbortSignal | undefined,
+  onUndelivered?: (result: A) => void,
 ): AsyncGenerator<P, A> {
   const controller = new AbortController();
   const abort = () => controller.abort();
@@ -73,6 +78,8 @@ export async function* withProgress<P, A>(
   const queue: P[] = [];
   let wake: (() => void) | undefined;
   let outcome: { ok: true; value: A } | { ok: false; error: unknown } | undefined;
+  let delivered = false;
+  let abandoned = false;
   start(
     (progress) =>
       Effect.sync(() => {
@@ -82,7 +89,10 @@ export async function* withProgress<P, A>(
     controller.signal,
   )
     .then(
-      (value) => (outcome = { ok: true, value }),
+      (value) => {
+        outcome = { ok: true, value };
+        if (abandoned) onUndelivered?.(value);
+      },
       (error: unknown) => (outcome = { ok: false, error }),
     )
     .finally(() => wake?.());
@@ -94,9 +104,15 @@ export async function* withProgress<P, A>(
       wake = undefined;
     }
     if (!outcome.ok) throw outcome.error;
+    // A cancelled call's result is dropped on the way.
+    delivered = !signal?.aborted;
     return outcome.value;
   } finally {
     signal?.removeEventListener("abort", abort);
+    if (!delivered) {
+      abandoned = true;
+      if (outcome?.ok) onUndelivered?.(outcome.value);
+    }
     if (!outcome) controller.abort();
   }
 }
@@ -254,6 +270,21 @@ export function procedures(runtime: ManagedRuntime.ManagedRuntime<StudioServices
           signal,
         ),
       ),
+      makeChart: os.project.makeChart.handler(({ input, signal }) =>
+        withProgress(
+          (onProgress, chartSignal) =>
+            runRpc(
+              runtime,
+              Effect.gen(function* () {
+                const session = yield* Projects.use((projects) => projects.get(input.id));
+                yield* generateChart(session, onProgress);
+                return yield* projectOverview(session);
+              }),
+              chartSignal,
+            ),
+          signal,
+        ),
+      ),
     },
 
     recents: {
@@ -301,7 +332,18 @@ export function procedures(runtime: ManagedRuntime.ManagedRuntime<StudioServices
       inspect: os.youtube.inspect.handler(({ input, signal }) => runRpc(runtime, inspectVideo(input.videoId), signal)),
       findCovers: os.youtube.findCovers.handler(({ input, signal }) => runRpc(runtime, findCovers(input), signal)),
       findLyrics: os.youtube.findLyrics.handler(({ input, signal }) => runRpc(runtime, findLyrics(input), signal)),
-      listen: os.youtube.listen.handler(({ input, signal }) =>
+      download: os.youtube.download.handler(({ input, signal }) =>
+        withProgress(
+          (onProgress, downloadSignal) => runRpc(runtime, downloadIntoDraft(input.videoId, onProgress), downloadSignal),
+          signal,
+          // Cancelled just as it finished: the renderer won't hear of this draft to discard it.
+          (draft) => void runtime.runPromise(Drafts.use((drafts) => drafts.discard(draft.draftId))).catch(() => {}),
+        ),
+      ),
+    },
+
+    drafts: {
+      listen: os.drafts.listen.handler(({ input, signal }) =>
         withProgress(
           (onProgress, listenSignal) =>
             runRpc(
@@ -312,13 +354,13 @@ export function procedures(runtime: ManagedRuntime.ManagedRuntime<StudioServices
           signal,
         ),
       ),
-      download: os.youtube.download.handler(({ input, signal }) =>
+      makeChart: os.drafts.makeChart.handler(({ input, signal }) =>
         withProgress(
-          (onProgress, downloadSignal) => runRpc(runtime, downloadIntoDraft(input.videoId, onProgress), downloadSignal),
+          (onProgress, chartSignal) => runRpc(runtime, makeDraftChart(input, onProgress), chartSignal),
           signal,
         ),
       ),
-      create: os.youtube.create.handler(({ input, signal }) =>
+      create: os.drafts.create.handler(({ input, signal }) =>
         withProgress(
           (onProgress, createSignal) =>
             runRpc(
@@ -329,7 +371,7 @@ export function procedures(runtime: ManagedRuntime.ManagedRuntime<StudioServices
                   input.cover.kind === "file"
                     ? { kind: "file" as const, path: yield* allowedPath(input.cover.path) }
                     : input.cover;
-                const session = yield* createYoutubeProject({ ...input, cover, target }, onProgress);
+                const session = yield* createDraftProject({ ...input, cover, target }, onProgress);
                 return yield* remember(session);
               }),
               createSignal,
@@ -337,9 +379,6 @@ export function procedures(runtime: ManagedRuntime.ManagedRuntime<StudioServices
           signal,
         ),
       ),
-    },
-
-    drafts: {
       discard: os.drafts.discard.handler(({ input, signal }) =>
         runRpc(
           runtime,
@@ -372,18 +411,37 @@ export function procedures(runtime: ManagedRuntime.ManagedRuntime<StudioServices
           runtime,
           Effect.gen(function* () {
             const models = yield* Models;
-            const installed = yield* Effect.forEach(MODEL_NAMES, (model) => models.installed(model));
-            return { separation: installed[0]!, whisper: installed[1]! };
+            const has = (model: ModelName) => models.installed(model);
+            return {
+              separation: yield* has("separation"),
+              whisper: yield* has("whisper"),
+              chart: (yield* Effect.forEach(CHART_MODELS, has)).every(Boolean),
+            };
           }),
           signal,
         ),
       ),
+      list: os.models.list.handler(({ signal }) => runRpc(runtime, modelFeatures, signal)),
+      download: os.models.download.handler(({ input, signal }) =>
+        withProgress(
+          (onProgress, downloadSignal) => runRpc(runtime, downloadFeature(input.feature, onProgress), downloadSignal),
+          signal,
+        ),
+      ),
+      remove: os.models.remove.handler(({ input, signal }) => runRpc(runtime, removeFeature(input.feature), signal)),
     },
     tools: {
       status: os.tools.status.handler(({ signal }) =>
         runRpc(
           runtime,
           Tools.use((tools) => tools.status),
+          signal,
+        ),
+      ),
+      remove: os.tools.remove.handler(({ input, signal }) =>
+        runRpc(
+          runtime,
+          Tools.use((tools) => Effect.andThen(tools.remove(input.tool), tools.status)),
           signal,
         ),
       ),

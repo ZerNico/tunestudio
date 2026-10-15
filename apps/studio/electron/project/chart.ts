@@ -1,4 +1,4 @@
-import { asc } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { Effect, Schema } from "effect";
 
 import { ProjectDamaged } from "../errors";
@@ -21,7 +21,37 @@ export function writeChart(db: Queryable, chart: ProjectChart) {
       language: encodeLanguages(language),
       extraHeaders: encodeExtraHeaders(extraHeaders),
     });
-    for (const singer of chart.singers) {
+    yield* writeSingers(db, chart.singers);
+  });
+}
+
+/**
+ * Replaces the project's singers, lines and notes with `chart`'s, and its grid (BPM and GAP) with `chart`'s; the
+ * other song details stay. Run it in a transaction: it deletes before it writes.
+ */
+export function replaceChart(
+  db: Queryable,
+  chart: Pick<ProjectChart, "singers"> & { song: { bpm: number; gap: number } },
+) {
+  return Effect.gen(function* () {
+    // Lines and notes go with their singers.
+    yield* db.delete(singers);
+    yield* db.update(song).set({ bpm: chart.song.bpm, gap: chart.song.gap });
+    yield* writeSingers(db, chart.singers);
+  });
+}
+
+/** Whether any note was changed by hand since it was made or imported. */
+export function hasEditedNotes(db: Queryable): Effect.Effect<boolean> {
+  return Effect.map(
+    db.select({ id: notes.id }).from(notes).where(eq(notes.edited, true)).limit(1).pipe(Effect.orDie),
+    (rows) => rows.length > 0,
+  );
+}
+
+function writeSingers(db: Queryable, chartSingers: readonly ChartSingerRow[]) {
+  return Effect.gen(function* () {
+    for (const singer of chartSingers) {
       const [singerRow] = yield* db
         .insert(singers)
         .values({ index: singer.index, name: singer.name })

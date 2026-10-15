@@ -778,7 +778,15 @@ function __napiStampBindingTarget(exportsObject, target) {
 // linked import resolves to `undefined`.
 module.exports.__napiBindingTarget = __napiStampBindingTarget(nativeBinding, __napiLoadedBindingTarget)
 module.exports = nativeBinding
+module.exports.alignerOutputs = nativeBinding.alignerOutputs
+module.exports.beatLogits = nativeBinding.beatLogits
+module.exports.forcedAlignPath = nativeBinding.forcedAlignPath
+module.exports.harmonicRatios = nativeBinding.harmonicRatios
+module.exports.predictNoteEnds = nativeBinding.predictNoteEnds
+module.exports.predictPitchShifts = nativeBinding.predictPitchShifts
 module.exports.separateVocals = nativeBinding.separateVocals
 module.exports.separationSampleRate = nativeBinding.separationSampleRate
+module.exports.trackPitch = nativeBinding.trackPitch
 module.exports.transcribe = nativeBinding.transcribe
+module.exports.transcribeNotes = nativeBinding.transcribeNotes
 module.exports.transcribeSampleRate = nativeBinding.transcribeSampleRate

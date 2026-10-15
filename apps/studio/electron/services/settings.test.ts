@@ -50,6 +50,21 @@ describe("AppSettings", () => {
     });
   });
 
+  it("keeps the remembered language when the settings screen saves an older copy", async () => {
+    const { run } = setup();
+    const stored = await run(
+      Effect.gen(function* () {
+        const settings = yield* AppSettings;
+        const screen = yield* settings.get;
+        yield* settings.remember({ language: "de" });
+        yield* settings.set({ ...screen, audio: { ...screen.audio, format: "mp3" } });
+        return yield* settings.get;
+      }),
+    );
+    expect(stored.audio.format).toBe("mp3");
+    expect(stored.newProject.language).toBe("de");
+  });
+
   it("treats a damaged file as the defaults", async () => {
     const { file, run } = setup();
     fs.mkdirSync(path.dirname(file), { recursive: true });
