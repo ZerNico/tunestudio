@@ -30,7 +30,7 @@ describe("Transport", () => {
     const user = userEvent.setup();
     render(() => {
       const playback = createPlayback({ audio: "a", vocals: "v", instrumental: "i" });
-      return <Transport playback={playback} length={100} onZoom={() => {}} />;
+      return <Transport playback={playback} length={100} onZoom={() => {}} onShowPitch={() => {}} />;
     });
     expect(screen.getByRole("button", { name: "Song" })).toHaveAttribute("aria-pressed", "true");
     await user.click(screen.getByRole("button", { name: "Vocals" }));

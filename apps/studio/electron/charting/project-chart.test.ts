@@ -9,6 +9,9 @@ import { callsOf, GOLDENS, goldenSongs, loadGolden } from "./goldens";
 import type { Note } from "./notes";
 import { toProjectChart } from "./project-chart";
 
+/** The pitch track a result carries; the chart doesn't use it. */
+const NO_TRACK = { times: new Float64Array(), midi: new Float32Array(), rms: new Float32Array() };
+
 const details = {
   title: "T",
   artist: "A",
@@ -41,6 +44,7 @@ describe("project chart", () => {
         lines: [[n(0, 4, 2, "Hel"), n(4, 4, 4, "lo ")], [n(20, 8, 0, "you ")]],
         breaks: [12],
         fit: null,
+        track: NO_TRACK,
       },
       details,
     );
@@ -61,7 +65,13 @@ describe.skipIf(!goldenSongs().length)("project chart against the PoC's .txt", (
       const grid = untagged(built!.args[1] as { bpm: number; gap: number; $type: string });
       const result = built!.result as { voices: (Note & { $type: string })[][][]; breaks: Record<string, number> };
       const chart = toProjectChart(
-        { grid, lines: result.voices[0]!.map((l) => l.map(untagged)), breaks: Object.values(result.breaks), fit: null },
+        {
+          grid,
+          lines: result.voices[0]!.map((l) => l.map(untagged)),
+          breaks: Object.values(result.breaks),
+          fit: null,
+          track: NO_TRACK,
+        },
         details,
       );
       const expected = fs.readFileSync(path.join(GOLDENS!, song, "chart.txt"), "utf8");

@@ -8,7 +8,9 @@ import { Effect, Layer } from "effect";
 import { readChart } from "../project/chart";
 import { writeLyrics } from "../project/lyrics";
 import { listMedia } from "../project/media";
+import { sungPitch } from "../project/pitch";
 import { projectsLayer } from "../project/projects";
+import { analysis } from "../project/schema";
 import { AppLog } from "../services/app-log";
 import { fakeModels, fakeNative, recordingDesktop, soloChart, syntheticBytes, tempDir, writeSong } from "../testing";
 import { Tools } from "../tools/tools";
@@ -107,5 +109,30 @@ describe("generateChart", () => {
       "Charts can't be made in Korean (romanized) yet, only in English and German.",
     );
     expect(chartLanguage([])).toBe("Set the song's language first.");
+  });
+});
+
+describe("sungPitch", () => {
+  it.effect("follows the melody of the vocals once and keeps it in the project", () => {
+    const { dir, layer, song } = setup();
+    return Effect.gen(function* () {
+      const session = yield* importSong(yield* inspectSong(song), {
+        includeVideo: false,
+        target: path.join(dir, "Night.tunestudio"),
+      });
+      const steps: string[] = [];
+      const pitch = yield* sungPitch(session, (progress) => Effect.sync(() => void steps.push(progress.step)));
+      // Five seconds every 10 ms; the fake model hears A4 throughout.
+      expect(pitch?.hop).toBe(0.01);
+      expect(pitch?.midi.length).toBe(501);
+      expect(pitch?.midi[250]).toBe(69);
+      expect(steps).toContain("Following the melody");
+      // Asked again, it comes from the project.
+      const again = yield* sungPitch(session, (progress) => Effect.sync(() => void steps.push(progress.step)));
+      expect(again).toEqual(pitch);
+      expect(steps.filter((step) => step === "Following the melody")).toHaveLength(1);
+      const rows = yield* session.db.select().from(analysis).pipe(Effect.orDie);
+      expect(rows.filter((row) => row.kind === "pitch")).toHaveLength(1);
+    }).pipe(Effect.provide(layer));
   });
 });

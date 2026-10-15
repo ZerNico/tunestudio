@@ -1,4 +1,5 @@
 import { For, Show } from "solid-js";
+import ActivityIcon from "~icons/lucide/activity";
 import PauseIcon from "~icons/lucide/pause";
 import PlayIcon from "~icons/lucide/play";
 import ZoomInIcon from "~icons/lucide/zoom-in";
@@ -10,7 +11,14 @@ import { type Playback, SOURCE_LABELS } from "~/lib/editor/playback";
 import { formatTime } from "~/lib/editor/view";
 
 /** Play/pause, where the playhead is, which source plays, and zoom. */
-export function Transport(props: { playback: Playback; length: number; onZoom: (factor: number) => void }) {
+export function Transport(props: {
+  playback: Playback;
+  length: number;
+  onZoom: (factor: number) => void;
+  /** Whether the sung pitch is drawn; undefined when the project has none to draw. */
+  showPitch?: boolean;
+  onShowPitch: (show: boolean) => void;
+}) {
   return (
     <footer
       class="flex h-11 shrink-0 items-center gap-3 border-t border-bar-border bg-transport px-3"
@@ -53,6 +61,19 @@ export function Transport(props: { playback: Playback; length: number; onZoom: (
         </ToggleGroup>
       </Show>
       <div class="ml-auto flex items-center gap-1">
+        <Show when={props.showPitch !== undefined}>
+          <Button
+            variant={props.showPitch ? "secondary" : "ghost"}
+            size="sm"
+            aria-pressed={props.showPitch ? "true" : "false"}
+            title="What is sung, drawn behind the notes"
+            onClick={() => props.onShowPitch(!props.showPitch)}
+            data-testid="show-pitch"
+          >
+            <ActivityIcon />
+            Pitch
+          </Button>
+        </Show>
         <Button variant="ghost" size="icon-sm" aria-label="Zoom out" onClick={() => props.onZoom(1 / 1.5)}>
           <ZoomOutIcon />
         </Button>

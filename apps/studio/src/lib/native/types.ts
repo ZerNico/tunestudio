@@ -48,6 +48,12 @@ export interface EditorChart {
   singers: EditorSinger[];
 }
 
+/** What is sung in the vocals, for the editor: MIDI (fractional) every `hop` seconds, null where nothing is sung. */
+export interface SungPitch {
+  hop: number;
+  midi: (number | null)[];
+}
+
 /** A project in the recent projects list. */
 export interface RecentProjectEntry {
   /** The `.tunestudio` file. */

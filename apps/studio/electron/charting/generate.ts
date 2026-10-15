@@ -12,6 +12,7 @@ import { Native } from "../native/native";
 import { readChart, replaceChart } from "../project/chart";
 import { readLyrics } from "../project/lyrics";
 import { listMedia, writeMediaToFile } from "../project/media";
+import { sungMidi, writePitch } from "../project/pitch";
 import type { ProjectSession } from "../project/projects";
 import { AppLog } from "../services/app-log";
 import { Tools } from "../tools/tools";
@@ -47,8 +48,8 @@ export interface ChartSource {
 }
 
 /**
- * A chart from files: the chart models (downloaded first if needed) over the decoded vocals and song. The result's
- * song details are `details` with the chart's grid; nothing is written anywhere.
+ * A chart from files: the chart models (downloaded first if needed) over the decoded vocals and song, with the sung
+ * pitch it followed. The chart's song details are `details` with its grid; nothing is written anywhere.
  */
 export function chartFromFiles(
   source: ChartSource,
@@ -110,7 +111,8 @@ export function chartFromFiles(
         result.fit ? `, line times ${result.fit.ignored ? "ignored" : `offset ${result.fit.offset.toFixed(2)} s`}` : ""
       }`,
     );
-    return toProjectChart(result, details);
+    // The pitch it followed goes with the chart, so the editor can draw it without working it out again.
+    return { chart: toProjectChart(result, details), pitch: sungMidi(result.track) };
   }).pipe(Effect.scoped);
 }
 
@@ -145,7 +147,9 @@ export function generateChart(session: ProjectSession, onProgress: (progress: Im
       chart.song,
       onProgress,
     );
-    yield* db.transaction((tx) => replaceChart(tx, generated));
-    return generated;
+    yield* db.transaction((tx) =>
+      Effect.andThen(replaceChart(tx, generated.chart), writePitch(tx, vocals, generated.pitch)),
+    );
+    return generated.chart;
   }).pipe(Effect.scoped);
 }

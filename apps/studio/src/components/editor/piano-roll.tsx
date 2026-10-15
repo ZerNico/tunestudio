@@ -1,7 +1,10 @@
-import { For } from "solid-js";
+import { For, Show } from "solid-js";
 
 import type { DrawnNote, LineBreak } from "~/lib/editor/chart";
 import { type PitchRange, pitchName, pitchToY, rowCount, timeToX, type TimeView } from "~/lib/editor/view";
+import type { SungPitch } from "~/lib/native/types";
+
+import { PitchTrace } from "./pitch-trace";
 
 /** Notes narrower than this show no syllable (it would only be a clipped letter). */
 const MIN_LABEL_PX = 18;
@@ -17,6 +20,8 @@ export const GUTTER_PX = 40;
 export function PianoRoll(props: {
   notes: DrawnNote[];
   breaks: LineBreak[];
+  /** What is sung, drawn behind the notes (null: not shown). */
+  pitch?: SungPitch | null;
   range: PitchRange;
   view: TimeView;
   /** The drawing area (without the gutter). */
@@ -64,6 +69,17 @@ export function PianoRoll(props: {
             />
           )}
         </For>
+        <Show when={props.pitch}>
+          {(pitch) => (
+            <PitchTrace
+              pitch={pitch()}
+              view={props.view}
+              width={props.width}
+              height={props.height}
+              range={props.range}
+            />
+          )}
+        </Show>
         <For each={props.breaks}>
           {(item) => (
             <div

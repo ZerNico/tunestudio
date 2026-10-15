@@ -11,6 +11,7 @@ import type { ImportProgress } from "../../src/lib/native/types";
 import { DEFAULT_SETTINGS, type Settings } from "../../src/lib/settings";
 import { createDraftProject, listenToDraft, makeDraftChart } from "../drafts/draft-project";
 import { projectOverview } from "../project/overview";
+import { sungPitch } from "../project/pitch";
 import { Projects, projectsLayer } from "../project/projects";
 import { AppLog } from "../services/app-log";
 import { Drafts, draftsLayer } from "../services/drafts";
@@ -532,7 +533,7 @@ describe("makeDraftChart", () => {
     return Effect.gen(function* () {
       yield* AppSettings.use((stored) => stored.set(settings({ video: { download: false } })));
       const { draftId } = yield* downloadIntoDraft("dQw4w9WgXcQ");
-      yield* Drafts.use((drafts) => drafts.setChart(draftId, { chart: tinyChart(), madeFrom: "before" }));
+      yield* Drafts.use((drafts) => drafts.setChart(draftId, { chart: tinyChart(), madeFrom: "before", pitch: PITCH }));
       // The fake FFmpeg "decodes" a few bytes: far too little song to chart.
       const error = yield* Effect.flip(makeDraftChart({ draftId, lines, language: "en" }));
       expect(error._tag).toBe("ChartFailed");
@@ -576,10 +577,13 @@ describe("createDraftProject with a made chart", () => {
     return Effect.gen(function* () {
       const { draftId } = yield* downloadIntoDraft("dQw4w9WgXcQ");
       const madeFrom = chartInputsKey(lyrics.lines, "en");
-      yield* Drafts.use((drafts) => drafts.setChart(draftId, { chart: tinyChart(), madeFrom }));
+      yield* Drafts.use((drafts) => drafts.setChart(draftId, { chart: tinyChart(), madeFrom, pitch: PITCH }));
       const session = yield* create(draftId, path.join(dir, "song.tunestudio"));
       const overview = yield* projectOverview(session);
+      // The pitch the chart followed is kept with the vocals, so the editor doesn't work it out again.
+      const pitch = yield* sungPitch(session);
       yield* Projects.use((projects) => projects.close(session.id));
+      expect(pitch).toEqual({ hop: 0.01, midi: [64, 64.5, null] });
       expect(overview.notes).toBe(2);
       expect(overview.song).toMatchObject({
         artist: "Rick Astley",
@@ -600,7 +604,7 @@ describe("createDraftProject with a made chart", () => {
       const { draftId } = yield* downloadIntoDraft("dQw4w9WgXcQ");
       expect((yield* Effect.flip(create(draftId, target)))._tag).toBe("ChartOutdated");
       yield* Drafts.use((drafts) =>
-        drafts.setChart(draftId, { chart: tinyChart(), madeFrom: chartInputsKey(lyrics.lines, "en") }),
+        drafts.setChart(draftId, { chart: tinyChart(), madeFrom: chartInputsKey(lyrics.lines, "en"), pitch: PITCH }),
       );
       expect((yield* Effect.flip(create(draftId, target, "de")))._tag).toBe("ChartOutdated");
       expect(fs.existsSync(target)).toBe(false);
@@ -609,6 +613,9 @@ describe("createDraftProject with a made chart", () => {
     }).pipe(Effect.provide(layer));
   });
 });
+
+/** The sung pitch a made chart carries: MIDI per 10 ms, NaN where nothing is sung. */
+const PITCH = Float32Array.of(64, 64.5, Number.NaN);
 
 /** A made chart with one line of two notes; its song details are placeholders. */
 function tinyChart() {

@@ -10,6 +10,7 @@ import { GUTTER_PX, PianoRoll } from "~/components/editor/piano-roll";
 import { Playhead } from "~/components/editor/playhead";
 import { SongPanel } from "~/components/editor/song-panel";
 import { Transport } from "~/components/editor/transport";
+import { follow as followProgress, percentOf, progressBarClass } from "~/components/new-project/progress";
 import { ReplaceExportDialog } from "~/components/project/replace-export-dialog";
 import { TitleBar } from "~/components/title-bar";
 import { Button } from "~/components/ui/button";
@@ -30,6 +31,7 @@ import {
 } from "~/lib/editor/view";
 import { native } from "~/lib/native/client";
 import { errorMessage } from "~/lib/native/errors";
+import type { ImportProgress, SungPitch } from "~/lib/native/types";
 
 const route = getRouteApi("/project/$id");
 
@@ -73,6 +75,11 @@ export default function ProjectScreen() {
   const duet = () => data().chart.singers.length > 1;
   const breaks = createMemo(() => lineBreaks(data().chart));
   const [songPanel, setSongPanel] = createSignal(notes().length === 0);
+  /** What is sung in the vocals (null: none, or not there yet). */
+  const [pitch, setPitch] = createSignal<SungPitch | null>(null);
+  const [showPitch, setShowPitch] = createSignal(true);
+  /** Opening isn't finished: the pitch is being prepared (shown after a moment, with its progress). */
+  const [opening, setOpening] = createSignal<ImportProgress | null | undefined>(undefined);
 
   const media = (role: string) => overview().media.find((item) => item.role === role)?.url;
   const [view, setView] = createSignal<TimeView>({ start: 0, pxPerSecond: 80 });
@@ -126,8 +133,32 @@ export default function ProjectScreen() {
   let editArea: HTMLDivElement | undefined;
   let rollArea: HTMLDivElement | undefined;
 
+  /**
+   * Makes sure the sung pitch is there before editing starts: stored ones come at once; otherwise it is worked out now
+   * (getting the pitch model first if needed), with "Opening the project…" over the editor. Opening never fails on it.
+   */
+  const preparePitch = async (signal: AbortSignal) => {
+    if (!media("vocals")) return;
+    const shown = setTimeout(() => setOpening((current) => current ?? null), 150);
+    try {
+      const result = await followProgress(
+        () => native.project.pitch({ id: overview().id }, { signal }),
+        signal,
+        (progress) => setOpening(progress),
+      );
+      if (!signal.aborted) setPitch(result);
+    } catch (error) {
+      toast.add({ type: "error", title: "Couldn't follow the melody", description: errorMessage(error) });
+    } finally {
+      clearTimeout(shown);
+      if (!signal.aborted) setOpening(undefined);
+    }
+  };
+
   onSettled(() => {
     playback.load();
+    const pitchController = new AbortController();
+    void preparePitch(pitchController.signal);
     const observer = new ResizeObserver(() => {
       if (!rollArea) return;
       const next = { width: Math.max(0, rollArea.clientWidth - GUTTER_PX), height: rollArea.clientHeight };
@@ -172,6 +203,7 @@ export default function ProjectScreen() {
     };
     window.addEventListener("keydown", onKey);
     return () => {
+      pitchController.abort();
       observer.disconnect();
       editArea?.removeEventListener("wheel", onWheel);
       window.removeEventListener("keydown", onKey);
@@ -273,10 +305,14 @@ export default function ProjectScreen() {
                 view={view()}
                 width={width()}
                 height={size().height}
+                pitch={showPitch() ? pitch() : null}
                 onSeek={seek}
               />
             </div>
             <LyricsLane lines={visibleLines()} all={lines()} view={view()} duet={duet()} />
+            <Show when={opening() !== undefined}>
+              <OpeningOverlay progress={opening() ?? null} />
+            </Show>
             <Playhead view={view()} width={width()} time={playback.time()} onScrub={seek} />
           </div>
           <Show when={notes().length === 0}>
@@ -300,6 +336,8 @@ export default function ProjectScreen() {
         playback={playback}
         length={length()}
         onZoom={(factor) => changeView(zoomAt(view(), factor, width() / 2, width(), length()))}
+        showPitch={pitch() ? showPitch() : undefined}
+        onShowPitch={setShowPitch}
       />
 
       <ReplaceExportDialog
@@ -310,6 +348,26 @@ export default function ProjectScreen() {
           void exportTo(folder, true);
         }}
       />
+    </div>
+  );
+}
+
+/** Over the editor while opening finishes: what is being prepared, and how far it is. */
+function OpeningOverlay(props: { progress: ImportProgress | null }) {
+  return (
+    <div
+      class="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 bg-background/85"
+      aria-live="polite"
+      data-testid="editor-opening"
+    >
+      <span class="flex items-center gap-2 text-[13px] font-medium text-foreground">
+        <LoaderCircleIcon class="size-4 animate-spin text-primary" />
+        Opening the project…
+      </span>
+      <span class="text-[11.5px] text-muted-foreground">{props.progress?.step ?? "Following the melody"}</span>
+      <div class="w-56">
+        <progress aria-label="Opening progress" max="100" value={percentOf(props.progress)} class={progressBarClass} />
+      </div>
     </div>
   );
 }

@@ -15,6 +15,7 @@ import type {
   CoverCandidate,
   DownloadedDraft,
   EditorChart,
+  SungPitch,
   FoundLyrics,
   HeardLyrics,
   MadeChart,
@@ -191,6 +192,13 @@ export const contract = {
     open: oc.input(Schema.toStandardSchemaV1(PathInput)).output(type<OpenedProject>()),
     overview: oc.input(Schema.toStandardSchemaV1(ProjectInput)).output(type<ProjectOverview>()),
     close: oc.input(Schema.toStandardSchemaV1(ProjectInput)),
+    /**
+     * What is sung in the project's vocals (stored, or worked out now, getting the pitch model first if needed),
+     * reporting progress; null without vocals.
+     */
+    pitch: oc
+      .input(Schema.toStandardSchemaV1(ProjectInput))
+      .output(eventIterator(type<ImportProgress>(), type<SungPitch | null>())),
     /** The chart with its row ids, for the editor. */
     chart: oc.input(Schema.toStandardSchemaV1(ProjectInput)).output(type<EditorChart>()),
     /** Writes the project as an UltraStar song folder. */

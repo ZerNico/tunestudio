@@ -18,6 +18,7 @@ import { orDiskFull, writeMeta } from "../project/database";
 import { imageExtension, readImage } from "../project/images";
 import { writeLyrics } from "../project/lyrics";
 import { type MediaRole, type MediaSource, writeMedia } from "../project/media";
+import { writePitch } from "../project/pitch";
 import { Projects } from "../project/projects";
 import { type Draft, type DraftSource, Drafts } from "../services/drafts";
 import { AppSettings } from "../services/settings";
@@ -89,13 +90,13 @@ export function makeDraftChart(
         message: "The voice wasn't separated from the song, so there is nothing to chart.",
       });
     }
-    const chart = yield* chartFromFiles(
+    const { chart, pitch } = yield* chartFromFiles(
       { vocalsFile: draft.media.vocals, audioFile: draft.media.audio, lines: input.lines, language },
       PLACEHOLDER_DETAILS,
       onProgress,
     );
     const madeFrom = chartInputsKey(input.lines, input.language);
-    yield* drafts.setChart(draft.id, { chart, madeFrom });
+    yield* drafts.setChart(draft.id, { chart, madeFrom, pitch });
     const lines = chart.singers.flatMap((singer) => singer.lines);
     return {
       notes: lines.reduce((count, line) => count + line.notes.length, 0),
@@ -125,6 +126,7 @@ export function createDraftProject(
       const source = sourceDetails(draft.source);
 
       let made = null;
+      let madePitch: Float32Array | null = null;
       if (input.chart === "made") {
         if (!draft.chart) return yield* new ChartOutdated({ message: "The chart wasn't made. Make it again." });
         if (draft.chart.madeFrom !== chartInputsKey(input.lyrics?.lines, input.language)) {
@@ -133,6 +135,7 @@ export function createDraftProject(
           });
         }
         made = draft.chart.chart;
+        madePitch = draft.chart.pitch;
       }
 
       const name = songFileName(input.artist, input.title);
@@ -239,6 +242,8 @@ export function createDraftProject(
             if (file.role === "audio" && input.lyrics && input.lyrics.lines.length > 0) {
               yield* writeLyrics(db, row, input.lyrics).pipe(orDiskFull);
             }
+            // The pitch the chart was made from, for the editor (a chart left empty has none yet).
+            if (file.role === "vocals" && madePitch) yield* writePitch(db, row, madePitch);
           }
         }),
       );

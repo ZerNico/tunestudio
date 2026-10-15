@@ -10,6 +10,7 @@ import { CHART_MODELS, type ModelName, Models } from "../models/models";
 import { readEditorChart } from "../project/editor-chart";
 import { readImage } from "../project/images";
 import { projectOverview, recentEntry } from "../project/overview";
+import { sungPitch } from "../project/pitch";
 import { Projects, type ProjectSession } from "../project/projects";
 import { AppLog } from "../services/app-log";
 import { Desktop } from "../services/desktop";
@@ -248,6 +249,20 @@ export function procedures(runtime: ManagedRuntime.ManagedRuntime<StudioServices
             Projects.use((projects) => projects.get(input.id)),
             projectOverview,
           ),
+          signal,
+        ),
+      ),
+      pitch: os.project.pitch.handler(({ input, signal }) =>
+        withProgress(
+          (onProgress, pitchSignal) =>
+            runRpc(
+              runtime,
+              Effect.flatMap(
+                Projects.use((projects) => projects.get(input.id)),
+                (session) => sungPitch(session, onProgress),
+              ),
+              pitchSignal,
+            ),
           signal,
         ),
       ),

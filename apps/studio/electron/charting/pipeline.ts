@@ -81,6 +81,8 @@ export interface ChartResult {
   breaks: number[];
   /** How LRCLIB's line times were used, when the lyrics had them. */
   fit: LineTimingFit | null;
+  /** The singer's pitch it followed (kept with the project for the editor). */
+  track: FullPitchTrack;
 }
 
 /** GAME's language ids (its config): English has its own, everything else is universal. */
@@ -187,7 +189,7 @@ export async function makeChart(
   fixOctaves(noteLines, grid, track, tuning, harmonicPairs(ratios));
   markGolden(noteLines, grid, track, tuning);
   const finished = finishLines(splitLines(noteLines, grid), grid);
-  return { grid, lines: finished.lines, breaks: finished.breaks, fit };
+  return { grid, lines: finished.lines, breaks: finished.breaks, fit, track };
 }
 
 /** Each aligned line's syllable spans, with their starts moved to the syllable-start head's peaks. */

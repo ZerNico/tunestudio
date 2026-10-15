@@ -14,6 +14,8 @@ export interface DraftChart {
   /** Its song details are placeholders: the project gets the ones chosen when it is created. */
   readonly chart: ProjectChart;
   readonly madeFrom: string;
+  /** The sung pitch it followed (MIDI per 10 ms, NaN where nothing is sung), stored with the vocals. */
+  readonly pitch: Float32Array;
 }
 
 /** A new project being set up: its working folder, what is in it so far, and the chart if one was made. */
