@@ -34,7 +34,7 @@ const chart: EditorChart = {
   ],
 };
 
-function setup(playhead = 0, start: EditorChart = chart) {
+function setup(playhead = 0, start: EditorChart = chart, viewStart?: () => number) {
   return createRoot(() => {
     const [selection, setSelection] = createSignal<number[]>([]);
     const doc = createChartDocument<number[]>({
@@ -50,6 +50,7 @@ function setup(playhead = 0, start: EditorChart = chart) {
     const pointer = new EventTarget();
     const editing = createNoteEditing({
       pointerTarget: pointer,
+      viewStart,
       doc: () => doc,
       notes,
       selection,
@@ -118,7 +119,7 @@ function setup(playhead = 0, start: EditorChart = chart) {
       flush();
     };
     const find = (id: number) => notes().find((item) => item.id === id);
-    return { doc, editing, selection, press, click, drag, draw, find, notes, onReveal, onRefused };
+    return { doc, editing, selection, press, click, drag, draw, find, notes, onReveal, onRefused, pointer };
   });
 }
 
@@ -437,5 +438,94 @@ describe("note editing", () => {
     editing.emptyDoubleClick({ time: 10, pitch: 60 });
     flush();
     expect(onRefused).toHaveBeenCalledWith(expect.stringContaining("no room"));
+  });
+
+  it("copies notes with their line break and pastes them at the playhead as one step, selected", () => {
+    // Line 10 is "We walk" (1–1.8 s), line 11 "on" (3 s); the playhead is at 6 s.
+    const { click, editing, doc, selection, notes } = setup(6);
+    click(100);
+    click(102, { shiftKey: true });
+    expect(editing.copySelection()).toBe("We walk\non");
+    expect(editing.pasteClip("We walk\non")).toBe(true);
+    flush();
+    const pasted = notes().filter((note) => note.start >= 6);
+    expect(pasted.map((note) => [note.start, note.lyric])).toEqual([
+      [6, "We "],
+      [expect.closeTo(6.5, 9), "walk"],
+      [8, "on"],
+    ]);
+    // The break between the copied lines came along: "on" is on its own line again.
+    expect(pasted[2]!.lineId).not.toBe(pasted[0]!.lineId);
+    expect(pasted[1]!.lineId).toBe(pasted[0]!.lineId);
+    expect(selection()).toEqual(pasted.map((note) => note.id));
+    expect(doc.undoLabel()).toBe("Paste 3 notes");
+    doc.undo();
+    flush();
+    expect(notes().filter((note) => note.start >= 6)).toEqual([]);
+    expect(doc.undoLabel()).toBeNull();
+  });
+
+  it("cuts notes, and doesn't paste after something else was copied", () => {
+    const { click, editing, find, doc } = setup(6);
+    click(101);
+    expect(editing.cutSelection()).toBe("walk");
+    flush();
+    expect(find(101)).toBeUndefined();
+    expect(doc.undoLabel()).toBe("Cut note");
+    expect(editing.pasteClip("some other text")).toBe(false);
+  });
+
+  it("copies one singer's notes at a time", () => {
+    const duet: EditorChart = {
+      ...chart,
+      singers: [
+        ...chart.singers,
+        {
+          id: 2,
+          index: 2,
+          name: null,
+          lines: [{ id: 20, switchStart: null, switchEnd: null, notes: [note(200, 2, "da")] }],
+        },
+      ],
+    };
+    const { press, editing, onRefused } = setup(0, duet);
+    press("a", { metaKey: true });
+    // Refused (and said why): handled, so nothing else copies either.
+    expect(editing.copySelection()).toBe(false);
+    expect(onRefused).toHaveBeenCalledWith("Copy one singer's notes at a time.");
+  });
+
+  it("moves a dragged note on as far as the view scrolled under it", () => {
+    let start = 0;
+    const { editing, find, notes, pointer } = setup(0, chart, () => start);
+    const move = (clientX: number) => {
+      pointer.dispatchEvent(Object.assign(new Event("pointermove"), { clientX, clientY: 0 }));
+      flush();
+    };
+    editing.noteDown(
+      notes().find((note) => note.id === 101)!,
+      { clientX: 0, clientY: 0, shiftKey: false, metaKey: false, ctrlKey: false },
+      "body",
+      { pxPerSecond: 100, rowHeight: 10 },
+    );
+    move(5);
+    // The view scrolls a second on while the pointer stays at the edge: 10 px (0.1 s) + 1 s.
+    start = 1;
+    move(10);
+    expect(editing.drag()!.time).toBeCloseTo(1.1, 9);
+    pointer.dispatchEvent(new Event("pointerup"));
+    flush();
+    expect(find(101)!.start).toBeCloseTo(2.6, 9);
+  });
+
+  it("ends a drag without changing anything when the window loses focus", () => {
+    const { drag, editing, pointer, find, doc } = setup();
+    drag(101, "body", [[50, 0]], false);
+    pointer.dispatchEvent(new Event("blur"));
+    flush();
+    expect(editing.busy()).toBe(false);
+    expect(editing.drag()).toBeNull();
+    expect(find(101)!.start).toBe(1.5);
+    expect(doc.undoLabel()).toBeNull();
   });
 });

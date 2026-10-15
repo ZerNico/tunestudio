@@ -3,9 +3,9 @@
  * (when the game shows the next line). Moving a break retimes the switch, and moving it across notes moves them to the
  * other line: every note belongs to the line it starts in. A break keeps at least one note on either side, so it can't
  * pass its neighbours. Adding one splits a line in two, removing one joins two. Breaks are on the grid and never inside
- * the note before them (a switch that falls inside a note moves to its end).
+ * a note: they are kept out of the stretches notes cover (`occupied`; overlapping notes count as one stretch).
  */
-import type { EditorChart, EditorLine } from "~/lib/native/types";
+import type { EditorChart } from "~/lib/native/types";
 
 import { defaultSwitch } from "./chart";
 import type { EditRecorder } from "./document";
@@ -23,7 +23,39 @@ function linesAround(chart: EditorChart, lineId: number) {
   return null;
 }
 
-const lineEnd = (line: EditorLine) => Math.max(...line.notes.map((note) => note.start + note.duration));
+/** A stretch of time notes cover. */
+export interface Span {
+  start: number;
+  end: number;
+}
+
+/** The stretches the notes cover, overlapping ones merged, in order. */
+export function occupied(notes: readonly { start: number; duration: number }[]): Span[] {
+  const sorted = notes
+    .map((note) => ({ start: note.start, end: note.start + note.duration }))
+    .toSorted((a, b) => a.start - b.start);
+  const spans: Span[] = [];
+  for (const span of sorted) {
+    const last = spans.at(-1);
+    if (last && span.start < last.end - EPSILON) last.end = Math.max(last.end, span.end);
+    else spans.push({ ...span });
+  }
+  return spans;
+}
+
+/** The stretch `time` is strictly inside (a break there would be inside a note), if any. */
+export function spanAt(spans: readonly Span[], time: number): Span | undefined {
+  let low = 0;
+  let high = spans.length - 1;
+  while (low <= high) {
+    const middle = (low + high) >> 1;
+    const span = spans[middle]!;
+    if (span.end <= time + EPSILON) low = middle + 1;
+    else if (span.start >= time - EPSILON) high = middle - 1;
+    else return span;
+  }
+  return undefined;
+}
 
 /**
  * Where the break after line `lineId` can go: after the line's first note starts (a step on, so it keeps a note) up to
@@ -44,8 +76,8 @@ export function snapBreak(chart: EditorChart, range: { min: number; max: number 
 
 /**
  * Where the break after line `lineId` goes when dragged to `time`: the nearest place it may be, on the grid within
- * `breakRange` and never inside a note (over one, the nearer of its start, which sends it to the next line, and its
- * end, which keeps it). Null when the line is a singer's last.
+ * `breakRange` and never inside a note (over notes, the nearer edge of the stretch they cover: its start sends them to
+ * the next line, its end keeps them). Null when the line is a singer's last, or there is no such place.
  */
 export function breakLanding(chart: EditorChart, lineId: number, time: number): number | null {
   const around = linesAround(chart, lineId);
@@ -55,19 +87,12 @@ export function breakLanding(chart: EditorChart, lineId: number, time: number): 
   if (!line || !next || !range) return null;
   const low = gridCeil(chart, range.min);
   const high = gridFloor(chart, range.max);
-  const notes = [...line.notes, ...next.notes];
-  let at = snapBreak(chart, range, time);
-  // Overlapping notes can chain, so look again after each step out of one.
-  for (let tries = 0; tries <= notes.length; tries++) {
-    const inside = notes.find((note) => note.start < at - EPSILON && note.start + note.duration > at + EPSILON);
-    if (!inside) return at;
-    const edges = [inside.start, inside.start + inside.duration].filter(
-      (edge) => edge >= low - EPSILON && edge <= high + EPSILON && edge !== at,
-    );
-    if (edges.length === 0) return at;
-    at = edges.reduce((best, edge) => (Math.abs(edge - time) < Math.abs(best - time) ? edge : best));
-  }
-  return at;
+  const at = snapBreak(chart, range, time);
+  const span = spanAt(occupied([...line.notes, ...next.notes]), at);
+  if (!span) return at;
+  const edges = [span.start, span.end].filter((edge) => edge >= low - EPSILON && edge <= high + EPSILON);
+  if (edges.length === 0) return null;
+  return edges.reduce((best, edge) => (Math.abs(edge - time) < Math.abs(best - time) ? edge : best));
 }
 
 /**
@@ -103,14 +128,14 @@ export function addBreak(tx: EditRecorder, chart: EditorChart, singerId: number,
   // The line `at` falls in: the last one starting before it.
   const line = lines.findLast((item) => item.notes[0]!.start < at - EPSILON);
   if (!line) return false;
-  const inside = line.notes.find((note) => note.start < at - EPSILON && note.start + note.duration > at + EPSILON);
-  if (inside) at = inside.start + inside.duration;
+  // Inside notes: after them (overlapping ones count as one stretch).
+  at = spanAt(occupied(line.notes), at)?.end ?? at;
   const before = line.notes.filter((note) => note.start < at - EPSILON);
   const after = line.notes.filter((note) => note.start >= at - EPSILON);
   if (before.length === 0 || after.length === 0) return false;
   const created = tx.createLine({ singerId, switchStart: line.switchStart, switchEnd: line.switchEnd });
   for (const note of after) tx.updateNote(note.id, { lineId: created, edited: note.edited });
-  tx.updateLine(line.id, { switchStart: Math.max(at, lineEnd({ ...line, notes: before })), switchEnd: null });
+  tx.updateLine(line.id, { switchStart: at, switchEnd: null });
   return true;
 }
 

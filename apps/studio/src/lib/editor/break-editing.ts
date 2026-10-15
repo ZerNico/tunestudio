@@ -7,6 +7,7 @@
 
 import { createSignal } from "solid-js";
 
+import type { AutoScroll } from "./autoscroll";
 import { addBreak, breakLanding, breakRange, moveBreak, nearestGap, removeBreak } from "./breaks";
 import type { LineBreak } from "./chart";
 import type { ChartDocument } from "./document";
@@ -32,6 +33,10 @@ export function createBreakEditing(options: {
   onRefused: (message: string) => void;
   /** Where pointer moves and releases are heard during a drag (the window; tests pass their own). */
   pointerTarget?: EventTarget;
+  /** Scrolls the view while a drag is at the roll's edge (`autoscroll.ts`). */
+  autoScroll?: AutoScroll;
+  /** Where the view starts (seconds): a drag counts how far it scrolled. */
+  viewStart?: () => number;
 }) {
   /** The selected break, by the line it ends. */
   const [selected, setSelected] = createSignal<number | null>(null);
@@ -91,14 +96,18 @@ export function createBreakEditing(options: {
       const range = breakRange(current, item.lineId);
       if (!range) return;
       const target = options.pointerTarget ?? window;
+      const startView = options.viewStart?.() ?? 0;
       let dragging = false;
       let latest: BreakDrag | null = null;
       const move = (event: Event) => {
-        const dx = (event as PointerEvent).clientX - press.clientX;
+        const pointer = event as PointerEvent;
+        const dx = pointer.clientX - press.clientX;
         if (!dragging && Math.abs(dx) < DRAG_PX) return;
         dragging = true;
+        options.autoScroll?.track(pointer.clientX, () => move(event));
+        const scrolled = (options.viewStart?.() ?? startView) - startView;
         // Only where it may go: on the grid, never inside a note.
-        const time = breakLanding(current, item.lineId, item.time + dx / pxPerSecond) ?? item.time;
+        const time = breakLanding(current, item.lineId, item.time + dx / pxPerSecond + scrolled) ?? item.time;
         const count = moved(item.lineId, time);
         const label = [formatTime(time), count === 0 ? "" : `${count} ${count === 1 ? "note moves" : "notes move"}`]
           .filter(Boolean)
@@ -107,9 +116,11 @@ export function createBreakEditing(options: {
         setDrag(latest);
       };
       const stop = () => {
+        options.autoScroll?.end();
         target.removeEventListener("pointermove", move);
         target.removeEventListener("pointerup", up);
         target.removeEventListener("pointercancel", stop);
+        target.removeEventListener("blur", stop);
         cancelDrag = null;
         setDrag(null);
       };
@@ -123,6 +134,8 @@ export function createBreakEditing(options: {
       target.addEventListener("pointermove", move);
       target.addEventListener("pointerup", up);
       target.addEventListener("pointercancel", stop);
+      // A release outside the window may never arrive: losing focus ends the drag too.
+      target.addEventListener("blur", stop);
       cancelDrag = stop;
     },
 

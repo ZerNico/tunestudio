@@ -141,4 +141,47 @@ describe("line breaks", () => {
     expect(nearestGap(chart, 1, 3.1)).toBeCloseTo(3.3);
     expect(nearestGap(chart, 2, 1)).toBeNull();
   });
+
+  it("keeps breaks out of overlapping notes: their whole stretch counts", () => {
+    // A 1–4, B 2–6 (overlapping A), C 5–5.5 (inside B), D 7–7.5.
+    const overlapping: EditorChart = {
+      ...chart,
+      singers: [
+        {
+          id: 1,
+          index: 1,
+          name: null,
+          lines: [
+            {
+              id: 10,
+              switchStart: null,
+              switchEnd: null,
+              notes: [
+                { ...note(100, 1, "A"), duration: 3 },
+                { ...note(101, 2, "B"), duration: 4 },
+                { ...note(102, 5, "C"), duration: 0.5 },
+                { ...note(103, 7, "D"), duration: 0.5 },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const root = createRoot(() => {
+      const [selection, setSelection] = createSignal<number[]>([]);
+      return createChartDocument<number[]>({
+        chart: overlapping,
+        save: async () => {},
+        onFailed: () => {},
+        selection,
+        setSelection,
+      });
+    });
+    // At 3 s, inside A and B: after the whole stretch (6 s), so C stays in the first line.
+    root.edit("Add", (tx) => void addBreak(tx, overlapping, 1, 3));
+    flush();
+    const lines = root.chart().singers[0]!.lines;
+    expect(lines.map((line) => line.notes.map((item) => item.id))).toEqual([[100, 101, 102], [103]]);
+    expect(lines[0]!.switchStart).toBeCloseTo(6, 9);
+  });
 });

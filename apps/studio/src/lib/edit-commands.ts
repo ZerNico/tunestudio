@@ -1,13 +1,21 @@
 /**
- * Undo and Redo for the whole app: in a text field they undo the typing, as everywhere; elsewhere they go to whatever
- * registered a handler (the editor). They come from the Edit menu on macOS (Cmd+Z never reaches the page there) and
- * from the editor's own keys on Windows and Linux, which have no menu bar.
+ * Undo, Redo, Cut, Copy and Paste for the whole app: in a text field they act on the text, as everywhere; elsewhere
+ * they go to whatever registered a handler (the editor). They come from the Edit menu on macOS (its keys never reach
+ * the page there) and from the page's own keys and clipboard events on Windows and Linux, which have no menu bar.
  */
 import type { EditCommand } from "./native/channel";
 
 export interface EditHandler {
   undo: () => void;
   redo: () => void;
+  /**
+   * Copies (or cuts) what is selected; returns the text for the system clipboard, null for nothing to copy (the
+   * native copy goes on), or false for "handled, nothing to put there".
+   */
+  copy?: () => string | null | false;
+  cut?: () => string | null | false;
+  /** Pastes; `text` is the system clipboard's. Returns whether it pasted. */
+  paste?: (text: string | undefined) => boolean;
 }
 
 let handler: EditHandler | null = null;
@@ -30,10 +38,22 @@ export function isTyping(target: EventTarget | null): boolean {
   );
 }
 
-export function runEditCommand(command: EditCommand) {
-  if (handler && !isTyping(document.activeElement)) handler[command]();
-  // oxlint-disable-next-line typescript/no-deprecated -- the only way to undo typing in a field from a menu
-  else document.execCommand(command);
+/** Runs an Edit menu command (`text`: the system clipboard's, for Paste). */
+export function runEditCommand(command: EditCommand, text?: string) {
+  const editor = handler && !isTyping(document.activeElement) ? handler : null;
+  if (command === "undo" || command === "redo") {
+    if (editor) editor[command]();
+    // oxlint-disable-next-line typescript/no-deprecated -- the only way to undo typing in a field from a menu
+    else document.execCommand(command);
+    return;
+  }
+  if (command === "paste") {
+    if (!editor?.paste?.(text)) window.tunestudio?.clipboard?.({ native: "paste" });
+    return;
+  }
+  const copied = editor?.[command]?.() ?? null;
+  if (copied === false) return;
+  window.tunestudio?.clipboard?.(copied === null ? { native: command } : { write: copied });
 }
 
 /** Listens for the Edit menu's Undo and Redo; returns a function that stops listening. */

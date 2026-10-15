@@ -13,6 +13,9 @@
  * a note, Cmd/Ctrl+K splits at the playhead. A note added or double-clicked gets its syllable typed in place
  * (`editingLyric`); Enter edits the selected note's, Tab goes on to the next note.
  *
+ * Copy, cut and paste (`clipboard.ts`): the selected notes, with their line breaks; a paste goes in at the playhead for
+ * the active singer, as one edit keeping the line rules, and is selected.
+ *
  * Keys work on the selection:
  * - ↑ / ↓ pitch (Shift: an octave), ← / → move a grid step, Shift+← / → shorter or longer
  * - Tab / Shift+Tab next or previous note, Cmd/Ctrl+A all notes, Esc none, Enter edit the syllable
@@ -23,7 +26,9 @@
 
 import { createSignal } from "solid-js";
 
+import type { AutoScroll } from "./autoscroll";
 import type { DrawnNote } from "./chart";
+import { type Clip, copyNotes, pasteNotes } from "./clipboard";
 import type { ChartDocument } from "./document";
 import {
   addNote,
@@ -62,6 +67,9 @@ const FLAG_KEYS: Record<string, { flag: NoteFlag; label: string }> = {
 const DRAG_PX = 3;
 
 const count = (ids: readonly number[]) => (ids.length === 1 ? "note" : `${ids.length} notes`);
+
+/** What was copied last, in any project this session (the system clipboard has its text). */
+let clip: Clip | null = null;
 
 /** Which part of a note a press is on: its body moves it, an edge moves its start or end. */
 export type NotePart = "body" | "start" | "end";
@@ -124,6 +132,10 @@ export function createNoteEditing(options: {
   onRefused: (message: string) => void;
   /** Where pointer moves and releases are heard during a drag (the window; tests pass their own). */
   pointerTarget?: EventTarget;
+  /** Scrolls the view while a drag is at the roll's edge (`autoscroll.ts`). */
+  autoScroll?: AutoScroll;
+  /** Where the view starts (seconds): a drag counts how far it scrolled. */
+  viewStart?: () => number;
 }) {
   /** Where the last plain or Cmd-click was, for Shift-click ranges. */
   let anchor: number | null = null;
@@ -278,6 +290,7 @@ export function createNoteEditing(options: {
           : lengthLimits(placed, ids, unit);
     const pitch = pitchLimits(current, ids);
     const target = options.pointerTarget ?? window;
+    const startView = options.viewStart?.() ?? 0;
     let dragging = false;
     /** With Shift, the way the drag went first: only that changes. */
     let locked: "time" | "pitch" | null = null;
@@ -290,9 +303,12 @@ export function createNoteEditing(options: {
       const dy = pointer.clientY - press.clientY;
       if (!dragging && Math.hypot(dx, dy) < DRAG_PX) return;
       dragging = true;
+      options.autoScroll?.track(pointer.clientX, () => move(event));
+      /** How far the view scrolled since the press (the notes go along). */
+      const scrolled = (options.viewStart?.() ?? startView) - startView;
       if (pointer.shiftKey && part === "body") locked ??= Math.abs(dx) >= Math.abs(dy) ? "time" : "pitch";
       else locked = null;
-      const seconds = locked === "pitch" ? 0 : snapDelta(dx / scale.pxPerSecond, unit, time);
+      const seconds = locked === "pitch" ? 0 : snapDelta(dx / scale.pxPerSecond + scrolled, unit, time);
       const semitones = part !== "body" || locked === "time" ? 0 : snapDelta(-dy / scale.rowHeight, 1, pitch);
       const steps = Math.round(seconds / unit);
       const label =
@@ -303,9 +319,11 @@ export function createNoteEditing(options: {
       setDrag(latest);
     };
     const stop = () => {
+      options.autoScroll?.end();
       target.removeEventListener("pointermove", move);
       target.removeEventListener("pointerup", up);
       target.removeEventListener("pointercancel", cancel);
+      target.removeEventListener("blur", cancel);
       cancelDrag = null;
       setDrag(null);
     };
@@ -319,6 +337,8 @@ export function createNoteEditing(options: {
     target.addEventListener("pointermove", move);
     target.addEventListener("pointerup", up);
     target.addEventListener("pointercancel", cancel);
+    // A release outside the window may never arrive: losing focus ends the drag too.
+    target.addEventListener("blur", cancel);
     cancelDrag = stop;
   };
 
@@ -345,6 +365,7 @@ export function createNoteEditing(options: {
       const unit = gridStep(current);
       const start = Math.max(0, onGrid(current, at.time));
       const target = options.pointerTarget ?? window;
+      const startView = options.viewStart?.() ?? 0;
       let dragging = false;
       let drawn: { start: number; duration: number; pitch: number } | null = null;
       const move = (event: Event) => {
@@ -352,14 +373,18 @@ export function createNoteEditing(options: {
         const dx = pointer.clientX - press.clientX;
         if (!dragging && Math.abs(dx) < DRAG_PX) return;
         dragging = true;
-        const end = Math.min(options.length(), onGrid(current, at.time + dx / scale.pxPerSecond));
+        options.autoScroll?.track(pointer.clientX, () => move(event));
+        const scrolled = (options.viewStart?.() ?? startView) - startView;
+        const end = Math.min(options.length(), onGrid(current, at.time + dx / scale.pxPerSecond + scrolled));
         drawn = { start, duration: Math.max(unit, end - start), pitch: at.pitch };
         setDrawing(drawn);
       };
       const stop = () => {
+        options.autoScroll?.end();
         target.removeEventListener("pointermove", move);
         target.removeEventListener("pointerup", up);
         target.removeEventListener("pointercancel", stop);
+        target.removeEventListener("blur", stop);
         cancelDrag = null;
         setDrawing(null);
       };
@@ -373,6 +398,7 @@ export function createNoteEditing(options: {
       target.addEventListener("pointermove", move);
       target.addEventListener("pointerup", up);
       target.addEventListener("pointercancel", stop);
+      target.addEventListener("blur", stop);
       cancelDrag = stop;
     },
 
@@ -445,6 +471,56 @@ export function createNoteEditing(options: {
       select(next);
       const justThis = !press.shiftKey && next.length > 1;
       if (scale) follow(note, press, part, scale, next, justThis);
+    },
+
+    /**
+     * Copies the selected notes; returns the text for the system clipboard, null when nothing is selected (a copy
+     * elsewhere can go on), or false when it can't copy them (it said why; nothing else should copy).
+     */
+    copySelection(): string | null | false {
+      const ids = selected();
+      if (ids.length === 0) return null;
+      const copied = copyNotes(chart(), new Set(ids));
+      if (!copied) {
+        options.onRefused("Copy one singer's notes at a time.");
+        return false;
+      }
+      clip = copied;
+      return copied.text;
+    },
+
+    /** Copies the selected notes and deletes them; returns what `copySelection` does. */
+    cutSelection(): string | null | false {
+      const ids = selected();
+      const text = this.copySelection();
+      if (typeof text !== "string") return text;
+      options.doc().edit(`Cut ${count(ids)}`, (tx) => deleteNotes(tx, chart(), new Set(ids)), { selection: [] });
+      return text;
+    },
+
+    /**
+     * Pastes what was copied at the playhead, for the active singer, if the system clipboard still has its text
+     * (`text`; something else copied since isn't notes). Returns whether it did.
+     */
+    pasteClip(text?: string): boolean {
+      if (!clip || (text !== undefined && text !== clip.text)) return false;
+      const singerId = singerFor();
+      if (singerId === null) {
+        options.onRefused("This chart has no singer to add notes to.");
+        return true;
+      }
+      const pasted = clip;
+      const target = { singerId, at: options.playheadTime(), length: options.length() };
+      let ids: number[] = [];
+      options
+        .doc()
+        .edit(
+          `Paste ${count(pasted.notes.map((_, i) => i))}`,
+          (tx) => (ids = pasteNotes(tx, chart(), pasted, target)),
+          { selectionAfter: () => ids },
+        );
+      if (ids.length === 0) options.onRefused("There's no room to paste here: it would be past the song's end.");
+      return true;
     },
 
     /** A click on empty space: nothing selected any more. */

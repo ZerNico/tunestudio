@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { app, BrowserWindow, ipcMain, protocol, session, shell, webContents } from "electron";
+import { app, BrowserWindow, clipboard, ipcMain, protocol, session, shell, webContents } from "electron";
 
-import { GRANT_PATH_CHANNEL } from "../src/lib/native/channel";
+import { CLIPBOARD_CHANNEL, GRANT_PATH_CHANNEL } from "../src/lib/native/channel";
 import { contentSecurityPolicy } from "./csp";
 import { onDevReload } from "./dev-reload";
 import { BACKGROUND_COLOR, PRODUCT_NAME } from "./identity";
@@ -78,6 +78,22 @@ function handleGrantedPaths() {
     if (!stats) return null;
     await runtime.runPromise(PathGrants.use((grants) => grants.grant(value)));
     return { path: value, kind: stats.isDirectory() ? "directory" : "file" };
+  });
+}
+
+/**
+ * The page's answer to the Edit menu's Cut, Copy and Paste: text it copied for the system clipboard, or a text field's
+ * turn, done with the web contents' own cut, copy or paste.
+ */
+function handleClipboard() {
+  ipcMain.on(CLIPBOARD_CHANNEL, (event, request: unknown) => {
+    if (!fromAppFrame(event.senderFrame) || typeof request !== "object" || request === null) return;
+    if ("write" in request && typeof request.write === "string") void clipboard.writeText(request.write);
+    else if (
+      "native" in request &&
+      (request.native === "cut" || request.native === "copy" || request.native === "paste")
+    )
+      event.sender[request.native]();
   });
 }
 
@@ -179,6 +195,7 @@ function start() {
 
   protocol.handle(MEDIA_SCHEME, (request) => mediaResponse(request, (effect) => runtime.runPromise(effect)));
   handleGrantedPaths();
+  handleClipboard();
 
   listenForRpc(startRpcServer(runtime, nativeHandlers), appOrigin, (id) => {
     const contents = webContents.fromId(id);

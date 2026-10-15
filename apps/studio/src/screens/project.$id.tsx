@@ -1,5 +1,5 @@
 import { getRouteApi, useNavigate, useRouter } from "@tanstack/solid-router";
-import { createMemo, createSignal, onSettled, Show } from "solid-js";
+import { createMemo, createSignal, flush, onSettled, Show } from "solid-js";
 import DownloadIcon from "~icons/lucide/download";
 import LoaderCircleIcon from "~icons/lucide/loader-circle";
 import PanelRightIcon from "~icons/lucide/panel-right";
@@ -20,6 +20,7 @@ import { Button } from "~/components/ui/button";
 import { toast } from "~/components/ui/toast";
 import { platform, revealLabel } from "~/lib/desktop";
 import { isTyping, runEditCommand, setEditHandler } from "~/lib/edit-commands";
+import { createAutoScroll } from "~/lib/editor/autoscroll";
 import { createBreakEditing } from "~/lib/editor/break-editing";
 import { chartEnd, drawnNotes, lineBreaks, lineIndexAt, lineSpans, longest, stepLine } from "~/lib/editor/chart";
 import { createChartDocument } from "~/lib/editor/document";
@@ -150,7 +151,21 @@ export default function ProjectScreen() {
     },
   );
 
+  /** Scrolls the view while a drag is at the roll's left or right edge. */
+  const autoScroll = createAutoScroll({
+    bounds: () => {
+      const rect = rollArea?.getBoundingClientRect();
+      return rect ? { left: rect.left + GUTTER_PX, right: rect.right } : null;
+    },
+    scroll: (px) => {
+      changeView(scrollBy(view(), px, width(), length()));
+      // The drag is redone at once and reads the view.
+      flush();
+    },
+  });
   const breakEditing = createBreakEditing({
+    autoScroll,
+    viewStart: () => view().start,
     doc,
     singer: () => editing.activeSinger(),
     playheadTime: () => playback.time(),
@@ -204,6 +219,8 @@ export default function ProjectScreen() {
   };
 
   const editing = createNoteEditing({
+    autoScroll,
+    viewStart: () => view().start,
     doc,
     notes,
     selection,
@@ -223,6 +240,20 @@ export default function ProjectScreen() {
 
   const tools = createTools();
   const onKeyUp = (event: KeyboardEvent) => tools.keyUp(event);
+  // Copy, cut and paste come as these events from the keys and from the Edit menu alike; a text field keeps them.
+  const onCopy = (event: ClipboardEvent) => {
+    if (isTyping(document.activeElement)) return;
+    cancelGestures();
+    const text = event.type === "cut" ? editing.cutSelection() : editing.copySelection();
+    if (text === null) return;
+    event.preventDefault();
+    if (text !== false) event.clipboardData?.setData("text/plain", text);
+  };
+  const onPaste = (event: ClipboardEvent) => {
+    if (isTyping(document.activeElement)) return;
+    cancelGestures();
+    if (editing.pasteClip(event.clipboardData?.getData("text/plain"))) event.preventDefault();
+  };
 
   let editArea: HTMLDivElement | undefined;
   let rollArea: HTMLDivElement | undefined;
@@ -319,6 +350,9 @@ export default function ProjectScreen() {
     window.addEventListener("keydown", onKey);
 
     window.addEventListener("keyup", onKeyUp);
+    document.addEventListener("copy", onCopy);
+    document.addEventListener("cut", onCopy);
+    document.addEventListener("paste", onPaste);
     // A drag in progress was worked out for the chart before the undo: it stops first.
     const stopEditing = setEditHandler({
       undo: () => {
@@ -329,15 +363,33 @@ export default function ProjectScreen() {
         cancelGestures();
         doc().redo();
       },
+      // The Edit menu's Cut, Copy and Paste (macOS); the keys elsewhere come as clipboard events (`onCopy`).
+      // A drag in progress stops first here too (it was worked out for the chart before).
+      copy: () => {
+        cancelGestures();
+        return editing.copySelection();
+      },
+      cut: () => {
+        cancelGestures();
+        return editing.cutSelection();
+      },
+      paste: (text) => {
+        cancelGestures();
+        return editing.pasteClip(text);
+      },
     });
     return () => {
       stopEditing();
       cancelGestures();
+      autoScroll.end();
       pitchController.abort();
       observer.disconnect();
       editArea?.removeEventListener("wheel", onWheel);
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("keyup", onKeyUp);
+      document.removeEventListener("copy", onCopy);
+      document.removeEventListener("cut", onCopy);
+      document.removeEventListener("paste", onPaste);
       playback.dispose();
     };
   });
@@ -444,7 +496,7 @@ export default function ProjectScreen() {
             onScrollTo={(seconds) => changeView({ ...view(), start: seconds - visibleSeconds(view(), width()) / 2 })}
           />
           <div class="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-            <TimeRuler view={view()} width={width()} onSeek={seek} />
+            <TimeRuler view={view()} width={width()} onSeek={seek} autoScroll={autoScroll} />
             <BreakLane
               breaks={visibleBreaks()}
               view={view()}
@@ -489,13 +541,14 @@ export default function ProjectScreen() {
                 onNoteDoubleClick={(note) => editing.noteDoubleClick(note)}
                 editingLyric={editing.editingLyric()}
                 onLyricDone={(text, move) => editing.finishLyric(text, move)}
+                autoScroll={autoScroll}
               />
             </div>
             <LyricsLane lines={visibleLines()} all={lines()} view={view()} duet={duet()} />
             <Show when={opening() !== undefined}>
               <OpeningOverlay progress={opening() ?? null} />
             </Show>
-            <Playhead view={view()} width={width()} time={playback.time()} onScrub={seek} />
+            <Playhead view={view()} width={width()} time={playback.time()} onScrub={seek} autoScroll={autoScroll} />
           </div>
           <Show when={notes().length === 0}>
             <p

@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 
 import {
+  CLIPBOARD_CHANNEL,
+  type ClipboardRequest,
   EDIT_COMMAND_CHANNEL,
   type EditCommand,
   GRANT_PATH_CHANNEL,
@@ -35,9 +37,11 @@ contextBridge.exposeInMainWorld("tunestudio", {
     return path ? ipcRenderer.invoke(GRANT_PATH_CHANNEL, path) : Promise.resolve(null);
   },
   /** Calls `listener` with the Edit menu's Undo and Redo; returns a function that stops it. */
-  onEditCommand: (listener: (command: EditCommand) => void): (() => void) => {
-    const forward = (_event: unknown, command: EditCommand) => listener(command);
+  onEditCommand: (listener: (command: EditCommand, text?: string) => void): (() => void) => {
+    const forward = (_event: unknown, command: EditCommand, text?: string) => listener(command, text);
     ipcRenderer.on(EDIT_COMMAND_CHANNEL, forward);
     return () => ipcRenderer.removeListener(EDIT_COMMAND_CHANNEL, forward);
   },
+  /** Answers Cut, Copy or Paste from the Edit menu: text for the system clipboard, or "do it natively". */
+  clipboard: (request: ClipboardRequest) => ipcRenderer.send(CLIPBOARD_CHANNEL, request),
 });

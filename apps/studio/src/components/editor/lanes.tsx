@@ -1,6 +1,7 @@
 import type { JSX } from "@solidjs/web";
 import { For, Show } from "solid-js";
 
+import type { AutoScroll } from "~/lib/editor/autoscroll";
 import type { BreakDrag } from "~/lib/editor/break-editing";
 import type { LineBreak, LineSpan } from "~/lib/editor/chart";
 import { formatTime, rulerStep, rulerTicks, timeToX, type TimeView, xToTime } from "~/lib/editor/view";
@@ -18,6 +19,8 @@ function Lane(props: {
   onSeek?: (x: number) => void;
   /** A double-click on the lane itself (not on what is in it), at `x`. */
   onDoubleClick?: (x: number) => void;
+  /** Scrolls the view while scrubbing at the roll's edge. */
+  autoScroll?: AutoScroll;
 }) {
   return (
     <div class={`flex shrink-0 border-b border-border ${props.class ?? ""}`} data-testid={props.testid}>
@@ -31,10 +34,16 @@ function Lane(props: {
           props.onSeek(event.clientX - event.currentTarget.getBoundingClientRect().left);
         }}
         onPointerMove={(event) => {
-          if (props.onSeek && event.currentTarget.hasPointerCapture(event.pointerId)) {
-            props.onSeek(event.clientX - event.currentTarget.getBoundingClientRect().left);
-          }
+          if (!props.onSeek || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
+          const lane = event.currentTarget;
+          // Past the lane's ends it scrubs to them (and the view scrolls on).
+          const seek = () =>
+            props.onSeek?.(Math.min(lane.clientWidth, Math.max(0, event.clientX - lane.getBoundingClientRect().left)));
+          seek();
+          props.autoScroll?.track(event.clientX, seek);
         }}
+        onPointerUp={() => props.autoScroll?.end()}
+        onLostPointerCapture={() => props.autoScroll?.end()}
         onDblClick={(event) => {
           if (props.onDoubleClick && event.target === event.currentTarget)
             props.onDoubleClick(event.clientX - event.currentTarget.getBoundingClientRect().left);
@@ -47,10 +56,20 @@ function Lane(props: {
 }
 
 /** Seconds along the top of the roll; clicking it moves the playhead there. */
-export function TimeRuler(props: { view: TimeView; width: number; onSeek: (seconds: number) => void }) {
+export function TimeRuler(props: {
+  view: TimeView;
+  width: number;
+  onSeek: (seconds: number) => void;
+  autoScroll?: AutoScroll;
+}) {
   const tenths = () => rulerStep(props.view.pxPerSecond) < 1;
   return (
-    <Lane class="h-5 cursor-ew-resize bg-bar" testid="time-ruler" onSeek={(x) => props.onSeek(xToTime(props.view, x))}>
+    <Lane
+      class="h-5 cursor-ew-resize bg-bar"
+      testid="time-ruler"
+      onSeek={(x) => props.onSeek(xToTime(props.view, x))}
+      autoScroll={props.autoScroll}
+    >
       <For each={rulerTicks(props.view, props.width)}>
         {(tick) => (
           <span

@@ -1,5 +1,6 @@
 import { Show } from "solid-js";
 
+import type { AutoScroll } from "~/lib/editor/autoscroll";
 import { formatTime, timeToX, type TimeView, xToTime } from "~/lib/editor/view";
 
 import { GUTTER_PX } from "./piano-roll";
@@ -8,7 +9,14 @@ import { GUTTER_PX } from "./piano-roll";
  * The playhead over every lane: a line through the ruler, breaks, roll and lyrics, with a head in the ruler that can
  * be dragged to scrub. Drawn over a `relative` container whose left `GUTTER_PX` are the pitch labels.
  */
-export function Playhead(props: { view: TimeView; width: number; time: number; onScrub: (seconds: number) => void }) {
+export function Playhead(props: {
+  view: TimeView;
+  width: number;
+  time: number;
+  onScrub: (seconds: number) => void;
+  /** Scrolls the view while the head is dragged at the roll's edge. */
+  autoScroll?: AutoScroll;
+}) {
   const x = () => timeToX(props.view, props.time);
   const shown = () => x() >= -6 && x() <= props.width + 6;
   const scrubTo = (event: PointerEvent, element: HTMLElement) => {
@@ -35,8 +43,14 @@ export function Playhead(props: { view: TimeView; width: number; time: number; o
           event.currentTarget.setPointerCapture(event.pointerId);
         }}
         onPointerMove={(event) => {
-          if (event.currentTarget.hasPointerCapture(event.pointerId)) scrubTo(event, event.currentTarget);
+          if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+          const element = event.currentTarget;
+          const scrub = () => scrubTo(event, element);
+          scrub();
+          props.autoScroll?.track(event.clientX, scrub);
         }}
+        onPointerUp={() => props.autoScroll?.end()}
+        onLostPointerCapture={() => props.autoScroll?.end()}
         data-testid="playhead-head"
       />
     </Show>

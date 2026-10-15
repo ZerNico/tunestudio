@@ -1,5 +1,6 @@
 import { createSignal, For, Show } from "solid-js";
 
+import type { AutoScroll } from "~/lib/editor/autoscroll";
 import type { DrawnNote, LineBreak } from "~/lib/editor/chart";
 import { type DragPreview, type NotePart, previewed, type RollScale } from "~/lib/editor/note-editing";
 import type { Tool } from "~/lib/editor/tools";
@@ -60,6 +61,14 @@ const MIN_EDGES_PX = 12;
 /** A press that moves less than this is a click, not a drag (px). */
 const DRAG_PX = 3;
 
+/** A selection box being drawn: from where it started (seconds, px down) to the pointer. */
+interface Box {
+  t0: number;
+  y0: number;
+  t1: number;
+  y1: number;
+}
+
 /** A point in the roll: seconds and pitch. */
 export interface RollPoint {
   time: number;
@@ -115,6 +124,8 @@ export function PianoRoll(props: {
   /** The note whose syllable is being typed, and what to do with the text (null: cancelled; Tab moves on). */
   editingLyric?: number | null;
   onLyricDone: (text: string | null, move?: 1 | -1) => void;
+  /** Scrolls the view while the selection box is at the roll's edge. */
+  autoScroll?: AutoScroll;
 }) {
   let area: HTMLDivElement | undefined;
   /** The time and pitch under a pointer. */
@@ -164,25 +175,33 @@ export function PianoRoll(props: {
     };
   };
   /** The selection box being drawn, in px from the drawing area's corner. */
-  const [box, setBox] = createSignal<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  const [box, setBox] = createSignal<Box | null>(null);
 
   const startBox = (event: PointerEvent & { currentTarget: HTMLDivElement }) => {
     const area = event.currentTarget;
     const rect = area.getBoundingClientRect();
-    const at = (pointer: PointerEvent) => ({ x: pointer.clientX - rect.left, y: pointer.clientY - rect.top });
-    const start = at(event);
+    /** The pointer in the area: seconds (in the view; at its edge when past it, while the view scrolls) and px down. */
+    const at = (pointer: PointerEvent) => ({
+      time: xToTime(props.view, Math.min(props.width, Math.max(0, pointer.clientX - rect.left))),
+      y: pointer.clientY - rect.top,
+    });
+    const press = { x: event.clientX, y: event.clientY };
+    /** Where the box started: taken once, at the press. */
+    const initialPoint = at(event);
     let dragging = false;
     /** The box as last drawn (the signal is written on the next microtask; a release can come first). */
-    let drawn: { x0: number; y0: number; x1: number; y1: number } | null = null;
+    let drawn: Box | null = null;
     area.setPointerCapture(event.pointerId);
     const move = (pointer: PointerEvent) => {
-      const now = at(pointer);
-      if (!dragging && Math.hypot(now.x - start.x, now.y - start.y) < DRAG_PX) return;
+      if (!dragging && Math.hypot(pointer.clientX - press.x, pointer.clientY - press.y) < DRAG_PX) return;
       dragging = true;
-      drawn = { x0: start.x, y0: start.y, x1: now.x, y1: now.y };
+      props.autoScroll?.track(pointer.clientX, () => move(pointer));
+      const now = at(pointer);
+      drawn = { t0: initialPoint.time, y0: initialPoint.y, t1: now.time, y1: now.y };
       setBox(drawn);
     };
     const stop = () => {
+      props.autoScroll?.end();
       area.removeEventListener("pointermove", move);
       area.removeEventListener("pointerup", up);
       area.removeEventListener("pointercancel", up);
@@ -199,15 +218,14 @@ export function PianoRoll(props: {
     const up = (pointer: PointerEvent) => {
       stop();
       if (!dragging || !drawn || pointer.type === "pointercancel") {
-        if (!dragging) props.onEmptyClick(xToTime(props.view, start.x));
+        if (!dragging) props.onEmptyClick(initialPoint.time);
         return;
       }
-      const [left, right] = [Math.min(drawn.x0, drawn.x1), Math.max(drawn.x0, drawn.x1)];
       const [top, bottom] = [Math.min(drawn.y0, drawn.y1), Math.max(drawn.y0, drawn.y1)];
       props.onBox(
         {
-          from: xToTime(props.view, left),
-          to: xToTime(props.view, right),
+          from: Math.min(drawn.t0, drawn.t1),
+          to: Math.max(drawn.t0, drawn.t1),
           low: yToPitch(props.range, rowHeight(), bottom),
           high: yToPitch(props.range, rowHeight(), top),
         },
@@ -414,9 +432,9 @@ export function PianoRoll(props: {
             <div
               class="pointer-events-none absolute z-20 border border-primary bg-primary/10"
               style={{
-                left: `${Math.min(drawn().x0, drawn().x1)}px`,
+                left: `${timeToX(props.view, Math.min(drawn().t0, drawn().t1))}px`,
                 top: `${Math.min(drawn().y0, drawn().y1)}px`,
-                width: `${Math.abs(drawn().x1 - drawn().x0)}px`,
+                width: `${Math.abs(drawn().t1 - drawn().t0) * props.view.pxPerSecond}px`,
                 height: `${Math.abs(drawn().y1 - drawn().y0)}px`,
               }}
               data-testid="selection-box"

@@ -1,11 +1,31 @@
-import { app, BrowserWindow, Menu, type MenuItemConstructorOptions, type WebContents } from "electron";
+import {
+  app,
+  type BaseWindow,
+  BrowserWindow,
+  clipboard,
+  Menu,
+  type MenuItemConstructorOptions,
+  type WebContents,
+} from "electron";
 
 import { EDIT_COMMAND_CHANNEL, type EditCommand } from "../src/lib/native/channel";
 import { COPYRIGHT } from "./identity";
 
-/** Hands Undo or Redo to the focused window's page. */
-function sendEditCommand(command: EditCommand) {
-  BrowserWindow.getFocusedWindow()?.webContents.send(EDIT_COMMAND_CHANNEL, command);
+/**
+ * Hands an Edit menu command to the page of the window it is for (the one Electron says, else the focused one); Paste
+ * brings the system clipboard's text along.
+ */
+async function sendEditCommand(command: EditCommand, window?: BaseWindow) {
+  const target = window instanceof BrowserWindow ? window : BrowserWindow.getFocusedWindow();
+  if (!target) return;
+  // The developer tools have their own text fields: they get the command as it is.
+  if (target.webContents.isDevToolsFocused()) {
+    target.webContents.devToolsWebContents?.[command]();
+    return;
+  }
+  // Electron's clipboard is asynchronous (a promise can't be sent to the page).
+  const text = command === "paste" ? await clipboard.readText() : undefined;
+  target.webContents.send(EDIT_COMMAND_CHANNEL, command, text);
 }
 
 /**
@@ -52,12 +72,22 @@ export function setApplicationMenu() {
         label: "Edit",
         submenu: [
           // Not the undo/redo roles: those only reach text fields, and Cmd+Z never gets to the page. The page decides.
-          { label: "Undo", accelerator: "CmdOrCtrl+Z", click: () => sendEditCommand("undo") },
-          { label: "Redo", accelerator: "Shift+CmdOrCtrl+Z", click: () => sendEditCommand("redo") },
+          { label: "Undo", accelerator: "CmdOrCtrl+Z", click: (_item, window) => void sendEditCommand("undo", window) },
+          {
+            label: "Redo",
+            accelerator: "Shift+CmdOrCtrl+Z",
+            click: (_item, window) => void sendEditCommand("redo", window),
+          },
           { type: "separator" },
-          { role: "cut" },
-          { role: "copy" },
-          { role: "paste" },
+          // Not the roles either: those fire nothing in the page when no text is selected, so the editor's notes
+          // couldn't be copied. The page decides, and hands text fields back (`CLIPBOARD_CHANNEL`).
+          { label: "Cut", accelerator: "CmdOrCtrl+X", click: (_item, window) => void sendEditCommand("cut", window) },
+          { label: "Copy", accelerator: "CmdOrCtrl+C", click: (_item, window) => void sendEditCommand("copy", window) },
+          {
+            label: "Paste",
+            accelerator: "CmdOrCtrl+V",
+            click: (_item, window) => void sendEditCommand("paste", window),
+          },
           { role: "selectAll" },
         ],
       },

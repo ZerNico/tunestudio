@@ -1,4 +1,4 @@
-import type { EditCommand } from "./native/channel";
+import type { ClipboardRequest, EditCommand } from "./native/channel";
 
 /** A dropped or picked file's place on disk. */
 export interface FilePath {
@@ -11,7 +11,8 @@ interface DesktopGlobals {
   platform: string;
   version: string;
   pathForFile?: (file: File) => Promise<FilePath | null>;
-  onEditCommand?: (listener: (command: EditCommand) => void) => () => void;
+  onEditCommand?: (listener: (command: EditCommand, text?: string) => void) => () => void;
+  clipboard?: (request: ClipboardRequest) => void;
 }
 
 declare global {

@@ -17,4 +17,12 @@ export const GRANT_PATH_CHANNEL = "tunestudio:grant-path";
 export const EDIT_COMMAND_CHANNEL = "tunestudio:edit-command";
 
 /** What the Edit menu asks the page to do. */
-export type EditCommand = "undo" | "redo";
+export type EditCommand = "undo" | "redo" | "cut" | "copy" | "paste";
+
+/**
+ * IPC channel the page answers the Edit menu's Cut, Copy and Paste on: text for the system clipboard (it copied notes),
+ * or "do it natively" (a text field has them; main runs the web contents' own cut, copy or paste).
+ */
+export const CLIPBOARD_CHANNEL = "tunestudio:clipboard";
+
+export type ClipboardRequest = { write: string } | { native: "cut" | "copy" | "paste" };
