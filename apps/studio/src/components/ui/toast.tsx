@@ -65,7 +65,8 @@ function ToastList() {
           </Show>
           <ToastPrimitive.Close
             aria-label="Dismiss notification"
-            class={buttonVariants({ variant: "ghost", size: "icon-sm" })}
+            // Taller than a line of text: it overhangs the padding, so a one-line toast's text sits in the middle.
+            class={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), "-my-1")}
           >
             <XIcon class="size-3.5" />
           </ToastPrimitive.Close>

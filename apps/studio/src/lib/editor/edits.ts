@@ -212,21 +212,32 @@ export function deleteNotes(tx: EditRecorder, chart: EditorChart, ids: ReadonlyS
  * or null when the notes aren't next to each other in one line.
  */
 export function mergeNotes(tx: EditRecorder, chart: EditorChart, ids: ReadonlySet<number>): number | null {
+  const run = mergeRun(chart, ids);
+  if (!run) return null;
+  const [head, ...rest] = run;
+  const last = run.at(-1)!;
+  tx.updateNote(head!.id, {
+    duration: last.start + last.duration - head!.start,
+    lyric: head!.lyric + rest.map((note) => note.lyric.replaceAll("~", "")).join(""),
+  });
+  for (const note of rest) tx.deleteNote(note.id);
+  return head!.id;
+}
+
+/** Whether the notes can be merged: two or more next to each other in one line. */
+export function canMerge(chart: EditorChart, ids: ReadonlySet<number>): boolean {
+  return mergeRun(chart, ids) !== null;
+}
+
+/** The notes in their line's order when they are two or more next to each other in one line, else null. */
+function mergeRun(chart: EditorChart, ids: ReadonlySet<number>) {
   if (ids.size < 2) return null;
   for (const singer of chart.singers) {
     for (const line of singer.lines) {
       const first = line.notes.findIndex((note) => ids.has(note.id));
       if (first < 0) continue;
       const run = line.notes.slice(first, first + ids.size);
-      if (run.length !== ids.size || !run.every((note) => ids.has(note.id))) return null;
-      const [head, ...rest] = run;
-      const last = run.at(-1)!;
-      tx.updateNote(head!.id, {
-        duration: last.start + last.duration - head!.start,
-        lyric: head!.lyric + rest.map((note) => note.lyric.replaceAll("~", "")).join(""),
-      });
-      for (const note of rest) tx.deleteNote(note.id);
-      return head!.id;
+      return run.length === ids.size && run.every((note) => ids.has(note.id)) ? run : null;
     }
   }
   return null;
@@ -265,6 +276,11 @@ export function toggleFlag(tx: EditRecorder, chart: EditorChart, ids: ReadonlySe
     if (on && flag !== "freestyle") flags.freestyle = false;
     tx.updateNote(note.id, { type: typeOf(flags) });
   }
+}
+
+/** Whether a note of `type` has `flag` (golden rap has both). */
+export function hasFlag(type: NoteType, flag: NoteFlag): boolean {
+  return FLAGS[type][flag];
 }
 
 /** The notes that overlap another note of the same singer (a problem to fix before export). */

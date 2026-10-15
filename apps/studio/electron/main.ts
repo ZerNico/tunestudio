@@ -8,7 +8,7 @@ import { contentSecurityPolicy } from "./csp";
 import { onDevReload } from "./dev-reload";
 import { BACKGROUND_COLOR, PRODUCT_NAME } from "./identity";
 import { createLogger } from "./logger";
-import { attachContextMenu, setApplicationMenu } from "./menu";
+import { attachContextMenu, sendEditCommand, setApplicationMenu } from "./menu";
 import { mediaResponse } from "./protocols/media";
 import { MEDIA_SCHEME } from "./protocols/media-url";
 import { handleRendererProtocol } from "./protocols/renderer";
@@ -94,6 +94,11 @@ function handleClipboard() {
       (request.native === "cut" || request.native === "copy" || request.native === "paste")
     )
       event.sender[request.native]();
+    else if ("send" in request && request.send === "paste") {
+      // Back to the page that asked (never another window).
+      const window = BrowserWindow.fromWebContents(event.sender);
+      if (window) void sendEditCommand("paste", window);
+    }
   });
 }
 

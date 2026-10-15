@@ -455,7 +455,7 @@
 @utility eyebrow { font-size: 9px; font-weight: 650; letter-spacing: 1.5px; text-transform: uppercase; color: var(--sage-63); }
 @utility scrollbar-thin { scrollbar-width: thin; scrollbar-color: var(--sage-30-2) transparent; }
 /* A note in the piano roll: data-singer, data-type (golden, golden-rap, rap, freestyle), data-selected="true",
-   data-overlap (overlaps another note: red border; the label says ⚠). */
+   data-overlap (overlaps another note: red border; the label says ⚠), data-pending (auto pitch is working on it: it pulses). */
 @utility roll-note {
   position: absolute;
   overflow: hidden;
@@ -504,7 +504,11 @@
   &[data-selected="true"]::after { right: 2px; }
   /* A problem shows whatever else the note is (selected, golden). */
   &[data-overlap] { border-color: var(--destructive) !important; }
+  &[data-pending] { animation: note-pending 1.1s ease-in-out infinite alternate; }
+  @media (prefers-reduced-motion: reduce) { &[data-pending] { opacity: 0.55; } }
 }
+
+@keyframes note-pending { to { opacity: 0.4; } }
 
 /* The Split tool over a note: scissors. */
 @utility cursor-scissors {

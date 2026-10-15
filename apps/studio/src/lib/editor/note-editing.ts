@@ -19,7 +19,7 @@
  * Keys work on the selection:
  * - ↑ / ↓ pitch (Shift: an octave), ← / → move a grid step, Shift+← / → shorter or longer
  * - Tab / Shift+Tab next or previous note, Cmd/Ctrl+A all notes, Esc none, Enter edit the syllable
- * - Delete / Backspace delete, M merge, G golden, R rap, F freestyle
+ * - Delete / Backspace delete, M merge, G golden, R rap, F freestyle, A auto pitch
  *
  * Holding an arrow makes one undo step.
  */
@@ -32,11 +32,13 @@ import { type Clip, copyNotes, pasteNotes } from "./clipboard";
 import type { ChartDocument } from "./document";
 import {
   addNote,
+  canMerge,
   canSplit,
   defaultLength,
   deleteNotes,
   fits,
   gridStep,
+  hasFlag,
   lengthLimits,
   mergeNotes,
   moveLimits,
@@ -134,6 +136,8 @@ export function createNoteEditing(options: {
   pointerTarget?: EventTarget;
   /** Scrolls the view while a drag is at the roll's edge (`autoscroll.ts`). */
   autoScroll?: AutoScroll;
+  /** A: works out the selected notes' pitch (in main; slow), then hands it to `applyPitches`. */
+  onAutoPitch?: (ids: number[]) => void;
   /** Where the view starts (seconds): a drag counts how far it scrolled. */
   viewStart?: () => number;
 }) {
@@ -244,6 +248,56 @@ export function createNoteEditing(options: {
     );
     setCut(null);
     return true;
+  };
+
+  /** What the keys and the note menu do to the selection (the menu asks first whether each can). */
+  const commands = {
+    /** Splits the selected notes the playhead is in, or any it is in with nothing selected. */
+    splitAtPlayhead() {
+      if (!split(playheadNotes(), options.playheadTime()))
+        options.onRefused("Put the playhead inside a note, a step or more from its ends, to split it.");
+    },
+    canSplitAtPlayhead: () => playheadNotes().some((note) => canSplit(chart(), note, options.playheadTime())),
+    merge() {
+      const ids = selected();
+      let merged: number | null = null;
+      options.doc().edit(`Merge ${count(ids)}`, (tx) => (merged = mergeNotes(tx, chart(), new Set(ids))), {
+        selectionAfter: () => (merged === null ? ids : [merged]),
+      });
+      if (merged === null) options.onRefused("Select notes next to each other in one line to merge them.");
+    },
+    canMerge: () => canMerge(chart(), new Set(selected())),
+    autoPitch() {
+      const ids = selected();
+      if (ids.length) options.onAutoPitch?.(ids);
+    },
+    toggleFlag(flag: NoteFlag) {
+      const ids = selected();
+      const label = Object.values(FLAG_KEYS).find((item) => item.flag === flag)!.label;
+      options.doc().edit(`${label} ${count(ids)}`, (tx) => toggleFlag(tx, chart(), new Set(ids), flag));
+    },
+    /** Whether all the selected notes have `flag` (the menu ticks it). */
+    flagOn(flag: NoteFlag) {
+      const ids = new Set(selected());
+      const notes = options.notes().filter((note) => ids.has(note.id));
+      return notes.length > 0 && notes.every((note) => hasFlag(note.type, flag));
+    },
+    selectAll() {
+      select(options.notes().map((note) => note.id));
+    },
+    remove() {
+      const ids = selected();
+      options.doc().edit(`Delete ${count(ids)}`, (tx) => deleteNotes(tx, chart(), new Set(ids)), { selection: [] });
+    },
+  };
+  /** The notes the playhead is in: the selected ones, or any with nothing selected. */
+  const playheadNotes = () => {
+    const time = options.playheadTime();
+    const ids = selected();
+    return options
+      .notes()
+      .filter((note) => note.start < time && note.start + note.duration > time)
+      .filter((note) => ids.length === 0 || ids.includes(note.id));
   };
 
   /** Starts typing a note's syllable (and selects it). */
@@ -523,6 +577,48 @@ export function createNoteEditing(options: {
       return true;
     },
 
+    /**
+     * The pitches auto pitch found, as one edit: only for notes still where they were when it was asked (`asked`, by
+     * id: start and length), since it worked from their timing.
+     */
+    applyPitches(
+      pitches: readonly { id: number; pitch: number }[],
+      asked: ReadonlyMap<number, { start: number; duration: number; pitch: number }>,
+    ): number {
+      const now = new Map(options.notes().map((note) => [note.id, note]));
+      const dragged = drag()?.ids;
+      // Notes moved, resized or repitched meanwhile (or being dragged) are the user's now: they stay as they are.
+      const changed = pitches.filter(({ id, pitch }) => {
+        const note = now.get(id);
+        const before = asked.get(id);
+        return (
+          note &&
+          before &&
+          !dragged?.has(id) &&
+          note.start === before.start &&
+          note.duration === before.duration &&
+          note.pitch === before.pitch &&
+          note.pitch !== pitch
+        );
+      });
+      options.doc().edit(`Auto pitch ${count(changed.map(({ id }) => id))}`, (tx) => {
+        for (const { id, pitch } of changed) tx.updateNote(id, { pitch });
+      });
+      return changed.length;
+    },
+
+    /** The keys' and the note menu's actions on the selection. */
+    commands,
+
+    /** A right-click on a note: the menu is for the selection, which it joins unless it is in it already. */
+    menuOpen(note: DrawnNote) {
+      cancelDrag?.();
+      lastSinger = note.singer;
+      if (selected().includes(note.id)) return;
+      anchor = note.id;
+      select([note.id]);
+    },
+
     /** A click on empty space: nothing selected any more. */
     emptyClick() {
       select([]);
@@ -535,7 +631,14 @@ export function createNoteEditing(options: {
     },
 
     /** Handles a key for the selection; returns whether it did (so the caller prevents the default). */
-    key(event: { key: string; shiftKey: boolean; metaKey: boolean; ctrlKey: boolean; altKey: boolean }): boolean {
+    key(event: {
+      key: string;
+      shiftKey: boolean;
+      metaKey: boolean;
+      ctrlKey: boolean;
+      altKey: boolean;
+      repeat?: boolean;
+    }): boolean {
       if (cancelDrag) {
         // During a drag only Esc counts: it puts the notes back.
         if (event.key === "Escape") cancelDrag();
@@ -543,19 +646,11 @@ export function createNoteEditing(options: {
       }
       const command = event.metaKey || event.ctrlKey;
       if (command && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "a") {
-        select(options.notes().map((note) => note.id));
+        commands.selectAll();
         return true;
       }
       if (command && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "k") {
-        // Split at the playhead: the selected notes it is in, or any it is in.
-        const time = options.playheadTime();
-        const ids = selected();
-        const inside = options
-          .notes()
-          .filter((note) => note.start < time && note.start + note.duration > time)
-          .filter((note) => ids.length === 0 || ids.includes(note.id));
-        if (!split(inside, time))
-          options.onRefused("Put the playhead inside a note, a step or more from its ends, to split it.");
+        commands.splitAtPlayhead();
         return true;
       }
       if (command || event.altKey) return false;
@@ -588,24 +683,18 @@ export function createNoteEditing(options: {
         }
         case "Delete":
         case "Backspace":
-          options.doc().edit(`Delete ${count(ids)}`, (tx) => deleteNotes(tx, chart(), new Set(ids)), { selection: [] });
+          commands.remove();
           return true;
       }
       const key = event.key.toLowerCase();
-      if (key === "m" && !event.shiftKey) {
-        let merged: number | null = null;
-        options.doc().edit(`Merge ${count(ids)}`, (tx) => (merged = mergeNotes(tx, chart(), new Set(ids))), {
-          selectionAfter: () => (merged === null ? ids : [merged]),
-        });
-        if (merged === null) options.onRefused("Select notes next to each other in one line to merge them.");
-        return true;
-      }
-      const flag = FLAG_KEYS[key];
-      if (flag && !event.shiftKey) {
-        options.doc().edit(`${flag.label} ${count(ids)}`, (tx) => toggleFlag(tx, chart(), new Set(ids), flag.flag));
-        return true;
-      }
-      return false;
+      if (event.shiftKey) return false;
+      if (key === "m") commands.merge();
+      // Held down, A doesn't start it again each time a run ends.
+      else if (key === "a") {
+        if (!event.repeat) commands.autoPitch();
+      } else if (FLAG_KEYS[key]) commands.toggleFlag(FLAG_KEYS[key].flag);
+      else return false;
+      return true;
     },
   };
 }

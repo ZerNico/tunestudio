@@ -47,6 +47,7 @@ function setup(playhead = 0, start: EditorChart = chart, viewStart?: () => numbe
     const notes = createMemo(() => drawnNotes(doc.chart()));
     const onReveal = vi.fn();
     const onRefused = vi.fn();
+    const onAutoPitch = vi.fn();
     const pointer = new EventTarget();
     const editing = createNoteEditing({
       pointerTarget: pointer,
@@ -59,6 +60,7 @@ function setup(playhead = 0, start: EditorChart = chart, viewStart?: () => numbe
       playheadTime: () => playhead,
       onReveal,
       onRefused,
+      onAutoPitch,
     });
     /** Presses a key; returns whether the editor took it. */
     const press = (key: string, modifiers: Partial<Record<"shiftKey" | "metaKey" | "ctrlKey", boolean>> = {}) => {
@@ -119,7 +121,21 @@ function setup(playhead = 0, start: EditorChart = chart, viewStart?: () => numbe
       flush();
     };
     const find = (id: number) => notes().find((item) => item.id === id);
-    return { doc, editing, selection, press, click, drag, draw, find, notes, onReveal, onRefused, pointer };
+    return {
+      doc,
+      editing,
+      selection,
+      press,
+      click,
+      drag,
+      draw,
+      find,
+      notes,
+      onReveal,
+      onRefused,
+      onAutoPitch,
+      pointer,
+    };
   });
 }
 
@@ -527,5 +543,96 @@ describe("note editing", () => {
     expect(editing.drag()).toBeNull();
     expect(find(101)!.start).toBe(1.5);
     expect(doc.undoLabel()).toBeNull();
+  });
+
+  it("asks for the selected notes' pitch with A, and applies it to the notes left as they were", () => {
+    const { editing, press, click, drag, find, doc, onAutoPitch } = setup();
+    expect(press("a")).toBe(false);
+    click(100);
+    click(102, { shiftKey: true });
+    expect(press("a")).toBe(true);
+    expect(onAutoPitch).toHaveBeenCalledWith([100, 101, 102]);
+    // Held down: not again.
+    expect(
+      editing.key({ key: "a", shiftKey: false, metaKey: false, ctrlKey: false, altKey: false, repeat: true }),
+    ).toBe(true);
+    expect(onAutoPitch).toHaveBeenCalledTimes(1);
+    const asked = new Map([
+      [100, { start: 1, duration: 0.3, pitch: 64 }],
+      [101, { start: 1.5, duration: 0.3, pitch: 64 }],
+      [102, { start: 3, duration: 0.3, pitch: 64 }],
+    ]);
+    // Meanwhile 101 is moved and 102 is given another pitch.
+    drag(101, "body", []);
+    press("ArrowRight");
+    drag(102, "body", []);
+    press("ArrowUp");
+    const pitches = [
+      { id: 100, pitch: 67 },
+      { id: 101, pitch: 60 },
+      { id: 102, pitch: 60 },
+    ];
+    expect(editing.applyPitches(pitches, asked)).toBe(1);
+    flush();
+    expect([find(100)!.pitch, find(101)!.pitch, find(102)!.pitch]).toEqual([67, 64, 65]);
+    // One undo step; the same pitch again changes nothing.
+    doc.undo();
+    flush();
+    expect(find(100)!.pitch).toBe(64);
+    doc.redo();
+    flush();
+    const before = doc.chart();
+    expect(editing.applyPitches([{ id: 100, pitch: 67 }], asked)).toBe(0);
+    flush();
+    expect(doc.chart()).toBe(before);
+  });
+
+  it("leaves a note being dragged to the drag", () => {
+    const { editing, drag, find } = setup();
+    drag(100, "body", [[0, -20]], false);
+    expect(
+      editing.applyPitches([{ id: 100, pitch: 60 }], new Map([[100, { start: 1, duration: 0.3, pitch: 64 }]])),
+    ).toBe(0);
+    expect(find(100)!.pitch).toBe(64);
+  });
+
+  it("opens the note menu for the selection, which a right-clicked note outside it replaces", () => {
+    const { editing, click, find, selection } = setup(1.6);
+    click(100);
+    click(101, { shiftKey: true });
+    editing.menuOpen(find(101)!);
+    flush();
+    expect(selection()).toEqual([100, 101]);
+    editing.menuOpen(find(102)!);
+    flush();
+    expect(selection()).toEqual([102]);
+  });
+
+  it("says which of the menu's actions apply to the selection", () => {
+    const { editing, click, find, selection } = setup(1.6);
+    const { commands } = editing;
+    click(100);
+    expect(commands.canMerge()).toBe(false);
+    // The playhead (1.6 s) is in 101, not in the selected 100.
+    expect(commands.canSplitAtPlayhead()).toBe(false);
+    click(101, { shiftKey: true });
+    expect(commands.canMerge()).toBe(true);
+    expect(commands.canSplitAtPlayhead()).toBe(true);
+    expect(commands.flagOn("golden")).toBe(false);
+    commands.toggleFlag("golden");
+    flush();
+    expect(commands.flagOn("golden")).toBe(true);
+    expect(find(100)!.type).toBe("golden");
+    commands.toggleFlag("rap");
+    flush();
+    expect([commands.flagOn("golden"), commands.flagOn("rap")]).toEqual([true, true]);
+    commands.selectAll();
+    flush();
+    expect(selection()).toEqual([100, 101, 102]);
+    expect(commands.flagOn("golden")).toBe(false);
+    commands.remove();
+    flush();
+    expect(editing.commands.canMerge()).toBe(false);
+    expect(find(100)).toBeUndefined();
   });
 });

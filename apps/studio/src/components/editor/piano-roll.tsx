@@ -106,6 +106,8 @@ export function PianoRoll(props: {
   height: number;
   selected: ReadonlySet<number>;
   overlapping: ReadonlySet<number>;
+  /** Notes auto pitch is working on. */
+  pending?: ReadonlySet<number>;
   onNoteDown: (note: DrawnNote, event: PointerEvent, part: NotePart, scale: RollScale) => void;
   /** A drag in progress: its notes are drawn where it has moved them, with its label. */
   drag?: DragPreview | null;
@@ -121,6 +123,8 @@ export function PianoRoll(props: {
   onHover: (note: DrawnNote | null, seconds: number) => void;
   onSplit: (note: DrawnNote, seconds: number, every: boolean) => void;
   onNoteDoubleClick: (note: DrawnNote) => void;
+  /** A right-click on a note (the note menu opens; see `note-menu.tsx`). */
+  onNoteContextMenu?: (note: DrawnNote) => void;
   /** The note whose syllable is being typed, and what to do with the text (null: cancelled; Tab moves on). */
   editingLyric?: number | null;
   onLyricDone: (text: string | null, move?: 1 | -1) => void;
@@ -320,6 +324,7 @@ export function PianoRoll(props: {
                 data-type={note().type}
                 data-selected={props.selected.has(note().id) ? "true" : undefined}
                 data-overlap={props.overlapping.has(note().id) ? "" : undefined}
+                data-pending={props.pending?.has(note().id) ? "" : undefined}
                 aria-selected={props.selected.has(note().id) ? "true" : "false"}
                 title={noteTitle(note(), props.overlapping.has(note().id))}
                 onPointerDown={(event) => press(event, "body")}
@@ -331,6 +336,7 @@ export function PianoRoll(props: {
                   event.stopPropagation();
                   props.onNoteDoubleClick(note());
                 }}
+                onContextMenu={() => props.onNoteContextMenu?.(note())}
                 data-tool={props.tool}
                 class="roll-note cursor-grab data-[tool=split]:cursor-scissors"
                 style={{

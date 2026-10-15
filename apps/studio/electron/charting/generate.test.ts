@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
 
 import { readChart } from "../project/chart";
+import { readEditorChart } from "../project/editor-chart";
 import { writeLyrics } from "../project/lyrics";
 import { listMedia } from "../project/media";
 import { sungPitch } from "../project/pitch";
@@ -16,6 +17,7 @@ import { fakeModels, fakeNative, recordingDesktop, soloChart, syntheticBytes, te
 import { Tools } from "../tools/tools";
 import { importSong, inspectSong } from "../ultrastar/song-import";
 import { chartLanguage, generateChart } from "./generate";
+import { autoPitchNotes, FINDING_THE_PITCH } from "./project-auto-pitch";
 
 let cleanups: (() => void)[] = [];
 afterEach(() => {
@@ -133,6 +135,29 @@ describe("sungPitch", () => {
       expect(steps.filter((step) => step === "Following the melody")).toHaveLength(1);
       const rows = yield* session.db.select().from(analysis).pipe(Effect.orDie);
       expect(rows.filter((row) => row.kind === "pitch")).toHaveLength(1);
+    }).pipe(Effect.provide(layer));
+  });
+});
+
+describe("autoPitchNotes", () => {
+  it.effect("finds the sung pitch of a line's notes from the project's vocals", () => {
+    const { dir, layer, song } = setup();
+    return Effect.gen(function* () {
+      const session = yield* importSong(yield* inspectSong(song), {
+        includeVideo: false,
+        target: path.join(dir, "Night.tunestudio"),
+      });
+      const [first] = (yield* readEditorChart(session.db)).singers[0]!.lines;
+      const ids = first!.notes.map((note) => note.id);
+      const steps: string[] = [];
+      const pitches = yield* autoPitchNotes(session, ids, (progress) =>
+        Effect.sync(() => void steps.push(progress.step)),
+      );
+      // The fake models hear A4 throughout.
+      expect(pitches).toEqual(ids.map((id) => ({ id, pitch: 69 })));
+      expect(steps).toContain(FINDING_THE_PITCH);
+      // Notes that aren't there: nothing to do.
+      expect(yield* autoPitchNotes(session, [999_999], () => Effect.void)).toEqual([]);
     }).pipe(Effect.provide(layer));
   });
 });

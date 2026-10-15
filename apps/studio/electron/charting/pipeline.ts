@@ -86,7 +86,7 @@ export interface ChartResult {
 }
 
 /** GAME's language ids (its config): English has its own, everything else is universal. */
-function gameLanguage(language: ChartLanguage): number {
+export function gameLanguage(language: ChartLanguage): number {
   return language.code === "eng" ? 1 : 0;
 }
 
@@ -216,7 +216,7 @@ function linesWithWords(aligned: WordTiming[][], language: ChartLanguage, syllab
   });
 }
 
-function splitGameNotes(raw: {
+export function splitGameNotes(raw: {
   counts: number[];
   starts: Float64Array;
   ends: Float64Array;
@@ -237,7 +237,7 @@ function splitGameNotes(raw: {
 }
 
 /** [down, up] pairs, null where a note was too short to measure (the native side gives NaN). */
-function harmonicPairs(ratios: Float64Array): HarmonicRatios {
+export function harmonicPairs(ratios: Float64Array): HarmonicRatios {
   return Array.from({ length: ratios.length / 2 }, (_, i) =>
     Number.isNaN(ratios[2 * i]!) ? null : ([ratios[2 * i]!, ratios[2 * i + 1]!] as [number, number]),
   );

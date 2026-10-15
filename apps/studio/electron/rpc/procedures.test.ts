@@ -146,6 +146,17 @@ describe("import, open, export and recents", () => {
       ["cover", `media://${project.id}/2`],
     ]);
 
+    // Auto pitch needs the vocals, which this song doesn't have yet.
+    const chart = await rpc.project.chart({ id: project.id });
+    const ids = chart.singers[0]!.lines[0]!.notes.map((note) => note.id);
+    const pitching = await rejection(
+      (async () => {
+        const stream = await rpc.project.autoPitch({ id: project.id, notes: ids });
+        for (;;) if ((await stream.next()).done) return;
+      })(),
+    );
+    expect(pitching.message).toBe("The song needs its vocals separated first.");
+
     const recents = await rpc.recents.list();
     expect(recents).toEqual([
       expect.objectContaining({

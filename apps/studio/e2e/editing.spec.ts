@@ -81,6 +81,42 @@ test("copies and pastes notes with the keys and the Edit menu, undone in one ste
   }
 });
 
+test("the note menu acts on the selection, pastes on empty space, and auto pitch has a button", async () => {
+  await openSong();
+  const { page } = studio;
+  const notes = page.getByTestId("roll-note");
+  const menu = page.getByTestId("note-menu");
+  const autoPitch = page.getByTestId("auto-pitch");
+  await expect(autoPitch).toBeDisabled();
+
+  // A right-click selects the note; the menu's type toggles it.
+  await notes.nth(0).click({ button: "right" });
+  await expect(notes.nth(0)).toHaveAttribute("data-selected", "true");
+  await menu.getByText("Golden").click();
+  await expect(menu).toBeHidden();
+  await expect(notes.nth(0)).toHaveAttribute("data-type", "golden");
+  // Merging one note can't be done; the menu says so up front.
+  await notes.nth(0).click({ button: "right" });
+  await expect(menu.getByRole("menuitem", { name: /Merge/ })).toHaveAttribute("aria-disabled", "true");
+  await menu.getByText("Copy").click();
+  expect(await studio.app.evaluate(({ clipboard }) => clipboard.readText())).toBe("Hel");
+
+  // On empty space: Paste (at the playhead, through main for the clipboard's text).
+  await seekTo(0.8);
+  const area = (await page.getByTestId("roll-area").boundingBox())!;
+  await page.mouse.click(area.x + area.width - 20, area.y + 12, { button: "right" });
+  await expect(menu.getByText("Golden")).toHaveCount(0);
+  await menu.getByText("Paste").click();
+  await expect(notes).toHaveCount(6);
+  await expect(page.getByTestId("undo")).toHaveAttribute("aria-label", "Undo Paste note");
+
+  // The pasted note is selected: the button runs auto pitch, which needs the vocals this song doesn't have.
+  await expect(autoPitch).toBeEnabled();
+  await autoPitch.click();
+  await expect(page.getByText("The song needs its vocals separated first.")).toBeVisible();
+  await expect(autoPitch).toBeVisible();
+});
+
 test("scrubbing to the roll's edge scrolls the view, and the playhead goes on with it", async () => {
   await openSong();
   const { page } = studio;

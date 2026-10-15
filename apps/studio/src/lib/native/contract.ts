@@ -235,6 +235,11 @@ export type ChartChange = typeof ChartChange.Type;
 
 export const ChartChangesInput = Schema.Struct({ id: Schema.String, changes: Schema.Array(ChartChange) });
 
+export const AutoPitchInput = Schema.Struct({ id: Schema.String, notes: Schema.Array(Schema.Number) });
+
+/** A note's new pitch (MIDI) from auto pitch. */
+export const NotePitch = Schema.Struct({ id: Schema.Number, pitch: Schema.Number });
+
 export const SongSearchInput = Schema.Struct({
   artist: Schema.String,
   title: Schema.String,
@@ -296,6 +301,11 @@ export class NativeRpcs extends RpcGroup.make(
   command("project.applyChanges", ChartChangesInput),
   /** The chart with its row ids, for the editor. */
   call("project.chart", ProjectInput, EditorChart),
+  /**
+   * The pitch of these notes, worked out as the chart is made but keeping their timing (the models download on first
+   * use), reporting progress; notes with nothing sung to go by are left out. Nothing is written.
+   */
+  withProgress("project.autoPitch", AutoPitchInput, ImportProgress, Schema.Array(NotePitch)),
   /** Writes the project as an UltraStar song folder. */
   call("project.exportSong", ExportInput, ExportResult),
   /**

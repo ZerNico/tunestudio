@@ -9,6 +9,7 @@ import { safeFileName } from "../../src/lib/file-names";
 import { NativeRpcs } from "../../src/lib/native/contract";
 import type { ChosenImage, OpenedProject, RecentProjectEntry } from "../../src/lib/native/types";
 import { generateChart } from "../charting/generate";
+import { autoPitchNotes } from "../charting/project-auto-pitch";
 import { createDraftProject, listenToDraft, makeDraftChart } from "../drafts/draft-project";
 import { ImageUnreadable } from "../errors";
 import { downloadFeature, modelFeatures, removeFeature } from "../models/features";
@@ -178,6 +179,10 @@ export const nativeHandlers = NativeRpcs.toLayer({
   "project.applyChanges": (input) =>
     Effect.flatMap(project(input.id), (session) =>
       session.db.transaction((tx) => applyChartChanges(tx, input.changes)),
+    ),
+  "project.autoPitch": (input) =>
+    progressStream((onProgress) =>
+      Effect.flatMap(project(input.id), (session) => autoPitchNotes(session, input.notes, onProgress)),
     ),
   "project.chart": (input) => Effect.flatMap(project(input.id), (session) => readEditorChart(session.db)),
   "project.exportSong": (input) =>

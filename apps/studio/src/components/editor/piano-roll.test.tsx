@@ -71,6 +71,7 @@ describe("PianoRoll", () => {
         {...handlers()}
         selected={new Set([2])}
         overlapping={new Set([1])}
+        pending={new Set([2])}
       />
     ));
     const [first, second] = screen.getAllByTestId("roll-note");
@@ -84,6 +85,9 @@ describe("PianoRoll", () => {
     expect(second).toHaveAttribute("data-selected");
     expect(first).not.toHaveAttribute("data-selected");
     expect(first).toHaveAttribute("data-overlap");
+    // Auto pitch is working on the second one.
+    expect(second).toHaveAttribute("data-pending");
+    expect(first).not.toHaveAttribute("data-pending");
     // A problem shows in the label and the tooltip.
     expect(first).toHaveTextContent("⚠ Som");
     expect(first!.title).toBe("Som · E4 · ⚠ overlaps another note");

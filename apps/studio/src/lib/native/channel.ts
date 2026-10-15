@@ -21,8 +21,9 @@ export type EditCommand = "undo" | "redo" | "cut" | "copy" | "paste";
 
 /**
  * IPC channel the page answers the Edit menu's Cut, Copy and Paste on: text for the system clipboard (it copied notes),
- * or "do it natively" (a text field has them; main runs the web contents' own cut, copy or paste).
+ * or "do it natively" (a text field has them; main runs the web contents' own cut, copy or paste). The page's own
+ * Paste (the note menu) asks on it too: main sends Paste back with the clipboard's text, as the Edit menu does.
  */
 export const CLIPBOARD_CHANNEL = "tunestudio:clipboard";
 
-export type ClipboardRequest = { write: string } | { native: "cut" | "copy" | "paste" };
+export type ClipboardRequest = { write: string } | { native: "cut" | "copy" | "paste" } | { send: "paste" };

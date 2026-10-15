@@ -7,8 +7,9 @@ import Redo2Icon from "~icons/lucide/redo-2";
 import Undo2Icon from "~icons/lucide/undo-2";
 import XIcon from "~icons/lucide/x";
 
-import { HistoryButton, ToolSwitch } from "~/components/editor/edit-controls";
+import { AutoPitchButton, HistoryButton, ToolSwitch } from "~/components/editor/edit-controls";
 import { BreakLane, LyricsLane, OverviewBar, TimeRuler } from "~/components/editor/lanes";
+import { NoteMenu, type NoteMenuActions } from "~/components/editor/note-menu";
 import { GUTTER_PX, PianoRoll } from "~/components/editor/piano-roll";
 import { Playhead } from "~/components/editor/playhead";
 import { SongPanel } from "~/components/editor/song-panel";
@@ -19,10 +20,19 @@ import { TitleBar } from "~/components/title-bar";
 import { Button } from "~/components/ui/button";
 import { toast } from "~/components/ui/toast";
 import { platform, revealLabel } from "~/lib/desktop";
-import { isTyping, runEditCommand, setEditHandler } from "~/lib/edit-commands";
+import { isTyping, pasteFromClipboard, runEditCommand, setEditHandler } from "~/lib/edit-commands";
 import { createAutoScroll } from "~/lib/editor/autoscroll";
 import { createBreakEditing } from "~/lib/editor/break-editing";
-import { chartEnd, drawnNotes, lineBreaks, lineIndexAt, lineSpans, longest, stepLine } from "~/lib/editor/chart";
+import {
+  chartEnd,
+  type DrawnNote,
+  drawnNotes,
+  lineBreaks,
+  lineIndexAt,
+  lineSpans,
+  longest,
+  stepLine,
+} from "~/lib/editor/chart";
 import { createChartDocument } from "~/lib/editor/document";
 import { overlapping } from "~/lib/editor/edits";
 import { createNoteEditing } from "~/lib/editor/note-editing";
@@ -42,7 +52,7 @@ import {
 } from "~/lib/editor/view";
 import type { EditCommand } from "~/lib/native/channel";
 import { native } from "~/lib/native/client";
-import { errorMessage } from "~/lib/native/errors";
+import { errorMessage, isAbort } from "~/lib/native/errors";
 import type { ImportProgress, SungPitch } from "~/lib/native/types";
 
 const route = getRouteApi("/project/$id");
@@ -218,7 +228,54 @@ export default function ProjectScreen() {
       setView(clampView({ ...current, start: line.start - visibleSeconds(current, width()) * 0.1 }, width(), length()));
   };
 
+  /** Auto pitch at work (undefined: not), with its progress once there is some. */
+  const [autoPitching, setAutoPitching] = createSignal<ImportProgress | null | undefined>(undefined);
+  /** The notes auto pitch is working on (they pulse). */
+  const [autoPitchNotes, setAutoPitchNotes] = createSignal<ReadonlySet<number>>(new Set());
+  let autoPitchController: AbortController | undefined;
+  /**
+   * A: the selected notes' pitch, worked out in main as the chart is made (seconds), then applied as one edit to the
+   * notes still where they were. Edits so far are saved first, so main reads the chart as it is drawn.
+   */
+  const runAutoPitch = async (ids: number[]) => {
+    if (autoPitching() !== undefined) return;
+    const chosen = new Set(ids);
+    const asked = new Map(
+      notes()
+        .filter((note) => chosen.has(note.id))
+        .map((note) => [note.id, { start: note.start, duration: note.duration, pitch: note.pitch }]),
+    );
+    // The chart is made again or reloaded meanwhile: the pitches were for the one before.
+    const asking = doc();
+    const controller = new AbortController();
+    autoPitchController = controller;
+    setAutoPitching(null);
+    setAutoPitchNotes(chosen);
+    try {
+      await doc().saved();
+      const pitches = await followProgress(
+        () => native.project.autoPitch({ id: overview().id, notes: ids }, { signal: controller.signal }),
+        controller.signal,
+        (progress) => setAutoPitching(progress),
+      );
+      // Null: stopped (the editor went away).
+      if (!pitches || controller.signal.aborted || doc() !== asking) return;
+      if (pitches.length === 0) toast.add({ title: "Nothing is sung there to take the pitch from." });
+      else if (editing.applyPitches(pitches, asked) === 0)
+        toast.add({ title: "The pitch was right already (or the notes were changed meanwhile)." });
+    } catch (error) {
+      if (!isAbort(error))
+        toast.add({ type: "error", title: "Couldn't find the pitch", description: errorMessage(error) });
+    } finally {
+      if (autoPitchController === controller) {
+        setAutoPitching(undefined);
+        setAutoPitchNotes(new Set<number>());
+      }
+    }
+  };
+
   const editing = createNoteEditing({
+    onAutoPitch: (ids) => void runAutoPitch(ids),
     autoScroll,
     viewStart: () => view().start,
     doc,
@@ -237,6 +294,31 @@ export default function ProjectScreen() {
     },
     onRefused: (message) => toast.add({ title: message }),
   });
+
+  /** The note a right-click is on, until the note menu opens (it is told on the way up). */
+  let menuNote: DrawnNote | null = null;
+  const noteMenu: NoteMenuActions = {
+    open: () => {
+      cancelGestures();
+      const note = menuNote;
+      menuNote = null;
+      if (note) editing.menuOpen(note);
+      return note !== null;
+    },
+    canAutoPitch: () => autoPitching() === undefined && selectedIds().size > 0,
+    autoPitch: () => editing.commands.autoPitch(),
+    canSplitAtPlayhead: () => editing.commands.canSplitAtPlayhead(),
+    splitAtPlayhead: () => editing.commands.splitAtPlayhead(),
+    canMerge: () => editing.commands.canMerge(),
+    merge: () => editing.commands.merge(),
+    flagOn: (flag) => editing.commands.flagOn(flag),
+    toggleFlag: (flag) => editing.commands.toggleFlag(flag),
+    cut: () => runEditCommand("cut"),
+    copy: () => runEditCommand("copy"),
+    paste: () => pasteFromClipboard(),
+    remove: () => editing.commands.remove(),
+    selectAll: () => editing.commands.selectAll(),
+  };
 
   const tools = createTools();
   const onKeyUp = (event: KeyboardEvent) => tools.keyUp(event);
@@ -382,6 +464,7 @@ export default function ProjectScreen() {
       stopEditing();
       cancelGestures();
       autoScroll.end();
+      autoPitchController?.abort();
       pitchController.abort();
       observer.disconnect();
       editArea?.removeEventListener("wheel", onWheel);
@@ -445,6 +528,14 @@ export default function ProjectScreen() {
             </HistoryButton>
             <div class="mx-1.5 h-4 w-px bg-bar-border" aria-hidden="true" />
             <ToolSwitch tool={tools.tool()} onTool={tools.setTool} />
+            <div class="mx-1.5 h-4 w-px bg-bar-border" aria-hidden="true" />
+            <AutoPitchButton
+              status={autoPitching() === undefined ? undefined : (autoPitching()?.step ?? null)}
+              percent={percentOf(autoPitching() ?? null) ?? null}
+              canStart={selectedIds().size > 0}
+              onStart={() => editing.commands.autoPitch()}
+              onStop={() => autoPitchController?.abort()}
+            />
           </>
         }
       >
@@ -507,42 +598,46 @@ export default function ProjectScreen() {
               onLaneDoubleClick={(seconds) => breakEditing.laneDoubleClick(seconds)}
             />
             <div ref={(element) => (rollArea = element)} class="flex min-h-0 flex-1">
-              <PianoRoll
-                notes={visibleNotes()}
-                breaks={visibleBreaks()}
-                range={range()}
-                view={view()}
-                width={width()}
-                height={size().height}
-                pitch={showPitch() ? pitch() : null}
-                selected={selectedIds()}
-                overlapping={overlaps()}
-                onNoteDown={(note, event, part, scale) => {
-                  breakEditing.deselect();
-                  editing.noteDown(note, event, part, scale);
-                }}
-                drag={editing.drag()}
-                onEmptyClick={(seconds) => {
-                  breakEditing.deselect();
-                  editing.emptyClick();
-                  seek(seconds);
-                }}
-                onBox={(area, add) => {
-                  breakEditing.deselect();
-                  editing.box(area, add);
-                }}
-                tool={tools.tool()}
-                onDrawDown={(at, event, scale) => editing.drawDown(event, at, scale)}
-                drawing={editing.drawing()}
-                onEmptyDoubleClick={(at) => editing.emptyDoubleClick(at)}
-                cut={editing.cut()}
-                onHover={(note, seconds) => editing.hover(note, seconds)}
-                onSplit={(note, seconds, every) => editing.splitAt(note, seconds, every)}
-                onNoteDoubleClick={(note) => editing.noteDoubleClick(note)}
-                editingLyric={editing.editingLyric()}
-                onLyricDone={(text, move) => editing.finishLyric(text, move)}
-                autoScroll={autoScroll}
-              />
+              <NoteMenu actions={noteMenu}>
+                <PianoRoll
+                  onNoteContextMenu={(note) => (menuNote = note)}
+                  notes={visibleNotes()}
+                  breaks={visibleBreaks()}
+                  range={range()}
+                  view={view()}
+                  width={width()}
+                  height={size().height}
+                  pitch={showPitch() ? pitch() : null}
+                  selected={selectedIds()}
+                  overlapping={overlaps()}
+                  pending={autoPitchNotes()}
+                  onNoteDown={(note, event, part, scale) => {
+                    breakEditing.deselect();
+                    editing.noteDown(note, event, part, scale);
+                  }}
+                  drag={editing.drag()}
+                  onEmptyClick={(seconds) => {
+                    breakEditing.deselect();
+                    editing.emptyClick();
+                    seek(seconds);
+                  }}
+                  onBox={(area, add) => {
+                    breakEditing.deselect();
+                    editing.box(area, add);
+                  }}
+                  tool={tools.tool()}
+                  onDrawDown={(at, event, scale) => editing.drawDown(event, at, scale)}
+                  drawing={editing.drawing()}
+                  onEmptyDoubleClick={(at) => editing.emptyDoubleClick(at)}
+                  cut={editing.cut()}
+                  onHover={(note, seconds) => editing.hover(note, seconds)}
+                  onSplit={(note, seconds, every) => editing.splitAt(note, seconds, every)}
+                  onNoteDoubleClick={(note) => editing.noteDoubleClick(note)}
+                  editingLyric={editing.editingLyric()}
+                  onLyricDone={(text, move) => editing.finishLyric(text, move)}
+                  autoScroll={autoScroll}
+                />
+              </NoteMenu>
             </div>
             <LyricsLane lines={visibleLines()} all={lines()} view={view()} duet={duet()} />
             <Show when={opening() !== undefined}>

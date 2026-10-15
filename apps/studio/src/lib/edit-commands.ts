@@ -56,6 +56,11 @@ export function runEditCommand(command: EditCommand, text?: string) {
   window.tunestudio?.clipboard?.(copied === null ? { native: command } : { write: copied });
 }
 
+/** Pastes from the page itself (the note menu): main sends Paste back with the system clipboard's text. */
+export function pasteFromClipboard() {
+  window.tunestudio?.clipboard?.({ send: "paste" });
+}
+
 /** Listens for the Edit menu's Undo and Redo; returns a function that stops listening. */
 export function listenForEditCommands(): () => void {
   return window.tunestudio?.onEditCommand?.(runEditCommand) ?? (() => {});

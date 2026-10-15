@@ -129,6 +129,18 @@ try {
       await page.mouse.move(marker.x - 240, marker.y + marker.height / 2, { steps: 6 });
       await shot(studio, "03f-project-break-drag");
       await page.mouse.up();
+      // Toasts: one line (a split with the playhead outside notes), and with a description (auto pitch without vocals).
+      await page.keyboard.press("Meta+k");
+      await shot(studio, "03g-toast");
+      await page.getByTestId("roll-note").first().click();
+      await page.keyboard.press("a");
+      await page.locator('[data-slot="toast"][data-type="error"]').waitFor();
+      await shot(studio, "03h-toast-error");
+      // The note menu on a selected note, and the auto pitch button next to the tools.
+      await page.getByTestId("roll-note").nth(1).click({ button: "right" });
+      await page.getByTestId("note-menu").waitFor();
+      await shot(studio, "03i-note-menu");
+      await page.keyboard.press("Escape");
       await page.getByTestId("export-song").waitFor();
     }
     await page.getByTestId("close-project").click();

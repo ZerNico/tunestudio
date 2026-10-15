@@ -15,7 +15,7 @@ import { COPYRIGHT } from "./identity";
  * Hands an Edit menu command to the page of the window it is for (the one Electron says, else the focused one); Paste
  * brings the system clipboard's text along.
  */
-async function sendEditCommand(command: EditCommand, window?: BaseWindow) {
+export async function sendEditCommand(command: EditCommand, window?: BaseWindow) {
   const target = window instanceof BrowserWindow ? window : BrowserWindow.getFocusedWindow();
   if (!target) return;
   // The developer tools have their own text fields: they get the command as it is.
