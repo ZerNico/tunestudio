@@ -1,3 +1,5 @@
+import type { EditCommand } from "./native/channel";
+
 /** A dropped or picked file's place on disk. */
 export interface FilePath {
   path: string;
@@ -9,6 +11,7 @@ interface DesktopGlobals {
   platform: string;
   version: string;
   pathForFile?: (file: File) => Promise<FilePath | null>;
+  onEditCommand?: (listener: (command: EditCommand) => void) => () => void;
 }
 
 declare global {

@@ -9,3 +9,12 @@ export const RPC_CONNECT_CHANNEL = "tunestudio:connect-rpc";
  * renderer use it (see `pathForFile` in `electron/preload.ts`).
  */
 export const GRANT_PATH_CHANNEL = "tunestudio:grant-path";
+
+/**
+ * IPC channel the Edit menu's Undo and Redo use (macOS): the page decides whether they undo text in a field or an
+ * edit in the editor (see `src/lib/edit-commands.ts`).
+ */
+export const EDIT_COMMAND_CHANNEL = "tunestudio:edit-command";
+
+/** What the Edit menu asks the page to do. */
+export type EditCommand = "undo" | "redo";

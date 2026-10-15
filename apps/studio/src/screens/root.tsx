@@ -3,6 +3,7 @@ import { onSettled } from "solid-js";
 
 import { Toaster } from "~/components/ui/toast";
 import { TooltipProvider } from "~/components/ui/tooltip";
+import { listenForEditCommands } from "~/lib/edit-commands";
 
 function blockContextMenu(event: MouseEvent) {
   const target = event.target;
@@ -10,8 +11,9 @@ function blockContextMenu(event: MouseEvent) {
   event.preventDefault();
 }
 
-/** App shell around every route: tooltips, toasts and the release-build right-click policy. */
+/** App shell around every route: tooltips, toasts, the Edit menu's Undo and Redo, and the release-build right-click policy. */
 export default function RootScreen() {
+  onSettled(() => listenForEditCommands());
   // Release builds have no browser context menu outside text fields; the app's own menus
   // (Base UI ContextMenu) call preventDefault themselves, so this only blocks the rest.
   if (import.meta.env.PROD) {

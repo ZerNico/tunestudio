@@ -1,6 +1,11 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 
-import { GRANT_PATH_CHANNEL, RPC_CONNECT_CHANNEL } from "../src/lib/native/channel";
+import {
+  EDIT_COMMAND_CHANNEL,
+  type EditCommand,
+  GRANT_PATH_CHANNEL,
+  RPC_CONNECT_CHANNEL,
+} from "../src/lib/native/channel";
 
 // The renderer opens the RPC connection by posting one end of a MessageChannel to itself.
 // MessagePorts can't cross `contextBridge`, so the preload picks the port up from the
@@ -28,5 +33,11 @@ contextBridge.exposeInMainWorld("tunestudio", {
   pathForFile: (file: File): Promise<{ path: string; kind: "file" | "directory" } | null> => {
     const path = webUtils.getPathForFile(file);
     return path ? ipcRenderer.invoke(GRANT_PATH_CHANNEL, path) : Promise.resolve(null);
+  },
+  /** Calls `listener` with the Edit menu's Undo and Redo; returns a function that stops it. */
+  onEditCommand: (listener: (command: EditCommand) => void): (() => void) => {
+    const forward = (_event: unknown, command: EditCommand) => listener(command);
+    ipcRenderer.on(EDIT_COMMAND_CHANNEL, forward);
+    return () => ipcRenderer.removeListener(EDIT_COMMAND_CHANNEL, forward);
   },
 });

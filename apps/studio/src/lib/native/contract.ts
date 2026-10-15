@@ -156,6 +156,69 @@ export const ToolInput = Schema.Struct({ tool: Schema.Literals(["yt-dlp", "quick
 
 export const ModelFeatureInput = Schema.Struct({ feature: Schema.Literals(MODEL_FEATURES) });
 
+/** A note's stored fields (times in seconds of the main audio, pitch as MIDI). */
+export const NoteFields = Schema.Struct({
+  lineId: Schema.Number,
+  start: Schema.Number,
+  duration: Schema.Number,
+  pitch: Schema.Number,
+  lyric: Schema.String,
+  type: Schema.Literals(["normal", "golden", "freestyle", "rap", "golden-rap"]),
+  edited: Schema.Boolean,
+});
+export type NoteFields = typeof NoteFields.Type;
+
+/** A line's stored fields: its singer and when the next line appears (both null: automatically). */
+export const LineFields = Schema.Struct({
+  singerId: Schema.Number,
+  switchStart: Schema.NullOr(Schema.Number),
+  switchEnd: Schema.NullOr(Schema.Number),
+});
+export type LineFields = typeof LineFields.Type;
+
+/** The song details an edit can change; a change lists only the ones it changes. */
+export const SongFields = Schema.Struct({
+  title: Schema.optional(Schema.String),
+  artist: Schema.optional(Schema.String),
+  language: Schema.optional(Schema.Array(Schema.String)),
+  year: Schema.optional(Schema.NullOr(Schema.Number)),
+  genre: Schema.optional(Schema.NullOr(Schema.String)),
+  edition: Schema.optional(Schema.NullOr(Schema.String)),
+  creator: Schema.optional(Schema.NullOr(Schema.String)),
+  bpm: Schema.optional(Schema.Number),
+  gap: Schema.optional(Schema.Number),
+  videoGap: Schema.optional(Schema.NullOr(Schema.Number)),
+  start: Schema.optional(Schema.NullOr(Schema.Number)),
+  end: Schema.optional(Schema.NullOr(Schema.Number)),
+  previewStart: Schema.optional(Schema.NullOr(Schema.Number)),
+  medleyStart: Schema.optional(Schema.NullOr(Schema.Number)),
+  medleyEnd: Schema.optional(Schema.NullOr(Schema.Number)),
+});
+export type SongFields = typeof SongFields.Type;
+
+/**
+ * One row of an edit, as it was and as it becomes: `before` null creates the row (with the editor's id), `after` null
+ * deletes it. Main checks `before` against the file, so an editor out of step with it is noticed, not written over.
+ */
+export const ChartChange = Schema.Union([
+  Schema.Struct({
+    table: Schema.Literal("note"),
+    id: Schema.Number,
+    before: Schema.NullOr(NoteFields),
+    after: Schema.NullOr(NoteFields),
+  }),
+  Schema.Struct({
+    table: Schema.Literal("line"),
+    id: Schema.Number,
+    before: Schema.NullOr(LineFields),
+    after: Schema.NullOr(LineFields),
+  }),
+  Schema.Struct({ table: Schema.Literal("song"), before: SongFields, after: SongFields }),
+]);
+export type ChartChange = typeof ChartChange.Type;
+
+export const ChartChangesInput = Schema.Struct({ id: Schema.String, changes: Schema.Array(ChartChange) });
+
 export const SongSearchInput = Schema.Struct({
   artist: Schema.String,
   title: Schema.String,
@@ -199,6 +262,8 @@ export const contract = {
     pitch: oc
       .input(Schema.toStandardSchemaV1(ProjectInput))
       .output(eventIterator(type<ImportProgress>(), type<SungPitch | null>())),
+    /** Writes one edit (or its undo) to the project in one transaction; fails, writing nothing, if it is out of step. */
+    applyChanges: oc.input(Schema.toStandardSchemaV1(ChartChangesInput)),
     /** The chart with its row ids, for the editor. */
     chart: oc.input(Schema.toStandardSchemaV1(ProjectInput)).output(type<EditorChart>()),
     /** Writes the project as an UltraStar song folder. */

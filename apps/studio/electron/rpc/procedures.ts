@@ -7,6 +7,7 @@ import { createDraftProject, listenToDraft, makeDraftChart } from "../drafts/dra
 import { ImageUnreadable } from "../errors";
 import { downloadFeature, modelFeatures, removeFeature } from "../models/features";
 import { CHART_MODELS, type ModelName, Models } from "../models/models";
+import { applyChartChanges } from "../project/chart-changes";
 import { readEditorChart } from "../project/editor-chart";
 import { readImage } from "../project/images";
 import { projectOverview, recentEntry } from "../project/overview";
@@ -263,6 +264,16 @@ export function procedures(runtime: ManagedRuntime.ManagedRuntime<StudioServices
               ),
               pitchSignal,
             ),
+          signal,
+        ),
+      ),
+      applyChanges: os.project.applyChanges.handler(({ input, signal }) =>
+        runRpc(
+          runtime,
+          Effect.flatMap(
+            Projects.use((projects) => projects.get(input.id)),
+            (session) => session.db.transaction((tx) => applyChartChanges(tx, input.changes)),
+          ),
           signal,
         ),
       ),

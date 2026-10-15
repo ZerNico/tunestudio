@@ -39,6 +39,22 @@ test("imports a song folder, exports it, and reopens the project from recents", 
   await expect(page.getByTestId("roll-note")).toHaveCount(5);
   await expect(page.getByTestId("lyrics-line")).toHaveCount(2);
   await expect(page.getByTestId("transport")).toBeVisible();
+  // Nothing edited yet: nothing to undo or redo.
+  await expect(page.getByTestId("undo")).toBeDisabled();
+  await expect(page.getByTestId("redo")).toBeDisabled();
+  // Zoomed all the way out with the playhead at the very end, nothing pokes out of the window (scrollbars would make
+  // the view resize back and forth).
+  for (let i = 0; i < 8; i++) await page.getByRole("button", { name: "Zoom out" }).click();
+  const ruler = page.getByTestId("time-ruler");
+  const box = (await ruler.boundingBox())!;
+  await page.mouse.click(box.x + box.width - 1, box.y + box.height / 2);
+  await expect(page.getByTestId("playhead")).toBeVisible();
+  expect(
+    await page.evaluate(() => {
+      const root = document.scrollingElement!;
+      return root.scrollWidth - root.clientWidth + (root.scrollHeight - root.clientHeight);
+    }),
+  ).toBe(0);
 
   // The song's details are in the Song panel.
   await page.getByTestId("song-panel-toggle").click();

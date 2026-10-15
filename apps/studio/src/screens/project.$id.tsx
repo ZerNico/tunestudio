@@ -1,8 +1,11 @@
+import type { JSX } from "@solidjs/web";
 import { getRouteApi, useNavigate, useRouter } from "@tanstack/solid-router";
 import { createMemo, createSignal, onSettled, Show } from "solid-js";
 import DownloadIcon from "~icons/lucide/download";
 import LoaderCircleIcon from "~icons/lucide/loader-circle";
 import PanelRightIcon from "~icons/lucide/panel-right";
+import Redo2Icon from "~icons/lucide/redo-2";
+import Undo2Icon from "~icons/lucide/undo-2";
 import XIcon from "~icons/lucide/x";
 
 import { BreakLane, LyricsLane, OverviewBar, TimeRuler } from "~/components/editor/lanes";
@@ -15,8 +18,11 @@ import { ReplaceExportDialog } from "~/components/project/replace-export-dialog"
 import { TitleBar } from "~/components/title-bar";
 import { Button } from "~/components/ui/button";
 import { toast } from "~/components/ui/toast";
-import { revealLabel } from "~/lib/desktop";
+import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
+import { platform, revealLabel } from "~/lib/desktop";
+import { isTyping, runEditCommand, setEditHandler } from "~/lib/edit-commands";
 import { chartEnd, drawnNotes, lineBreaks, lineIndexAt, lineSpans, longest, stepLine } from "~/lib/editor/chart";
+import { createChartDocument } from "~/lib/editor/document";
 import { createPlayback } from "~/lib/editor/playback";
 import {
   clampView,
@@ -29,26 +35,25 @@ import {
   visibleSeconds,
   zoomAt,
 } from "~/lib/editor/view";
+import type { EditCommand } from "~/lib/native/channel";
 import { native } from "~/lib/native/client";
 import { errorMessage } from "~/lib/native/errors";
 import type { ImportProgress, SungPitch } from "~/lib/native/types";
 
 const route = getRouteApi("/project/$id");
 
+/** Ctrl+Z undoes; Ctrl+Shift+Z and Ctrl+Y redo (where Undo isn't in a menu). */
+function undoKey(event: KeyboardEvent): EditCommand | null {
+  const key = event.key.toLowerCase();
+  if (key === "z") return event.shiftKey ? "redo" : "undo";
+  if (key === "y" && !event.shiftKey) return "redo";
+  return null;
+}
+
 function reveal(path: string) {
   native.files.reveal({ path }).catch((error: unknown) => {
     toast.add({ type: "error", title: "Couldn't show it", description: errorMessage(error) });
   });
-}
-
-/** A field, text area or editable element has the keyboard: the editor's keys leave it alone. */
-function typing(target: EventTarget | null): boolean {
-  return (
-    target instanceof HTMLElement &&
-    (target.isContentEditable ||
-      ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) ||
-      !!target.closest("[role=dialog]"))
-  );
 }
 
 /** How much of the song the view shows at first. */
@@ -67,13 +72,38 @@ export default function ProjectScreen() {
   const [exporting, setExporting] = createSignal(false);
   const [replacing, setReplacing] = createSignal<{ folder: string; existing: string } | null>(null);
 
-  const notes = createMemo(() => drawnNotes(data().chart));
-  const lines = createMemo(() => lineSpans(data().chart));
+  /** The selected notes (by id); undo and redo bring back the selection that went with a step. */
+  const [selection, setSelection] = createSignal<number[]>([]);
+  /**
+   * The chart being edited, with its history. Made anew when the project's chart is loaded again (after "Make the
+   * chart", or when saving failed), which also starts the history over.
+   */
+  const doc = createMemo(() =>
+    createChartDocument<number[]>({
+      chart: data().chart,
+      save: async (changes) => {
+        await native.project.applyChanges({ id: overview().id, changes });
+      },
+      onFailed: (error) => {
+        toast.add({
+          type: "error",
+          title: "Couldn't save the last change",
+          description: `${errorMessage(error)} The chart was loaded again from the project.`,
+        });
+        void router.invalidate();
+      },
+      selection,
+      setSelection,
+    }),
+  );
+  const chart = () => doc().chart();
+  const notes = createMemo(() => drawnNotes(chart()));
+  const lines = createMemo(() => lineSpans(chart()));
   const range = createMemo(() => pitchRange(notes().map((note) => note.pitch)));
   const longestNote = createMemo(() => longest(notes()));
   const longestLine = createMemo(() => longest(lines()));
-  const duet = () => data().chart.singers.length > 1;
-  const breaks = createMemo(() => lineBreaks(data().chart));
+  const duet = () => chart().singers.length > 1;
+  const breaks = createMemo(() => lineBreaks(chart()));
   const [songPanel, setSongPanel] = createSignal(notes().length === 0);
   /** What is sung in the vocals (null: none, or not there yet). */
   const [pitch, setPitch] = createSignal<SungPitch | null>(null);
@@ -188,7 +218,15 @@ export default function ProjectScreen() {
     editArea?.addEventListener("wheel", onWheel, { passive: false });
 
     const onKey = (event: KeyboardEvent) => {
-      if (typing(event.target) || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (isTyping(event.target)) return;
+      // On macOS the Edit menu takes Cmd+Z; Windows and Linux have no menu bar, so the keys come here.
+      const command = event.ctrlKey && !event.altKey && platform !== "macos" ? undoKey(event) : null;
+      if (command) {
+        event.preventDefault();
+        runEditCommand(command);
+        return;
+      }
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
       if (event.key === " ") {
         event.preventDefault();
         if (!playback.playing()) scrolledAway = false;
@@ -202,7 +240,9 @@ export default function ProjectScreen() {
       }
     };
     window.addEventListener("keydown", onKey);
+    const stopEditing = setEditHandler({ undo: () => doc().undo(), redo: () => doc().redo() });
     return () => {
+      stopEditing();
       pitchController.abort();
       observer.disconnect();
       editArea?.removeEventListener("wheel", onWheel);
@@ -250,12 +290,18 @@ export default function ProjectScreen() {
   };
 
   return (
-    <div class="flex h-dvh min-h-0 flex-col bg-background" data-testid="project">
+    <div class="flex h-dvh min-h-0 flex-col overflow-hidden bg-background" data-testid="project">
       <TitleBar>
         <div class="mr-auto flex max-w-[420px] min-w-0 items-baseline gap-1.5 text-[12.5px]">
           <h1 class="m-0 truncate text-[12.5px] font-medium text-foreground">{overview().song.title || "Untitled"}</h1>
           <span class="truncate text-muted-foreground">· {overview().song.artist || "Unknown artist"}</span>
         </div>
+        <HistoryButton label={doc().undoLabel()} action="Undo" onClick={() => runEditCommand("undo")} testid="undo">
+          <Undo2Icon />
+        </HistoryButton>
+        <HistoryButton label={doc().redoLabel()} action="Redo" onClick={() => runEditCommand("redo")} testid="redo">
+          <Redo2Icon />
+        </HistoryButton>
         <Button
           variant={songPanel() ? "secondary" : "ghost"}
           size="sm"
@@ -284,7 +330,11 @@ export default function ProjectScreen() {
         </Button>
       </TitleBar>
       <div class="flex min-h-0 flex-1">
-        <div ref={(element) => (editArea = element)} class="flex min-w-0 flex-1 flex-col" data-testid="editor">
+        <div
+          ref={(element) => (editArea = element)}
+          class="flex min-w-0 flex-1 flex-col overflow-hidden"
+          data-testid="editor"
+        >
           <OverviewBar
             lines={lines()}
             length={length()}
@@ -294,7 +344,7 @@ export default function ProjectScreen() {
             duet={duet()}
             onScrollTo={(seconds) => changeView({ ...view(), start: seconds - visibleSeconds(view(), width()) / 2 })}
           />
-          <div class="relative flex min-h-0 flex-1 flex-col">
+          <div class="relative flex min-h-0 flex-1 flex-col overflow-hidden">
             <TimeRuler view={view()} width={width()} onSeek={seek} />
             <BreakLane breaks={visibleBreaks()} view={view()} />
             <div ref={(element) => (rollArea = element)} class="flex min-h-0 flex-1">
@@ -369,5 +419,36 @@ function OpeningOverlay(props: { progress: ImportProgress | null }) {
         <progress aria-label="Opening progress" max="100" value={percentOf(props.progress)} class={progressBarClass} />
       </div>
     </div>
+  );
+}
+
+/** Undo or Redo in the title bar: says what it would do ("Undo Move note"), disabled when there is nothing. */
+function HistoryButton(props: {
+  label: string | null;
+  action: "Undo" | "Redo";
+  onClick: () => void;
+  testid: string;
+  children: JSX.Element;
+}) {
+  const text = () => (props.label ? `${props.action} ${props.label}` : props.action);
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={(triggerProps: JSX.HTMLAttributes<HTMLButtonElement>) => (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={text()}
+            disabled={!props.label}
+            onClick={() => props.onClick()}
+            data-testid={props.testid}
+            {...triggerProps}
+          >
+            {props.children}
+          </Button>
+        )}
+      />
+      <TooltipContent>{text()}</TooltipContent>
+    </Tooltip>
   );
 }

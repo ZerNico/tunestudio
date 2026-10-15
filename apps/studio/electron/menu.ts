@@ -1,6 +1,12 @@
-import { app, Menu, type MenuItemConstructorOptions, type WebContents } from "electron";
+import { app, BrowserWindow, Menu, type MenuItemConstructorOptions, type WebContents } from "electron";
 
+import { EDIT_COMMAND_CHANNEL, type EditCommand } from "../src/lib/native/channel";
 import { COPYRIGHT } from "./identity";
+
+/** Hands Undo or Redo to the focused window's page. */
+function sendEditCommand(command: EditCommand) {
+  BrowserWindow.getFocusedWindow()?.webContents.send(EDIT_COMMAND_CHANNEL, command);
+}
 
 /**
  * On macOS a minimal menu: the app menu, Edit (which makes copy and paste work in text
@@ -45,8 +51,9 @@ export function setApplicationMenu() {
       {
         label: "Edit",
         submenu: [
-          { role: "undo" },
-          { role: "redo" },
+          // Not the undo/redo roles: those only reach text fields, and Cmd+Z never gets to the page. The page decides.
+          { label: "Undo", accelerator: "CmdOrCtrl+Z", click: () => sendEditCommand("undo") },
+          { label: "Redo", accelerator: "Shift+CmdOrCtrl+Z", click: () => sendEditCommand("redo") },
           { type: "separator" },
           { role: "cut" },
           { role: "copy" },

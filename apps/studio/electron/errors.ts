@@ -77,6 +77,11 @@ export class ChartFailed extends Schema.TaggedError<ChartFailed>()("ChartFailed"
   message: Schema.String,
 }) {}
 
+/** An edit expected the chart to be different from what the project holds: nothing was written. */
+export class ChartOutOfStep extends Schema.TaggedError<ChartOutOfStep>()("ChartOutOfStep", {
+  message: Schema.String,
+}) {}
+
 /** The chart made for a new project no longer fits its lyrics or language. */
 export class ChartOutdated extends Schema.TaggedError<ChartOutdated>()("ChartOutdated", {
   message: Schema.String,
