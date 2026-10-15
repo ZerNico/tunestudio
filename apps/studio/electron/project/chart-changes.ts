@@ -7,12 +7,15 @@
 import { asc, eq } from "drizzle-orm";
 import { Effect, Schema } from "effect";
 
-import type { ChartChange, LineFields, NoteFields, SongFields } from "../../src/lib/native/contract";
+import type { ChartChange, LineFields, NoteFields, SingerFields, SongFields } from "../../src/lib/native/contract";
 import { ChartOutOfStep } from "../errors";
 import { orDiskFull, type Queryable } from "./database";
-import { Languages, lines, notes, song } from "./schema";
+import { ExtraHeaders, Languages, lines, notes, singers, song } from "./schema";
+import { tagsOf, withTags } from "./tags";
 
 const encodeLanguages = Schema.encodeSync(Languages);
+const encodeExtraHeaders = Schema.encodeSync(ExtraHeaders);
+const decodeExtraHeaders = Schema.decodeUnknownEffect(ExtraHeaders);
 const decodeLanguages = Schema.decodeUnknownEffect(Languages);
 
 const outOfStep = (what: string) =>
@@ -71,13 +74,26 @@ function songChange(db: Queryable, before: SongFields, after: SongFields) {
     const [row] = yield* db.select().from(song).limit(1).pipe(Effect.orDie);
     if (!row) return yield* outOfStep("the song details");
     const stored = yield* decodeLanguages(row.language).pipe(Effect.orElseSucceed(() => null));
-    const current = { ...row, language: stored };
+    const headers = yield* decodeExtraHeaders(row.extraHeaders).pipe(Effect.orElseSucceed(() => null));
+    const current = { ...row, language: stored, tags: headers ? tagsOf(headers) : null };
     if (!matches(current, before)) return yield* outOfStep("the song details");
-    const { language, ...rest } = after;
+    const { language, tags, ...rest } = after;
     yield* db
       .update(song)
-      .set({ ...rest, ...(language === undefined ? {} : { language: encodeLanguages(language) }) })
+      .set({
+        ...rest,
+        ...(language === undefined ? {} : { language: encodeLanguages(language) }),
+        ...(tags === undefined || !headers ? {} : { extraHeaders: encodeExtraHeaders(withTags(headers, tags)) }),
+      })
       .pipe(orDiskFull);
+  });
+}
+
+function singerChange(db: Queryable, id: number, before: SingerFields, after: SingerFields) {
+  return Effect.gen(function* () {
+    const [row] = yield* db.select().from(singers).where(eq(singers.id, id)).limit(1).pipe(Effect.orDie);
+    if (!row || row.name !== before.name) return yield* outOfStep(`singer ${id}`);
+    yield* db.update(singers).set({ name: after.name }).where(eq(singers.id, id)).pipe(orDiskFull);
   });
 }
 
@@ -126,6 +142,7 @@ export function applyChartChanges(db: Queryable, changes: readonly ChartChange[]
     for (const change of changes) {
       if (change.table === "note") yield* noteChange(db, change.id, change.before, change.after);
       else if (change.table === "line") yield* lineChange(db, change.id, change.before, change.after);
+      else if (change.table === "singer") yield* singerChange(db, change.id, change.before, change.after);
       else yield* songChange(db, change.before, change.after);
     }
     yield* putInOrder(db);

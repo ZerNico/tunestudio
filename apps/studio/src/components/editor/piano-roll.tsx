@@ -111,6 +111,8 @@ export function PianoRoll(props: {
   height: number;
   selected: ReadonlySet<number>;
   overlapping: ReadonlySet<number>;
+  /** Where the game starts and stops playing (seconds; null: the song's start or end): outside is dimmed. */
+  played?: { start: number | null; end: number | null };
   /** Notes auto pitch is working on. */
   pending?: ReadonlySet<number>;
   onNoteDown: (note: DrawnNote, event: PointerEvent, part: NotePart, scale: RollScale) => void;
@@ -322,6 +324,20 @@ export function PianoRoll(props: {
             />
           )}
         </For>
+        <Show when={props.played?.start != null && timeToX(props.view, props.played.start) > 0}>
+          <div
+            class="pointer-events-none absolute inset-y-0 left-0 z-[5] bg-background/45"
+            style={{ width: `${timeToX(props.view, props.played!.start!)}px` }}
+            data-testid="not-played-before"
+          />
+        </Show>
+        <Show when={props.played?.end != null && timeToX(props.view, props.played.end) < props.width}>
+          <div
+            class="pointer-events-none absolute inset-y-0 right-0 z-[5] bg-background/45"
+            style={{ left: `${Math.max(0, timeToX(props.view, props.played!.end!))}px` }}
+            data-testid="not-played-after"
+          />
+        </Show>
         <For each={props.notes} keyed={(item) => item.id}>
           {(note) => {
             // Keyed by id: an edit (which makes new note objects) updates the element instead of making a new one.

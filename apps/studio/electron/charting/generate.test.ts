@@ -5,10 +5,7 @@ import { NodeServices } from "@effect/platform-node";
 import { afterEach, describe, expect, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
 
-import { readChart } from "../project/chart";
 import { readEditorChart } from "../project/editor-chart";
-import { writeLyrics } from "../project/lyrics";
-import { listMedia } from "../project/media";
 import { sungPitch } from "../project/pitch";
 import { projectsLayer } from "../project/projects";
 import { analysis } from "../project/schema";
@@ -16,7 +13,7 @@ import { AppLog } from "../services/app-log";
 import { fakeModels, fakeNative, recordingDesktop, soloChart, syntheticBytes, tempDir, writeSong } from "../testing";
 import { Tools } from "../tools/tools";
 import { importSong, inspectSong } from "../ultrastar/song-import";
-import { chartLanguage, generateChart } from "./generate";
+import { chartLanguage } from "./generate";
 import { autoPitchNotes, FINDING_THE_PITCH } from "./project-auto-pitch";
 
 let cleanups: (() => void)[] = [];
@@ -65,46 +62,7 @@ function setup() {
   return { dir, layer, song };
 }
 
-describe("generateChart", () => {
-  it.effect("makes the chart from the project's vocals and lyrics and replaces its notes", () => {
-    const { dir, layer, song } = setup();
-    return Effect.gen(function* () {
-      const session = yield* importSong(yield* inspectSong(song), {
-        includeVideo: false,
-        target: path.join(dir, "Night.tunestudio"),
-      });
-      const audio = (yield* listMedia(session.db)).find((row) => row.role === "audio")!;
-      yield* writeLyrics(session.db, audio, {
-        source: "lrclib",
-        lines: [
-          { start: 0.5, text: "Hello there" },
-          { start: 2.5, text: "my friend" },
-        ],
-      });
-      const steps: string[] = [];
-      yield* generateChart(session, (progress) => Effect.sync(() => void steps.push(progress.step)));
-      const chart = yield* readChart(session.db);
-      const notes = chart.singers.flatMap((singer) => singer.lines.flatMap((line) => line.notes));
-      expect(notes.map((note) => note.lyric).join("")).toContain("there");
-      // The fake beats are two a second: 120 BPM, written as UltraStar's 480.
-      expect(chart.song.bpm).toBe(480);
-      expect(steps).toContain("Timing the lyrics");
-      expect(steps.at(-1)).toBe("Finishing the chart");
-    }).pipe(Effect.provide(layer));
-  });
-
-  it.effect("says what's missing instead of starting", () => {
-    const { dir, layer, song } = setup();
-    return Effect.gen(function* () {
-      const session = yield* importSong(yield* inspectSong(song), {
-        includeVideo: false,
-        target: path.join(dir, "Night.tunestudio"),
-      });
-      const error = yield* Effect.flip(generateChart(session, () => Effect.void));
-      expect(error.message).toBe("The song has no lyrics yet. Add them first.");
-    }).pipe(Effect.provide(layer));
-  });
-
+describe("chartLanguage", () => {
   it("supports English and German so far", () => {
     expect(chartLanguage(["German", "English"])).toEqual({ name: "german", code: "deu" });
     expect(chartLanguage(["Korean (romanized)"])).toBe(

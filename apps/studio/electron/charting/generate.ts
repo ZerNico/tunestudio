@@ -2,18 +2,14 @@
  * "Make the chart" for an open project: its vocals, song and lyrics through the chart pipeline (pipeline.ts), the
  * result written over the project's notes in one transaction. Downloads the chart models first if needed.
  */
-import { Effect, FileSystem, Path } from "effect";
+import { Effect, FileSystem } from "effect";
 
 import { CHART_STEPS, GETTING_CHART_MODELS, READING_SONG } from "../../src/lib/chart-steps";
 import type { ImportProgress } from "../../src/lib/native/types";
 import { ChartFailed, mapFileError } from "../errors";
 import { CHART_MODELS, Models } from "../models/models";
 import { Native } from "../native/native";
-import { readChart, replaceChart } from "../project/chart";
-import { readLyrics } from "../project/lyrics";
-import { listMedia, writeMediaToFile } from "../project/media";
-import { sungMidi, writePitch } from "../project/pitch";
-import type { ProjectSession } from "../project/projects";
+import { sungMidi } from "../project/pitch";
 import { AppLog } from "../services/app-log";
 import { Tools } from "../tools/tools";
 import { AlignFailed, type LyricLine } from "./align-stage";
@@ -115,45 +111,5 @@ export function chartFromFiles(
     );
     // The pitch it followed goes with the chart, so the editor can draw it without working it out again.
     return { chart: toProjectChart(result, details), pitch: sungMidi(result.track) };
-  }).pipe(Effect.scoped);
-}
-
-/** "Make the chart" for an open project: its media and lyrics through `chartFromFiles`, written over its notes. */
-export function generateChart(session: ProjectSession, onProgress: (progress: ImportProgress) => Effect.Effect<void>) {
-  return Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const paths = yield* Path.Path;
-    const db = session.db;
-
-    const chart = yield* readChart(db);
-    const language = chartLanguage(chart.song.language);
-    if (typeof language === "string") return yield* new ChartFailed({ message: language });
-    const lyrics = yield* readLyrics(db);
-    if (!lyrics?.lines.some((line) => line.text.trim())) {
-      return yield* new ChartFailed({ message: "The song has no lyrics yet. Add them first." });
-    }
-    const media = yield* listMedia(db);
-    const audio = media.find((row) => row.role === "audio");
-    const vocals = media.find((row) => row.role === "vocals");
-    if (!audio) return yield* new ChartFailed({ message: "The song has no audio." });
-    if (!vocals) return yield* new ChartFailed({ message: "The song needs its vocals separated first." });
-
-    const folder = yield* fs
-      .makeTempDirectoryScoped({ prefix: "tunestudio-media-" })
-      .pipe(mapFileError("a temporary folder", "create"));
-    const extension = (fileName: string) => paths.extname(fileName) || ".audio";
-    const vocalsFile = paths.join(folder, `vocals${extension(vocals.fileName)}`);
-    const audioFile = paths.join(folder, `song${extension(audio.fileName)}`);
-    yield* writeMediaToFile(db, vocals, vocalsFile);
-    yield* writeMediaToFile(db, audio, audioFile);
-    const generated = yield* chartFromFiles(
-      { vocalsFile, audioFile, lines: lyrics.lines, language },
-      chart.song,
-      onProgress,
-    );
-    yield* db.transaction((tx) =>
-      Effect.andThen(replaceChart(tx, generated.chart), writePitch(tx, vocals, generated.pitch)),
-    );
-    return generated.chart;
   }).pipe(Effect.scoped);
 }

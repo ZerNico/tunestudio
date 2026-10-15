@@ -1,17 +1,24 @@
 /** The chart as the editor sees it: every singer, line and note with its row id, so edits can address them. */
 import { asc } from "drizzle-orm";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 
 import type { EditorChart, EditorLine, EditorNote, EditorSinger } from "../../src/lib/native/types";
 import { ProjectDamaged } from "../errors";
 import type { Queryable } from "./database";
-import { lines, notes, singers, song } from "./schema";
+import { ExtraHeaders, Languages, lines, notes, singers, song } from "./schema";
+import { tagsOf } from "./tags";
+
+const decodeLanguages = Schema.decodeUnknownEffect(Languages);
+const decodeExtraHeaders = Schema.decodeUnknownEffect(ExtraHeaders);
+const damaged = () => new ProjectDamaged({ message: "The project's song details are damaged." });
 
 /** The project's singers, lines and notes in order, with the grid (#BPM and #GAP) they are exported on. */
 export function readEditorChart(db: Queryable): Effect.Effect<EditorChart, ProjectDamaged> {
   return Effect.gen(function* () {
-    const [songRow] = yield* db.select({ bpm: song.bpm, gap: song.gap }).from(song).limit(1).pipe(Effect.orDie);
+    const [songRow] = yield* db.select().from(song).limit(1).pipe(Effect.orDie);
     if (!songRow) return yield* new ProjectDamaged({ message: "The project has no song details; it may be damaged." });
+    const language = yield* decodeLanguages(songRow.language).pipe(Effect.mapError(damaged));
+    const headers = yield* decodeExtraHeaders(songRow.extraHeaders).pipe(Effect.mapError(damaged));
     const singerRows = yield* db.select().from(singers).orderBy(asc(singers.index)).pipe(Effect.orDie);
     const lineRows = yield* db
       .select()
@@ -44,6 +51,26 @@ export function readEditorChart(db: Queryable): Effect.Effect<EditorChart, Proje
       name: row.name,
       lines: bySinger.get(row.id) ?? [],
     }));
-    return { bpm: songRow.bpm, gap: songRow.gap, singers: editorSingers };
+    return {
+      bpm: songRow.bpm,
+      gap: songRow.gap,
+      song: {
+        title: songRow.title,
+        artist: songRow.artist,
+        language,
+        year: songRow.year,
+        genre: songRow.genre,
+        edition: songRow.edition,
+        creator: songRow.creator,
+        tags: tagsOf(headers),
+        videoGap: songRow.videoGap,
+        start: songRow.start,
+        end: songRow.end,
+        previewStart: songRow.previewStart,
+        medleyStart: songRow.medleyStart,
+        medleyEnd: songRow.medleyEnd,
+      },
+      singers: editorSingers,
+    };
   });
 }

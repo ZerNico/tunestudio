@@ -89,7 +89,7 @@ export const notes = sqliteTable(
 );
 
 export const MEDIA_ROLES = ["audio", "vocals", "instrumental", "video", "cover", "background"] as const;
-export const MEDIA_SOURCES = ["imported", "youtube", "generated"] as const;
+export const MEDIA_SOURCES = ["imported", "youtube", "generated", "chosen"] as const;
 
 export const media = sqliteTable("media", {
   id: integer("id").primaryKey(),

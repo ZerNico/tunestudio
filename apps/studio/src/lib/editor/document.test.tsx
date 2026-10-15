@@ -5,6 +5,7 @@ import type { ChartChange } from "~/lib/native/contract";
 import type { EditorChart } from "~/lib/native/types";
 
 import { chartFromRows, createChartDocument, rowsFromChart } from "./document";
+import { testSong } from "./test-song";
 
 const note = (id: number, start: number, lyric: string) => ({
   id,
@@ -19,6 +20,7 @@ const note = (id: number, start: number, lyric: string) => ({
 const chart: EditorChart = {
   bpm: 300,
   gap: 1,
+  song: testSong,
   singers: [
     {
       id: 1,
@@ -116,5 +118,32 @@ describe("chart document", () => {
     expect(onFailed).toHaveBeenCalledWith(new Error("The disk is full."));
     expect(doc.undoLabel()).toBeNull();
     expect(doc.edit("Delete another", (tx) => tx.deleteNote(100))).toBe(false);
+  });
+
+  it("changes song details and a singer's name as edits, saved with what they were and undone", async () => {
+    const { doc, save } = setup();
+    doc.edit("Change title", (tx) => tx.updateSong({ title: "Day Signals", tags: ["live"] }));
+    doc.edit("Change singer's name", (tx) => tx.updateSinger(1, "Mia"));
+    // The same again changes nothing.
+    expect(doc.edit("Change title", (tx) => tx.updateSong({ title: "Day Signals" }))).toBe(false);
+    flush();
+    expect(doc.chart().song).toMatchObject({ title: "Day Signals", tags: ["live"], artist: "Test Artist" });
+    expect(doc.chart().singers[0]!.name).toBe("Mia");
+    await doc.saved();
+    expect(save.mock.calls.map(([changes]) => changes)).toEqual([
+      [
+        {
+          table: "song",
+          before: { title: "Night Signals", tags: [] },
+          after: { title: "Day Signals", tags: ["live"] },
+        },
+      ],
+      [{ table: "singer", id: 1, before: { name: null }, after: { name: "Mia" } }],
+    ]);
+    doc.undo();
+    doc.undo();
+    flush();
+    expect(doc.chart().song.title).toBe("Night Signals");
+    expect(doc.chart().singers[0]!.name).toBeNull();
   });
 });

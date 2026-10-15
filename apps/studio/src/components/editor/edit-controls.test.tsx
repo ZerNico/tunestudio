@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { describe, expect, it, vi } from "vitest";
 
-import { HistoryButton, ToolSwitch } from "./edit-controls";
+import { HistoryButton, MergeButton, ToolSwitch } from "./edit-controls";
 
 describe("HistoryButton", () => {
   it("runs its action when clicked, saying what it undoes", () => {
@@ -33,5 +33,17 @@ describe("ToolSwitch", () => {
     render(() => <ToolSwitch tool="select" onTool={onTool} />);
     fireEvent.click(screen.getByTestId("tool-split"));
     expect(onTool).toHaveBeenCalledWith("split");
+  });
+});
+
+describe("MergeButton", () => {
+  it("merges when the selection can be merged, and is disabled otherwise", () => {
+    const onMerge = vi.fn();
+    const { unmount } = render(() => <MergeButton canMerge={false} onMerge={onMerge} />);
+    expect(screen.getByTestId("merge")).toBeDisabled();
+    unmount();
+    render(() => <MergeButton canMerge onMerge={onMerge} />);
+    fireEvent.click(screen.getByTestId("merge"));
+    expect(onMerge).toHaveBeenCalledTimes(1);
   });
 });

@@ -34,6 +34,8 @@ export function createPlayback(
   const [playing, setPlaying] = createSignal(false);
   const [duration, setDuration] = createSignal(0);
   const [speed, setSpeed] = createSignal<Speed>(1);
+  /** How loud the song plays (0-1), whichever source; the elements read it as they are made. */
+  let volume = 1;
   /** The speed in effect now (the signal reads its old value just after a write). */
   let rate: Speed = 1;
   /** Made on first use, so nothing loads before the editor is shown. */
@@ -49,6 +51,7 @@ export function createPlayback(
       audio.preload = "auto";
       audio.preservesPitch = true;
       audio.playbackRate = rate;
+      audio.volume = volume;
       audio.addEventListener("loadedmetadata", () => {
         if (Number.isFinite(audio!.duration)) setDuration(Math.max(duration(), audio!.duration));
       });
@@ -111,6 +114,11 @@ export function createPlayback(
     play,
     pause,
     toggle: () => (playing() ? pause() : play()),
+    /** How loud the song plays (0-1), whichever source. */
+    setVolume: (next: number) => {
+      volume = Math.min(1, Math.max(0, next));
+      for (const audio of elements.values()) audio.volume = volume;
+    },
     speed,
     setSpeed: (next: Speed) => {
       rate = next;

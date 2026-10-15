@@ -1,10 +1,11 @@
 import type { JSX } from "@solidjs/web";
-import { For, Show } from "solid-js";
+import { For, omit, Show } from "solid-js";
 import BanIcon from "~icons/lucide/ban";
 import ImagePlusIcon from "~icons/lucide/image-plus";
 import LoaderCircleIcon from "~icons/lucide/loader-circle";
 import YoutubeIcon from "~icons/lucide/youtube";
 
+import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import type { ChosenImage, CoverCandidate } from "~/lib/native/types";
 
 /** The project's cover: a found one, an image the user picked, the video's thumbnail, or none. */
@@ -26,12 +27,41 @@ export function describeCover(cover: CoverCandidate): string {
   return [release, cover.year, SOURCE_LABELS[cover.source]].filter(Boolean).join(" · ");
 }
 
-const tileClass =
+export const tileClass =
   "relative flex aspect-square w-full min-w-0 cursor-pointer items-center justify-center overflow-hidden rounded-lg bg-popover-well ring-offset-2 ring-offset-popover transition-shadow hover:ring-1 hover:ring-sage-38";
 const optionClass = `${tileClass} has-checked:ring-2 has-checked:ring-primary has-focus-visible:ring-2 has-focus-visible:ring-ring has-disabled:pointer-events-none has-disabled:opacity-60`;
 
-/** One choice in the picker: a hidden native radio with its picture. */
-function Option(props: {
+/** A choice's tile: a hidden native radio and its picture, ringed when the radio is checked. */
+function OptionTile(
+  props: JSX.LabelHTMLAttributes<HTMLLabelElement> & {
+    name: string;
+    label: string;
+    checked: boolean;
+    disabled?: boolean;
+    onSelect: () => void;
+  },
+) {
+  const rest = omit(props, "name", "label", "checked", "disabled", "onSelect", "children");
+  return (
+    <label {...rest} class={optionClass}>
+      <input
+        type="radio"
+        name={props.name}
+        class="sr-only"
+        checked={props.checked}
+        disabled={props.disabled}
+        aria-label={props.label}
+        onChange={() => props.onSelect()}
+      />
+      {props.children}
+    </label>
+  );
+}
+
+/** One choice in the picker: a hidden native radio with its picture (its hint in a tooltip). */
+export function CoverOption(props: {
+  /** The radio group's name (one per picker). */
+  name?: string;
   label: string;
   /** Shown on hover. */
   hint: string;
@@ -42,18 +72,24 @@ function Option(props: {
   children: JSX.Element;
 }) {
   return (
-    <label class={optionClass} title={props.hint} data-testid={props.testid}>
-      <input
-        type="radio"
-        name="cover"
-        class="sr-only"
-        checked={props.checked}
-        disabled={props.disabled}
-        aria-label={props.label}
-        onChange={() => props.onSelect()}
+    <Tooltip>
+      <TooltipTrigger
+        render={(triggerProps: JSX.HTMLAttributes<HTMLLabelElement>) => (
+          <OptionTile
+            {...triggerProps}
+            name={props.name ?? "cover"}
+            label={props.label}
+            checked={props.checked}
+            disabled={props.disabled}
+            onSelect={props.onSelect}
+            data-testid={props.testid}
+          >
+            {props.children}
+          </OptionTile>
+        )}
       />
-      {props.children}
-    </label>
+      <TooltipContent>{props.hint}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -87,7 +123,7 @@ export function CoverPicker(props: {
       >
         <For each={props.covers ?? []}>
           {(cover) => (
-            <Option
+            <CoverOption
               label={`${cover.artist}, ${cover.album ?? cover.title} (${SOURCE_LABELS[cover.source]})`}
               hint={describeCover(cover)}
               checked={(() => {
@@ -99,7 +135,7 @@ export function CoverPicker(props: {
               onSelect={() => props.onSelect({ kind: "found", url: cover.url })}
             >
               <img src={cover.preview} alt="" class="size-full object-cover" />
-            </Option>
+            </CoverOption>
           )}
         </For>
         {/* Searching: the found covers take this tile's place, in front of the others. */}
@@ -109,7 +145,7 @@ export function CoverPicker(props: {
             <span class="sr-only">Looking for covers</span>
           </span>
         </Show>
-        <Option
+        <CoverOption
           label="Video thumbnail"
           hint="The video's thumbnail, cropped to a square"
           checked={selected().kind === "thumbnail"}
@@ -127,10 +163,10 @@ export function CoverPicker(props: {
           >
             {(thumbnail) => <img src={thumbnail()} alt="" class="size-full object-cover" />}
           </Show>
-        </Option>
+        </CoverOption>
         <Show when={props.custom}>
           {(image) => (
-            <Option
+            <CoverOption
               label="Your image"
               hint={image().path.split(/[\\/]/).at(-1) ?? ""}
               checked={selected().kind === "file"}
@@ -139,10 +175,10 @@ export function CoverPicker(props: {
               onSelect={() => props.onSelect({ kind: "file", image: image() })}
             >
               <img src={image().preview} alt="" class="size-full object-cover" />
-            </Option>
+            </CoverOption>
           )}
         </Show>
-        <Option
+        <CoverOption
           label="No cover"
           hint="No cover"
           checked={selected().kind === "none"}
@@ -151,7 +187,7 @@ export function CoverPicker(props: {
           onSelect={() => props.onSelect({ kind: "none" })}
         >
           <BanIcon class="size-5 text-popover-muted" />
-        </Option>
+        </CoverOption>
         <button
           type="button"
           disabled={props.disabled}

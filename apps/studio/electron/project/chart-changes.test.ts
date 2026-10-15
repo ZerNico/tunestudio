@@ -199,4 +199,28 @@ describe("applyChartChanges", () => {
       }),
     ),
   );
+
+  it.effect("keeps tags in #TAGS and changes a singer's name, checking what they were", () =>
+    withProject((db) =>
+      Effect.gen(function* () {
+        const chart = yield* readEditorChart(db);
+        expect(chart.song.tags).toEqual([]);
+        const singer = chart.singers[0]!;
+        yield* db.transaction((tx) =>
+          applyChartChanges(tx, [
+            { table: "song", before: { tags: [] }, after: { tags: ["live", "acoustic"] } },
+            { table: "singer", id: singer.id, before: { name: singer.name }, after: { name: "Mia" } },
+          ]),
+        );
+        const after = yield* readEditorChart(db);
+        expect(after.song.tags).toEqual(["live", "acoustic"]);
+        expect(after.singers[0]!.name).toBe("Mia");
+        expect((yield* readChart(db)).song.extraHeaders).toContainEqual(["TAGS", "live, acoustic"]);
+        const stale = yield* Effect.flip(
+          applyChartChanges(db, [{ table: "singer", id: singer.id, before: { name: null }, after: { name: "Kai" } }]),
+        );
+        expect(stale._tag).toBe("ChartOutOfStep");
+      }),
+    ),
+  );
 });

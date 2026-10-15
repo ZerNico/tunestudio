@@ -150,6 +150,40 @@ try {
       await page.getByTestId("tones").click();
       await shot(studio, "03j-loop-transport");
       await page.getByTestId("tones").click();
+      await page.getByTestId("tones").click();
+      await shot(studio, "03n-transport");
+      await page.getByTestId("tones").click();
+      // The song details dialog, from the song's name in the title bar.
+      await page.getByTestId("open-song-details").click();
+      await page.getByTestId("song-details").waitFor();
+      await shot(studio, "03k-song-details");
+      await page.getByTestId("file-cover").getByRole("button", { name: "Change…" }).click();
+      await page.getByTestId("cover-dialog").waitFor();
+      await shot(studio, "03m-cover-dialog");
+      await page.keyboard.press("Escape");
+      await page.getByTestId("cover-dialog").waitFor({ state: "hidden" });
+      await page.keyboard.press("Escape");
+      await page.getByTestId("song-details").waitFor({ state: "hidden" });
+      // Start, preview and medley set, the end dragged in: the markers on the ruler and the overview bar.
+      const notesInRoll = page.getByTestId("roll-note");
+      await notesInRoll.nth(0).click();
+      await notesInRoll.nth(2).click({ modifiers: ["Shift"] });
+      const rulerBox = (await page.getByTestId("time-ruler").boundingBox())!;
+      await page.mouse.click(rulerBox.x + rulerBox.width * 0.12, rulerBox.y + rulerBox.height / 2);
+      await page.getByTestId("open-song-details").click();
+      const timing = page.getByTestId("song-timing");
+      await timing.getByTestId("timing-start").getByRole("button", { name: "Playhead" }).click();
+      await page.mouse.click(rulerBox.x + rulerBox.width * 0.3, rulerBox.y + rulerBox.height / 2).catch(() => {});
+      await timing.getByTestId("timing-preview").getByRole("button", { name: "Playhead" }).click();
+      await timing.getByTestId("timing-medley").getByRole("button", { name: "Selected lines" }).click();
+      await page.keyboard.press("Escape");
+      await page.getByTestId("song-details").waitFor({ state: "hidden" });
+      const endBox = (await page.getByTestId("marker-end").boundingBox())!;
+      await page.mouse.move(endBox.x + endBox.width / 2, endBox.y + endBox.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(endBox.x - 260, endBox.y + endBox.height / 2, { steps: 5 });
+      await page.mouse.up();
+      await shot(studio, "03l-song-markers");
       await page.getByTestId("export-song").waitFor();
     }
     await page.getByTestId("close-project").click();

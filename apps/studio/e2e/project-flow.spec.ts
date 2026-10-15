@@ -56,17 +56,18 @@ test("imports a song folder, exports it, and reopens the project from recents", 
     }),
   ).toBe(0);
 
-  // The song's details are in the Song panel.
-  await page.getByTestId("song-panel-toggle").click();
-  await expect(page.getByTestId("project-artist")).toHaveText("Test Artist");
-  await expect(page.getByTestId("stat-notes")).toHaveText("5");
-  await expect(page.getByTestId("stat-lines")).toHaveText("2");
-  await expect(page.getByTestId("media-row")).toHaveCount(2);
-  await expect(page.getByText("#X-CUSTOM")).toBeVisible();
-  expect(fs.existsSync(projectFile)).toBe(true);
+  await expect(page.getByTestId("roll-note")).toHaveCount(5);
+  // The song's details (with its cover, and the headers it came with) are in a dialog from its name in the title bar.
+  await page.getByTestId("open-song-details").click();
+  const details = page.getByTestId("song-details");
+  await expect(details.getByTestId("song-artist")).toHaveValue("Test Artist");
+  await expect(details.getByText("#X-CUSTOM")).toBeVisible();
   // The cover comes through media:// (the CSP allows it) and decodes.
-  const cover = page.locator('[data-slot="project-cover"] img');
+  const cover = details.getByTestId("file-cover").locator("img");
   await expect.poll(() => cover.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(64);
+  await page.keyboard.press("Escape");
+  await expect(details).toBeHidden();
+  expect(fs.existsSync(projectFile)).toBe(true);
 
   // Export, then export again: the folder exists, so it asks before replacing.
   const exports = path.join(song.dir, "Exports");

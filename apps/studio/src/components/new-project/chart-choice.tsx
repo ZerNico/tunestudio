@@ -10,7 +10,8 @@ import { LanguageSelect } from "./language-select";
 
 /** Why a chart can't be made for the project, or null when it can. */
 export function chartUnavailable(language: string | null, hasLyrics: boolean): string | null {
-  if (!hasLyrics) return "There are no lyrics to make it from. Go back to add them, or make it later in the project.";
+  if (!hasLyrics)
+    return "There are no lyrics to make it from. Go back to add them, or chart the song yourself in the editor.";
   if (language === null) return "Choose the language the song is sung in first.";
   if (!CHART_LANGUAGES.includes(language)) {
     return `Charts can be made in English and German so far, not ${languageName(language)}. The project starts with an empty chart.`;

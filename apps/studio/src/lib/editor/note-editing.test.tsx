@@ -6,6 +6,7 @@ import type { EditorChart } from "~/lib/native/types";
 import { drawnNotes } from "./chart";
 import { createChartDocument } from "./document";
 import { createNoteEditing, type NotePart } from "./note-editing";
+import { testSong } from "./test-song";
 
 const note = (id: number, start: number, lyric: string) => ({
   id,
@@ -21,6 +22,7 @@ const note = (id: number, start: number, lyric: string) => ({
 const chart: EditorChart = {
   bpm: 300,
   gap: 1,
+  song: testSong,
   singers: [
     {
       id: 1,

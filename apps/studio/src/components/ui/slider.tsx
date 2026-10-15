@@ -34,7 +34,8 @@ export function Slider(props: SliderProps) {
             class="bg-primary select-none data-horizontal:h-full data-vertical:w-full"
           />
         </SliderPrimitive.Track>
-        <For each={values()}>
+        {/* One thumb per position, kept as the values change (a new thumb per value would lose focus and drags). */}
+        <For each={values().map((_, index) => index)}>
           {(_, index) => (
             <SliderPrimitive.Thumb
               data-slot="slider-thumb"

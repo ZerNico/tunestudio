@@ -723,7 +723,9 @@ describe("covers", () => {
     await screen.findByTestId("cover-option");
     await user.click(screen.getByRole("button", { name: "Choose an image…" }));
     expect(await screen.findByRole("radio", { name: "Your image" })).toBeChecked();
-    expect(screen.getByTestId("cover-file")).toHaveAttribute("title", "rick.png");
+    // Its file name shows in the tile's tooltip.
+    await user.hover(screen.getByTestId("cover-file"));
+    expect(await screen.findByText("rick.png")).toBeInTheDocument();
     await user.click(screen.getByRole("radio", { name: "No cover" }));
     await toLyrics(user);
     await createProject(user);

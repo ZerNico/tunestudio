@@ -172,6 +172,96 @@ test("the rows grow while a note is dragged past them, and fit the notes again a
   expect(grown).toBeGreaterThan(before);
 });
 
+test("song details are edited in a dialog from the title bar, exported, and undone", async () => {
+  await openSong();
+  const { app, page } = studio;
+  const name = page.getByTestId("open-song-details");
+  await name.click();
+  const dialog = page.getByTestId("song-details");
+  await expect(dialog).toBeVisible();
+  await dialog.getByTestId("song-title").fill("Day Signals");
+  await dialog.getByTestId("song-title").press("Enter");
+  await dialog.getByTestId("song-tags").fill("live, acoustic");
+  await dialog.getByTestId("song-tags").press("Tab");
+  // The cover: removed, then an image file picked instead (in its own dialog).
+  const cover = dialog.getByTestId("file-cover");
+  await expect(cover.locator("img")).toBeVisible();
+  await cover.getByTestId("remove-cover").click();
+  await expect(cover).toContainText("None");
+  await cover.getByRole("button", { name: "Add…" }).click();
+  const coverDialog = page.getByTestId("cover-dialog");
+  await expect(coverDialog).toBeVisible();
+  await answerDialogs(app, path.join(song.folder, "cover.png"));
+  await coverDialog.getByTestId("cover-choose").click();
+  await expect(coverDialog).toBeHidden();
+  await expect.poll(() => cover.locator("img").evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(64);
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(name).toContainText("Day Signals");
+  await expect(page.getByTestId("undo")).toHaveAttribute("aria-label", "Undo Change tags");
+
+  // Exported with them.
+  const exports = path.join(song.dir, "Exports");
+  fs.mkdirSync(exports);
+  await answerDialogs(app, exports);
+  await page.getByTestId("export-song").click();
+  await expect(page.getByText("Exported the UltraStar song")).toBeVisible();
+  const chart = fs.readFileSync(
+    path.join(exports, "Test Artist - Day Signals", "Test Artist - Day Signals.txt"),
+    "utf8",
+  );
+  expect(chart).toContain("#TITLE:Day Signals\n");
+  expect(chart).toContain("#TAGS:live, acoustic\n");
+  expect(fs.readdirSync(path.join(exports, "Test Artist - Day Signals"))).toContain(
+    "Test Artist - Day Signals [CO].png",
+  );
+
+  await page.getByTestId("undo").click();
+  await page.getByTestId("undo").click();
+  await expect(name).toContainText("Night Signals");
+});
+
+test("start, end, preview and medley are set from the dialog and the timeline, and exported", async () => {
+  await openSong();
+  const { app, page } = studio;
+  // The first line's notes: the medley.
+  const notes = page.getByTestId("roll-note");
+  await notes.nth(0).click();
+  await notes.nth(2).click({ modifiers: ["Shift"] });
+  await seekTo(0.1);
+  await page.getByTestId("open-song-details").click();
+  const timing = page.getByTestId("song-timing");
+  await timing.getByTestId("timing-start").getByRole("button", { name: "Playhead" }).click();
+  await timing.getByTestId("timing-preview").getByRole("button", { name: "Playhead" }).click();
+  await timing.getByTestId("timing-medley").getByRole("button", { name: "Selected lines" }).click();
+  await expect(timing.getByTestId("timing-medley").getByTestId("timing-value")).not.toHaveText("Not set");
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("song-details")).toBeHidden();
+  await expect(page.getByTestId("medley-band")).toBeVisible();
+  await expect(page.getByTestId("marker-preview")).toBeVisible();
+
+  // The end handle, dragged in from the song's end: what is after it is dimmed.
+  const end = (await page.getByTestId("marker-end").boundingBox())!;
+  await page.mouse.move(end.x + end.width / 2, end.y + end.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(end.x - 200, end.y + end.height / 2, { steps: 5 });
+  await page.mouse.up();
+  await expect(page.getByTestId("undo")).toHaveAttribute("aria-label", "Undo Move end");
+  await expect(page.getByTestId("not-played-after")).toBeVisible();
+
+  const exports = path.join(song.dir, "Exports");
+  fs.mkdirSync(exports);
+  await answerDialogs(app, exports);
+  await page.getByTestId("export-song").click();
+  await expect(page.getByText("Exported the UltraStar song")).toBeVisible();
+  const chart = fs.readFileSync(
+    path.join(exports, "Test Artist - Night Signals", "Test Artist - Night Signals.txt"),
+    "utf8",
+  );
+  for (const header of ["#START:", "#END:", "#PREVIEWSTART:", "#MEDLEYSTARTBEAT:", "#MEDLEYENDBEAT:"])
+    expect(chart).toContain(header);
+});
+
 test("scrubbing to the roll's edge scrolls the view, and the playhead goes on with it", async () => {
   await openSong();
   const { page } = studio;

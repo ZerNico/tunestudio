@@ -9,13 +9,13 @@
 import { createMemo, createSignal, createStore, flush } from "solid-js";
 
 import type { ChartChange, LineFields, NoteFields, SongFields } from "~/lib/native/contract";
-import type { EditorChart, EditorLine } from "~/lib/native/types";
+import type { EditorChart, EditorLine, EditorSong } from "~/lib/native/types";
 
 import { createHistory, invert } from "./history";
 
 /** The chart as rows, the way the project stores it. */
 export interface ChartRows {
-  song: { bpm: number; gap: number } & SongFields;
+  song: { bpm: number; gap: number } & EditorSong;
   singers: { id: number; index: number; name: string | null }[];
   lines: Record<number, LineFields & { id: number }>;
   notes: Record<number, NoteFields & { id: number }>;
@@ -23,7 +23,7 @@ export interface ChartRows {
 
 export function rowsFromChart(chart: EditorChart): ChartRows {
   const rows: ChartRows = {
-    song: { bpm: chart.bpm, gap: chart.gap },
+    song: { bpm: chart.bpm, gap: chart.gap, ...chart.song },
     singers: chart.singers.map(({ id, index, name }) => ({ id, index, name })),
     lines: {},
     notes: {},
@@ -53,9 +53,11 @@ export function chartFromRows(rows: ChartRows): EditorChart {
     line,
     notes: (byLine.get(line.id) ?? []).toSorted((a, b) => a.start - b.start || a.id - b.id),
   }));
+  const { bpm, gap, ...song } = rows.song;
   return {
-    bpm: rows.song.bpm,
-    gap: rows.song.gap,
+    bpm,
+    gap,
+    song,
     singers: rows.singers.map((singer) => ({
       ...singer,
       lines: lines
@@ -70,7 +72,10 @@ export function chartFromRows(rows: ChartRows): EditorChart {
 export function applyToRows(rows: ChartRows, changes: readonly ChartChange[]) {
   for (const change of changes) {
     if (change.table === "song") Object.assign(rows.song, change.after);
-    else if (change.table === "note") {
+    else if (change.table === "singer") {
+      const singer = rows.singers.find((item) => item.id === change.id);
+      if (singer) singer.name = change.after.name;
+    } else if (change.table === "note") {
       if (change.after) rows.notes[change.id] = { ...change.after, id: change.id };
       else delete rows.notes[change.id];
     } else if (change.after) rows.lines[change.id] = { ...change.after, id: change.id };
@@ -92,6 +97,8 @@ export interface EditRecorder {
   /** Deletes a line; its notes have to be deleted or moved first. */
   deleteLine(id: number): void;
   updateSong(patch: SongFields): void;
+  /** A duet singer's name (null: none). */
+  updateSinger(id: number, name: string | null): void;
 }
 
 const noteFields = ({ id: _id, ...fields }: NoteFields & { id: number }): NoteFields => fields;
@@ -225,6 +232,13 @@ export function createChartDocument<Selection>(options: {
           if (!(key in songBefore)) (songBefore as Record<string, unknown>)[key] = current[key] ?? null;
         }
         songAfter = { ...songAfter, ...patch };
+      },
+      updateSinger: (id, name) => {
+        const done = changes.findLast((change) => change.table === "singer" && change.id === id);
+        const current = done?.table === "singer" ? done.after.name : rows.singers.find((item) => item.id === id)?.name;
+        if (current === undefined) throw new Error(`No singer ${id}`);
+        if (current === name) return;
+        changes.push({ table: "singer", id, before: { name: current }, after: { name } });
       },
     };
     const before = options.selection();

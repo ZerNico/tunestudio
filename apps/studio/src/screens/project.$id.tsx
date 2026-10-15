@@ -2,18 +2,20 @@ import { getRouteApi, useNavigate, useRouter } from "@tanstack/solid-router";
 import { createEffect, createMemo, createSignal, flush, onSettled, Show } from "solid-js";
 import DownloadIcon from "~icons/lucide/download";
 import LoaderCircleIcon from "~icons/lucide/loader-circle";
-import PanelRightIcon from "~icons/lucide/panel-right";
 import Redo2Icon from "~icons/lucide/redo-2";
 import Undo2Icon from "~icons/lucide/undo-2";
 import XIcon from "~icons/lucide/x";
 
-import { AutoPitchButton, HistoryButton, ToolSwitch } from "~/components/editor/edit-controls";
+import { AutoPitchButton, HistoryButton, MergeButton, ToolSwitch } from "~/components/editor/edit-controls";
 import { BreakLane, LyricsLane, OverviewBar, TimeRuler } from "~/components/editor/lanes";
 import { NoteMenu, type NoteMenuActions } from "~/components/editor/note-menu";
 import { GUTTER_PX, PianoRoll } from "~/components/editor/piano-roll";
 import { Playhead } from "~/components/editor/playhead";
-import { SongPanel } from "~/components/editor/song-panel";
-import { Transport } from "~/components/editor/transport";
+import { type ArtworkActions, CoverDialog } from "~/components/editor/song-artwork";
+import { SongDetailsDialog } from "~/components/editor/song-details-dialog";
+import { SongFiles } from "~/components/editor/song-files";
+import { SongTiming } from "~/components/editor/song-timing";
+import { Transport, type Volumes } from "~/components/editor/transport";
 import { follow as followProgress, percentOf, progressBarClass } from "~/components/new-project/progress";
 import { ReplaceExportDialog } from "~/components/project/replace-export-dialog";
 import { TitleBar } from "~/components/title-bar";
@@ -38,6 +40,7 @@ import { onGrid, overlapping } from "~/lib/editor/edits";
 import { createLoop } from "~/lib/editor/loop";
 import { createNoteEditing } from "~/lib/editor/note-editing";
 import { createPlayback } from "~/lib/editor/playback";
+import { createSongMarkers } from "~/lib/editor/song-markers";
 import { createTones } from "~/lib/editor/tones";
 import { createTools } from "~/lib/editor/tools";
 import {
@@ -56,7 +59,7 @@ import {
 import type { EditCommand } from "~/lib/native/channel";
 import { native } from "~/lib/native/client";
 import { errorMessage, isAbort } from "~/lib/native/errors";
-import type { ImportProgress, SungPitch } from "~/lib/native/types";
+import type { ImportProgress, ProjectOverview, SungPitch } from "~/lib/native/types";
 
 const route = getRouteApi("/project/$id");
 
@@ -80,6 +83,24 @@ const FIRST_VIEW_SECONDS = 12;
 /** Where the editor remembers whether the view follows the playhead, and which notes are heard as tones. */
 const FOLLOW_KEY = "tunestudio.editor.follow";
 const TONES_KEY = "tunestudio.editor.tones";
+const VOLUMES_KEY = "tunestudio.editor.volumes";
+
+/** The volumes as remembered; anything missing or not a volume is full. */
+function storedVolumes(): Volumes {
+  const full: Volumes = { song: 1, tones: 1 };
+  try {
+    const stored: unknown = JSON.parse(localStorage.getItem(VOLUMES_KEY) ?? "null");
+    if (typeof stored !== "object" || stored === null) return full;
+    const values = stored as Record<string, unknown>;
+    for (const channel of Object.keys(full) as (keyof Volumes)[]) {
+      const value = values[channel];
+      if (typeof value === "number" && value >= 0 && value <= 1) full[channel] = value;
+    }
+  } catch {
+    // Not JSON: as if nothing were stored.
+  }
+  return full;
+}
 
 /**
  * An open project: the chart editor. The editing area shows the song at a glance (overview), the notes against time
@@ -120,6 +141,36 @@ export default function ProjectScreen() {
     }),
   );
   const chart = () => doc().chart();
+  /**
+   * The overview with the song's details as the editor has them (they change with edits; the overview is only read
+   * when the project opens, and reading it again would start the editor over).
+   */
+  /** The media as changed since the project opened (a new cover or background), if they were. */
+  const [changedMedia, setChangedMedia] = createSignal<ProjectOverview["media"] | null>(null);
+  const shownOverview = createMemo(() => ({
+    ...overview(),
+    song: { ...overview().song, ...chart().song },
+    media: changedMedia() ?? overview().media,
+  }));
+  const mediaUrl = (role: string) => shownOverview().media.find((item) => item.role === role)?.url;
+  const artworkActions: ArtworkActions = {
+    set: async (role, choice) => {
+      const updated = await native.project.setArtwork({ id: overview().id, role, choice });
+      setChangedMedia(updated.media);
+    },
+    findCovers: () =>
+      native.youtube.findCovers({
+        artist: chart().song.artist,
+        title: chart().song.title,
+        duration: playback.duration() || null,
+      }),
+    chooseImage: () => native.dialogs.chooseCoverImage(),
+    onError: (title, error) => {
+      if (!isAbort(error)) toast.add({ type: "error", title, description: errorMessage(error) });
+    },
+  };
+  const [detailsOpen, setDetailsOpen] = createSignal(false);
+  const [coverOpen, setCoverOpen] = createSignal(false);
   const notes = createMemo(() => drawnNotes(chart()));
   const lines = createMemo(() => lineSpans(chart()));
   const selectedIds = createMemo(() => new Set(selection()));
@@ -128,7 +179,6 @@ export default function ProjectScreen() {
   const longestLine = createMemo(() => longest(lines()));
   const duet = () => chart().singers.length > 1;
   const breaks = createMemo(() => lineBreaks(chart()));
-  const [songPanel, setSongPanel] = createSignal(notes().length === 0);
   /** What is sung in the vocals (null: none, or not there yet). */
   const [pitch, setPitch] = createSignal<SungPitch | null>(null);
   const [showPitch, setShowPitch] = createSignal(true);
@@ -152,7 +202,17 @@ export default function ProjectScreen() {
   /** Whether notes are heard as tones, while playing and while their pitch changes (remembered; off at first). */
   const [tonesOn, setTonesOn] = createSignal(localStorage.getItem(TONES_KEY) === "on");
   const tones = createTones({ notes });
+  /** Each source's and the tones' volume (remembered). */
+  const startVolumes = storedVolumes();
+  const [volumes, setVolumes] = createSignal<Volumes>(startVolumes);
   const loop = createLoop({ snap: (seconds) => onGrid(chart(), seconds), length, onSeek: (seconds) => seek(seconds) });
+  const songMarkers = createSongMarkers({
+    song: () => chart().song,
+    length,
+    snap: (seconds) => onGrid(chart(), seconds),
+    lines: () => lines().filter((line) => line.singer === 1),
+    onChange: (label, patch) => doc().edit(label, (tx) => tx.updateSong(patch)),
+  });
 
   const playback = createPlayback(
     { audio: media("audio"), vocals: media("vocals"), instrumental: media("instrumental") },
@@ -176,6 +236,15 @@ export default function ProjectScreen() {
     setFollowing(next);
     localStorage.setItem(FOLLOW_KEY, next ? "on" : "off");
     if (next) scrolledAway = false;
+  };
+  playback.setVolume(startVolumes.song);
+  tones.setVolume(startVolumes.tones);
+  const changeVolume = (channel: keyof Volumes, value: number) => {
+    const next = { ...volumes(), [channel]: value };
+    setVolumes(next);
+    localStorage.setItem(VOLUMES_KEY, JSON.stringify(next));
+    if (channel === "tones") tones.setVolume(value);
+    else playback.setVolume(value);
   };
   const changeTones = (next: boolean) => {
     setTonesOn(next);
@@ -293,8 +362,7 @@ export default function ProjectScreen() {
       // Null: stopped (the editor went away).
       if (!pitches || controller.signal.aborted || doc() !== asking) return;
       if (pitches.length === 0) toast.add({ title: "Nothing is sung there to take the pitch from." });
-      else if (editing.applyPitches(pitches, asked) === 0)
-        toast.add({ title: "The pitch was right already (or the notes were changed meanwhile)." });
+      else editing.applyPitches(pitches, asked);
     } catch (error) {
       if (!isAbort(error))
         toast.add({ type: "error", title: "Couldn't find the pitch", description: errorMessage(error) });
@@ -594,24 +662,21 @@ export default function ProjectScreen() {
               onStart={() => editing.commands.autoPitch()}
               onStop={() => autoPitchController?.abort()}
             />
+            <MergeButton canMerge={editing.commands.canMerge()} onMerge={() => editing.commands.merge()} />
           </>
         }
       >
-        <div class="mr-auto flex max-w-[420px] min-w-0 items-baseline gap-1.5 text-[12.5px]">
-          <h1 class="m-0 truncate text-[12.5px] font-medium text-foreground">{overview().song.title || "Untitled"}</h1>
-          <span class="truncate text-muted-foreground">· {overview().song.artist || "Unknown artist"}</span>
-        </div>
-
-        <Button
-          variant={songPanel() ? "secondary" : "ghost"}
-          size="sm"
-          aria-pressed={songPanel() ? "true" : "false"}
-          onClick={() => void setSongPanel(!songPanel())}
-          data-testid="song-panel-toggle"
+        <button
+          type="button"
+          class="mr-auto flex max-w-[420px] min-w-0 cursor-pointer items-baseline gap-1.5 rounded-md px-1.5 py-1 text-[12.5px] hover:bg-sage-20"
+          title="Song details"
+          onClick={() => setDetailsOpen(true)}
+          data-testid="open-song-details"
         >
-          <PanelRightIcon />
-          Song
-        </Button>
+          <h1 class="m-0 truncate text-[12.5px] font-medium text-foreground">{chart().song.title || "Untitled"}</h1>
+          <span class="truncate text-muted-foreground">· {chart().song.artist || "Unknown artist"}</span>
+        </button>
+
         <Button
           variant="ghost"
           size="sm"
@@ -643,9 +708,17 @@ export default function ProjectScreen() {
             playhead={playback.time()}
             duet={duet()}
             onScrollTo={(seconds) => changeView({ ...view(), start: seconds - visibleSeconds(view(), width()) / 2 })}
+            markers={songMarkers}
           />
           <div class="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-            <TimeRuler view={view()} width={width()} loop={loop} autoScroll={autoScroll} />
+            <TimeRuler
+              view={view()}
+              width={width()}
+              loop={loop}
+              markers={songMarkers}
+              length={length()}
+              autoScroll={autoScroll}
+            />
             <BreakLane
               breaks={visibleBreaks()}
               view={view()}
@@ -669,6 +742,7 @@ export default function ProjectScreen() {
                   selected={selectedIds()}
                   overlapping={overlaps()}
                   pending={autoPitchNotes()}
+                  played={{ start: songMarkers.at("start"), end: songMarkers.at("end") }}
                   onNoteDown={(note, event, part, scale) => {
                     breakEditing.deselect();
                     editing.noteDown(note, event, part, scale);
@@ -715,17 +789,10 @@ export default function ProjectScreen() {
               class="m-0 border-b border-border px-4 py-2 text-[11.5px] text-muted-foreground"
               data-testid="editor-empty"
             >
-              The chart is empty. Make it from the vocals and lyrics in the Song panel.
+              The chart is empty. Draw notes with the Draw tool (D), or double-click in the roll to add one.
             </p>
           </Show>
         </div>
-        <Show when={songPanel()}>
-          <SongPanel
-            overview={overview()}
-            onReveal={() => reveal(overview().path)}
-            onChartMade={() => void router.invalidate()}
-          />
-        </Show>
       </div>
       <Transport
         playback={playback}
@@ -739,6 +806,59 @@ export default function ProjectScreen() {
         onFollow={changeFollowing}
         tones={tonesOn()}
         onTones={changeTones}
+        volumes={volumes()}
+        onVolume={changeVolume}
+      />
+
+      <SongDetailsDialog
+        open={detailsOpen()}
+        onOpenChange={setDetailsOpen}
+        song={chart().song}
+        bpm={chart().bpm}
+        gap={chart().gap}
+        singers={chart().singers}
+        otherHeaders={overview().song.extraHeaders.filter(([name]) => name.toUpperCase() !== "TAGS")}
+        onChange={(label, patch) => doc().edit(label, (tx) => tx.updateSong(patch))}
+        onSingerName={(id, name) => doc().edit("Change singer's name", (tx) => tx.updateSinger(id, name))}
+        timing={
+          <SongTiming
+            song={chart().song}
+            hasVideo={mediaUrl("video") !== undefined}
+            hasSelection={selectedIds().size > 0}
+            playheadTime={() => playback.time()}
+            actions={{
+              set: (marker, seconds) => songMarkers.set(marker, seconds),
+              setMedleyFromSelection: () => {
+                const chosen = new Set(
+                  notes()
+                    .filter((note) => selectedIds().has(note.id))
+                    .map((note) => note.lineId),
+                );
+                const picked = lines().filter((line) => chosen.has(line.id));
+                songMarkers.setMedley(picked);
+                return picked.length > 0;
+              },
+              clear: (marker) => songMarkers.clear(marker),
+              playFrom: (seconds) => {
+                seek(seconds);
+                playback.play();
+              },
+              setVideoGap: (seconds) => doc().edit("Change video offset", (tx) => tx.updateSong({ videoGap: seconds })),
+            }}
+          />
+        }
+        lyrics={overview().lyrics?.lines}
+        nested={
+          <CoverDialog
+            open={coverOpen()}
+            onOpenChange={setCoverOpen}
+            url={mediaUrl("cover")}
+            actions={artworkActions}
+          />
+        }
+        files={
+          <SongFiles media={shownOverview().media} actions={artworkActions} onChangeCover={() => setCoverOpen(true)} />
+        }
       />
 
       <ReplaceExportDialog

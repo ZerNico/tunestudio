@@ -5,6 +5,7 @@ import type { AutoScroll } from "~/lib/editor/autoscroll";
 import type { BreakDrag } from "~/lib/editor/break-editing";
 import type { LineBreak, LineSpan } from "~/lib/editor/chart";
 import type { Loop } from "~/lib/editor/loop";
+import type { SongMarkers } from "~/lib/editor/song-markers";
 import { formatTime, rulerStep, rulerTicks, timeToX, type TimeView, xToTime } from "~/lib/editor/view";
 
 import { breakX, GUTTER_PX } from "./piano-roll";
@@ -62,10 +63,21 @@ function laneX(event: MouseEvent, lane: HTMLElement): number {
 }
 
 /**
- * Seconds along the top of the roll, with the loop range. A click moves the playhead there; a drag marks a loop range
- * (`loop.ts`), whose edges are dragged to change it and which a double-click removes.
+ * Seconds along the top of the roll, with the loop range and the song's markers. A click moves the playhead there; a
+ * drag marks a loop range (`loop.ts`), whose edges are dragged to change it and which a double-click removes. The
+ * song's start and end (handles, the rest dimmed) and its preview start (a flag) are dragged (`song-markers.ts`).
  */
-export function TimeRuler(props: { view: TimeView; width: number; loop: Loop; autoScroll?: AutoScroll }) {
+export function TimeRuler(props: {
+  view: TimeView;
+  width: number;
+  loop: Loop;
+  markers: SongMarkers;
+  /** The song's length (seconds): where the end handle is when no end is set. */
+  length: number;
+  autoScroll?: AutoScroll;
+}) {
+  const startAt = () => props.markers.at("start") ?? 0;
+  const endAt = () => props.markers.at("end") ?? props.length;
   const tenths = () => rulerStep(props.view.pxPerSecond) < 1;
   return (
     <Lane class="h-5 bg-bar" testid="time-ruler">
@@ -76,9 +88,10 @@ export function TimeRuler(props: { view: TimeView; width: number; loop: Loop; au
           if (event.button !== 0) return;
           const lane = event.currentTarget;
           lane.setPointerCapture(event.pointerId);
-          const edge = (event.target as HTMLElement).dataset.edge;
+          const { edge, marker } = (event.target as HTMLElement).dataset;
           const x = laneX(event, lane);
-          props.loop.down(xToTime(props.view, x), x, edge === "start" || edge === "end" ? edge : null);
+          if (marker === "start" || marker === "end" || marker === "preview") props.markers.down(marker);
+          else props.loop.down(xToTime(props.view, x), x, edge === "start" || edge === "end" ? edge : null);
         }}
         onPointerMove={(event) => {
           const lane = event.currentTarget;
@@ -86,17 +99,20 @@ export function TimeRuler(props: { view: TimeView; width: number; loop: Loop; au
           // Past the lane's ends it goes to them (and the view scrolls on).
           const move = () => {
             const x = laneX(event, lane);
-            props.loop.move(xToTime(props.view, x), x);
+            if (props.markers.busy()) props.markers.move(xToTime(props.view, x));
+            else props.loop.move(xToTime(props.view, x), x);
           };
           move();
           props.autoScroll?.track(event.clientX, move);
         }}
         onPointerUp={() => {
           props.autoScroll?.end();
-          props.loop.up();
+          if (props.markers.busy()) props.markers.up();
+          else props.loop.up();
         }}
         onLostPointerCapture={() => {
           props.autoScroll?.end();
+          props.markers.cancel();
           props.loop.cancel();
         }}
         // The press captures the pointer, so the clicks come here rather than to the range.
@@ -127,6 +143,43 @@ export function TimeRuler(props: { view: TimeView; width: number; loop: Loop; au
               <span data-edge="start" class="absolute inset-y-0 -left-1 w-2 cursor-col-resize" />
               <span data-edge="end" class="absolute inset-y-0 -right-1 w-2 cursor-col-resize" />
             </div>
+          )}
+        </Show>
+        {/* Before the start and after the end: not played. */}
+        <div
+          class="pointer-events-none absolute inset-y-0 left-0 bg-background/55"
+          style={{ width: `${Math.max(0, timeToX(props.view, startAt()))}px` }}
+        />
+        <div
+          class="pointer-events-none absolute inset-y-0 right-0 bg-background/55"
+          style={{ left: `${Math.max(0, timeToX(props.view, endAt()))}px` }}
+        />
+        <span
+          data-marker="start"
+          title="Start: the game plays from here (drag to change)"
+          class="absolute inset-y-0 w-2.5 cursor-col-resize border-l-2 border-amber-73 data-set:bg-amber-73/25"
+          data-set={props.markers.at("start") === null ? undefined : ""}
+          style={{ left: `${timeToX(props.view, startAt())}px` }}
+          data-testid="marker-start"
+        />
+        <span
+          data-marker="end"
+          title="End: the game stops here (drag to change)"
+          class="absolute inset-y-0 w-2.5 -translate-x-full cursor-col-resize border-r-2 border-amber-73 data-set:bg-amber-73/25"
+          data-set={props.markers.at("end") === null ? undefined : ""}
+          style={{ left: `${timeToX(props.view, endAt())}px` }}
+          data-testid="marker-end"
+        />
+        {/* An object, so a preview at 0 s still shows. */}
+        <Show when={props.markers.at("preview") === null ? null : { at: props.markers.at("preview")! }}>
+          {(preview) => (
+            <span
+              data-marker="preview"
+              title="Preview: the song list plays from here (drag to change)"
+              class="absolute top-0 h-full w-2.5 cursor-col-resize bg-amber-73 [clip-path:polygon(0_0,100%_25%,0_50%)]"
+              style={{ left: `${timeToX(props.view, preview().at)}px` }}
+              data-testid="marker-preview"
+            />
           )}
         </Show>
       </div>
@@ -236,6 +289,8 @@ export function OverviewBar(props: {
   duet: boolean;
   /** Centres the view on this time. */
   onScrollTo: (seconds: number) => void;
+  /** The medley band (`song-markers.ts`), when the song has one. */
+  markers?: SongMarkers;
 }) {
   let bar: HTMLDivElement | undefined;
   const percent = (seconds: number) => `${props.length > 0 ? (seconds / props.length) * 100 : 0}%`;
@@ -243,6 +298,22 @@ export function OverviewBar(props: {
     const rect = bar!.getBoundingClientRect();
     return ((clientX - rect.left) / rect.width) * props.length;
   };
+  /** An edge of the band: dragged to the nearest line start or end. */
+  const edge = (marker: "medleyStart" | "medleyEnd") => ({
+    "data-marker": marker,
+    onPointerDown: (event: PointerEvent) => {
+      if (event.button !== 0) return;
+      event.stopPropagation();
+      (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+      props.markers?.down(marker);
+    },
+    onPointerMove: (event: PointerEvent) => {
+      if ((event.currentTarget as HTMLElement).hasPointerCapture(event.pointerId))
+        props.markers?.move(at(event.clientX));
+    },
+    onPointerUp: () => props.markers?.up(),
+    onLostPointerCapture: () => props.markers?.cancel(),
+  });
   return (
     <Lane class="h-6 bg-bar" testid="overview-bar">
       <div
@@ -278,10 +349,36 @@ export function OverviewBar(props: {
           }}
           data-testid="overview-window"
         />
-        <div
-          class="pointer-events-none absolute inset-y-0 w-px bg-foreground"
-          style={{ left: percent(props.playhead) }}
-        />
+        <Show
+          when={(() => {
+            const start = props.markers?.at("medleyStart") ?? null;
+            const end = props.markers?.at("medleyEnd") ?? null;
+            return start === null || end === null ? null : { start, end };
+          })()}
+        >
+          {(medley) => {
+            return (
+              <div
+                class="pointer-events-none absolute inset-y-0 border-x-2 border-amber-73 bg-amber-33/45"
+                style={{ left: percent(medley().start), width: percent(medley().end - medley().start) }}
+                title="Medley"
+                data-testid="medley-band"
+              >
+                <span
+                  {...edge("medleyStart")}
+                  title="Medley start: drag to a line's start"
+                  class="pointer-events-auto absolute inset-y-0 -left-1.5 w-2.5 cursor-col-resize"
+                />
+                <span
+                  {...edge("medleyEnd")}
+                  title="Medley end: drag to a line's end"
+                  class="pointer-events-auto absolute inset-y-0 -right-1.5 w-2.5 cursor-col-resize"
+                />
+              </div>
+            );
+          }}
+        </Show>
+        <div class="pointer-events-none absolute inset-y-0 w-px bg-primary" style={{ left: percent(props.playhead) }} />
       </div>
     </Lane>
   );

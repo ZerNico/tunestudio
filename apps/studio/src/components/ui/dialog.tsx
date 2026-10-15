@@ -83,7 +83,7 @@ export function DialogContent(props: DialogContentProps) {
         data-slot="dialog-content"
         class={(state) =>
           cn(
-            "fixed top-1/2 left-1/2 z-[101] max-h-[calc(100dvh-50px)] w-[min(540px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 scrollbar-thin overflow-auto rounded-[13px] border border-popover-border bg-popover text-popover-foreground shadow-[0_32px_120px_#000a] duration-100 outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-[.98] data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-[.98]",
+            "fixed top-1/2 left-1/2 z-[101] max-h-[calc(100dvh-50px)] w-[min(540px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 scrollbar-thin overflow-auto rounded-[13px] border border-popover-border bg-popover text-popover-foreground shadow-[0_32px_120px_#000a] transition-[filter] duration-100 outline-none data-nested-dialog-open:brightness-[.55] data-open:animate-in data-open:fade-in-0 data-open:zoom-in-[.98] data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-[.98]",
             stateClass(props.class, state),
           )
         }

@@ -1,6 +1,7 @@
 /** The editor's controls in the title bar: Undo and Redo, the tools, and auto pitch. */
 import type { JSX } from "@solidjs/web";
 import { For, Show } from "solid-js";
+import FoldHorizontalIcon from "~icons/lucide/fold-horizontal";
 import LoaderCircleIcon from "~icons/lucide/loader-circle";
 import MousePointer2Icon from "~icons/lucide/mouse-pointer-2";
 import PencilIcon from "~icons/lucide/pencil";
@@ -158,5 +159,31 @@ export function AutoPitchButton(props: {
         <TooltipContent>Stop auto pitch</TooltipContent>
       </Tooltip>
     </Show>
+  );
+}
+
+/** Merge the selected notes (also M and the note menu): disabled unless they are next to each other in one line. */
+export function MergeButton(props: { canMerge: boolean; onMerge: () => void }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={(triggerProps: JSX.HTMLAttributes<HTMLButtonElement>) => (
+          <Button
+            {...triggerProps}
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Merge"
+            disabled={!props.canMerge}
+            onClick={() => props.onMerge()}
+            data-testid="merge"
+          >
+            <FoldHorizontalIcon />
+          </Button>
+        )}
+      />
+      <TooltipContent>
+        Merge notes <Kbd>M</Kbd>
+      </TooltipContent>
+    </Tooltip>
   );
 }

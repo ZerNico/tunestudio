@@ -54,11 +54,13 @@ export function createTones(options: {
 }) {
   let context: AudioContext | null = null;
   let output: GainNode | null = null;
+  /** How loud, 0-1 (of the tones' own level). */
+  let volume = 1;
   const audio = () => {
     if (!context) {
       context = options.context?.() ?? new AudioContext();
       output = context.createGain();
-      output.gain.value = VOLUME;
+      output.gain.value = VOLUME * volume;
       const filter = context.createBiquadFilter();
       filter.type = "lowpass";
       filter.frequency.value = BRIGHTNESS_HZ;
@@ -129,6 +131,12 @@ export function createTones(options: {
         if (voiced(note.type)) tone(note.pitch, now + Math.max(0, note.start - time) / rate, note.duration / rate);
       }
       scheduled = { until: Math.max(until, from), time, at: now };
+    },
+
+    /** How loud the tones are, 0-1. */
+    setVolume(next: number) {
+      volume = Math.min(1, Math.max(0, next));
+      if (output) output.gain.value = VOLUME * volume;
     },
 
     /** Playback stopped, jumped or changed speed: the tones stop (the next frame starts again). */

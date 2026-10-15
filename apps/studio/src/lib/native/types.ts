@@ -46,11 +46,35 @@ export const EditorSinger = Schema.Struct({
 });
 export type EditorSinger = typeof EditorSinger.Type;
 
+/** The song's details as the editor edits them (times in seconds; null: not set). */
+export const EditorSong = Schema.Struct({
+  title: Schema.String,
+  artist: Schema.String,
+  language: Schema.Array(Schema.String),
+  year: Schema.NullOr(Schema.Number),
+  genre: Schema.NullOr(Schema.String),
+  edition: Schema.NullOr(Schema.String),
+  creator: Schema.NullOr(Schema.String),
+  tags: Schema.Array(Schema.String),
+  videoGap: Schema.NullOr(Schema.Number),
+  /** Where the game starts playing (skipping an intro). */
+  start: Schema.NullOr(Schema.Number),
+  /** Where it stops. */
+  end: Schema.NullOr(Schema.Number),
+  /** Where the song list's preview plays from. */
+  previewStart: Schema.NullOr(Schema.Number),
+  /** The medley excerpt: from a line's start to a line's end. */
+  medleyStart: Schema.NullOr(Schema.Number),
+  medleyEnd: Schema.NullOr(Schema.Number),
+});
+export type EditorSong = typeof EditorSong.Type;
+
 /** The chart as the editor works on it, with the grid it is exported on (a grid step is 15 / bpm seconds from gap). */
 export const EditorChart = Schema.Struct({
   bpm: Schema.Number,
   /** Seconds. */
   gap: Schema.Number,
+  song: EditorSong,
   singers: Schema.Array(EditorSinger),
 });
 export type EditorChart = typeof EditorChart.Type;

@@ -29,6 +29,7 @@ import {
   shiftPitch,
   toggleFlag,
 } from "./edits";
+import { testSong } from "./test-song";
 
 const note = (id: number, start: number, lyric: string, duration = 0.3, type: NoteType = "normal") => ({
   id,
@@ -44,6 +45,7 @@ const note = (id: number, start: number, lyric: string, duration = 0.3, type: No
 const chart: EditorChart = {
   bpm: 300,
   gap: 1,
+  song: testSong,
   singers: [
     {
       id: 1,

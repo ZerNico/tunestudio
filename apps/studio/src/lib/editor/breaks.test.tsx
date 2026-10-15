@@ -5,6 +5,7 @@ import type { EditorChart } from "~/lib/native/types";
 
 import { addBreak, breakLanding, breakRange, moveBreak, nearestGap, removeBreak } from "./breaks";
 import { createChartDocument } from "./document";
+import { testSong } from "./test-song";
 
 const note = (id: number, start: number, lyric: string) => ({
   id,
@@ -20,6 +21,7 @@ const note = (id: number, start: number, lyric: string) => ({
 const chart: EditorChart = {
   bpm: 300,
   gap: 1,
+  song: testSong,
   singers: [
     {
       id: 1,

@@ -8,6 +8,7 @@ import { lineBreaks } from "./chart";
 import { type Clip, copyNotes, pasteNotes } from "./clipboard";
 import { createChartDocument } from "./document";
 import { invert } from "./history";
+import { testSong } from "./test-song";
 
 const note = (id: number, start: number, lyric: string, duration = 0.3) => ({
   id,
@@ -23,6 +24,7 @@ const note = (id: number, start: number, lyric: string, duration = 0.3) => ({
 const chart: EditorChart = {
   bpm: 300,
   gap: 1,
+  song: testSong,
   singers: [
     {
       id: 1,

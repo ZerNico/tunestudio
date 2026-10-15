@@ -113,6 +113,20 @@ export const CoverChoice = Schema.Union([
 ]);
 export type CoverChoice = typeof CoverChoice.Type;
 
+/** A project's new cover or background: a found cover, an image file the user picked, or none. */
+export const ArtworkChoice = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("found"), url: Schema.String }),
+  Schema.Struct({ kind: Schema.Literal("file"), path: Schema.String }),
+  Schema.Struct({ kind: Schema.Literal("none") }),
+]);
+export type ArtworkChoice = typeof ArtworkChoice.Type;
+
+export const ArtworkInput = Schema.Struct({
+  id: Schema.String,
+  role: Schema.Literals(["cover", "background"]),
+  choice: ArtworkChoice,
+});
+
 /** The lyrics a new project starts with: LRCLIB's as found, or text the user wrote or changed (without timing). */
 export const ProjectLyrics = Schema.Struct({
   source: Schema.Literals(["lrclib", "whisper", "user"]),
@@ -209,8 +223,14 @@ export const SongFields = Schema.Struct({
   previewStart: Schema.optional(Schema.NullOr(Schema.Number)),
   medleyStart: Schema.optional(Schema.NullOr(Schema.Number)),
   medleyEnd: Schema.optional(Schema.NullOr(Schema.Number)),
+  /** Kept in the song's `#TAGS` header. */
+  tags: Schema.optional(Schema.Array(Schema.String)),
 });
 export type SongFields = typeof SongFields.Type;
+
+/** A duet singer's name (`#P1`, `#P2`; null: none). */
+export const SingerFields = Schema.Struct({ name: Schema.NullOr(Schema.String) });
+export type SingerFields = typeof SingerFields.Type;
 
 /**
  * One row of an edit, as it was and as it becomes: `before` null creates the row (with the editor's id), `after` null
@@ -230,6 +250,7 @@ export const ChartChange = Schema.Union([
     after: Schema.NullOr(LineFields),
   }),
   Schema.Struct({ table: Schema.Literal("song"), before: SongFields, after: SongFields }),
+  Schema.Struct({ table: Schema.Literal("singer"), id: Schema.Number, before: SingerFields, after: SingerFields }),
 ]);
 export type ChartChange = typeof ChartChange.Type;
 
@@ -308,11 +329,8 @@ export class NativeRpcs extends RpcGroup.make(
   withProgress("project.autoPitch", AutoPitchInput, ImportProgress, Schema.Array(NotePitch)),
   /** Writes the project as an UltraStar song folder. */
   call("project.exportSong", ExportInput, ExportResult),
-  /**
-   * Makes the chart from the project's vocals, song and lyrics, replacing its notes, reporting progress (the chart
-   * models download on first use). Returns the updated overview.
-   */
-  withProgress("project.makeChart", ProjectInput, ImportProgress, ProjectOverview),
+  /** Replaces (or removes) the cover or background; returns the project's overview with its media as they are now. */
+  call("project.setArtwork", ArtworkInput, ProjectOverview),
 
   /** The recent projects, newest first; files that no longer exist are dropped. */
   query("recents.list", Schema.Array(RecentProjectEntry)),

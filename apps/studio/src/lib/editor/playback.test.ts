@@ -9,6 +9,7 @@ class FakeAudio {
   duration = 200;
   playbackRate = 1;
   preservesPitch = false;
+  volume = 1;
   paused = true;
   preload = "";
   listeners = new Map<string, () => void>();
@@ -132,5 +133,18 @@ describe("playback", () => {
     expect(FakeAudio.made[1]!.playbackRate).toBe(0.5);
     playback.setSpeed(1);
     expect([song.playbackRate, FakeAudio.made[1]!.playbackRate]).toEqual([1, 1]);
+  });
+
+  it("plays every source at the volume set, before or while it plays", () => {
+    const playback = createPlayback(urls);
+    playback.setVolume(0.4);
+    playback.play();
+    const song = FakeAudio.made[0]!;
+    expect(song.volume).toBe(0.4);
+    playback.setVolume(1.7);
+    expect(song.volume).toBe(1);
+    playback.setVolume(0.25);
+    playback.setSource("vocals");
+    expect(FakeAudio.made[1]!.volume).toBe(0.25);
   });
 });

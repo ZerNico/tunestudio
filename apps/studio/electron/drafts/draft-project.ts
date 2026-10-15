@@ -13,18 +13,17 @@ import { chartFromFiles, chartLanguage } from "../charting/generate";
 import type { ChartSongDetails } from "../charting/project-chart";
 import { ChartFailed, ChartOutdated, DraftGone, mapFileError, VideoDownloadFailed } from "../errors";
 import { listenToVocals } from "../listening/listening";
+import { downloadCover } from "../project/artwork";
 import { writeChart } from "../project/chart";
 import { orDiskFull, writeMeta } from "../project/database";
-import { imageExtension, readImage } from "../project/images";
+import { readImage } from "../project/images";
 import { writeLyrics } from "../project/lyrics";
 import { type MediaRole, type MediaSource, writeMedia } from "../project/media";
 import { writePitch } from "../project/pitch";
 import { Projects } from "../project/projects";
 import { type Draft, type DraftSource, Drafts } from "../services/drafts";
 import { AppSettings } from "../services/settings";
-import { COVER_HOSTS, Downloads, hostAllowed } from "../tools/downloads";
 import { Tools } from "../tools/tools";
-import { MOST_IMAGE_BYTES } from "../youtube/covers";
 import { watchUrl } from "../youtube/youtube";
 
 /** A chart has to name a tempo; this one gives 50 ms beats until the chart is made. */
@@ -257,25 +256,4 @@ export function createDraftProject(
 /** Offers `language` first for the next new project; not being able to save that doesn't matter. */
 function rememberLanguage(language: string) {
   return AppSettings.use((stored) => stored.remember({ language })).pipe(Effect.ignore);
-}
-
-/** Downloads a chosen cover into `folder`, named for what it is (JPEG or PNG), or null if that fails. */
-function downloadCover(url: string, folder: string) {
-  return Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
-    const downloads = yield* Downloads;
-    // The URL comes from the renderer: only the cover catalogs, not every host downloads may use.
-    if (!URL.canParse(url) || !hostAllowed(new URL(url).hostname, COVER_HOSTS)) return null;
-    const file = path.join(folder, "chosen-cover");
-    yield* downloads.file(url, file, () => Effect.void, { hosts: COVER_HOSTS, maxBytes: MOST_IMAGE_BYTES });
-    const bytes = yield* fs.readFile(file);
-    const extension = imageExtension(bytes);
-    if (!extension) return null;
-    yield* fs.rename(file, `${file}${extension}`);
-    return `${file}${extension}`;
-  }).pipe(
-    Effect.timeout("30 seconds"),
-    Effect.orElseSucceed(() => null),
-  );
 }

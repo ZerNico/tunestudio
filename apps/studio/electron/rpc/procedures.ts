@@ -8,12 +8,12 @@ import type { BrowserWindow } from "electron";
 import { safeFileName } from "../../src/lib/file-names";
 import { NativeRpcs } from "../../src/lib/native/contract";
 import type { ChosenImage, OpenedProject, RecentProjectEntry } from "../../src/lib/native/types";
-import { generateChart } from "../charting/generate";
 import { autoPitchNotes } from "../charting/project-auto-pitch";
 import { createDraftProject, listenToDraft, makeDraftChart } from "../drafts/draft-project";
 import { ImageUnreadable } from "../errors";
 import { downloadFeature, modelFeatures, removeFeature } from "../models/features";
 import { CHART_MODELS, type ModelName, Models } from "../models/models";
+import { setArtwork } from "../project/artwork";
 import { applyChartChanges } from "../project/chart-changes";
 import { readEditorChart } from "../project/editor-chart";
 import { readImage } from "../project/images";
@@ -176,6 +176,18 @@ export const nativeHandlers = NativeRpcs.toLayer({
   "project.close": (input) => Projects.use((projects) => projects.close(input.id)),
   "project.pitch": (input) =>
     progressStream((onProgress) => Effect.flatMap(project(input.id), (session) => sungPitch(session, onProgress))),
+  "project.setArtwork": (input) =>
+    Effect.flatMap(project(input.id), (session) =>
+      Effect.gen(function* () {
+        // A picked file's path comes from the renderer: only one the user picked may be read.
+        const choice =
+          input.choice.kind === "file"
+            ? { kind: "file" as const, path: yield* allowedPath(input.choice.path) }
+            : input.choice;
+        yield* setArtwork(session, input.role, choice);
+        return yield* projectOverview(session);
+      }),
+    ),
   "project.applyChanges": (input) =>
     Effect.flatMap(project(input.id), (session) =>
       session.db.transaction((tx) => applyChartChanges(tx, input.changes)),
@@ -193,15 +205,6 @@ export const nativeHandlers = NativeRpcs.toLayer({
       yield* grant(result.folder);
       return result;
     }),
-  "project.makeChart": (input) =>
-    progressStream((onProgress) =>
-      Effect.gen(function* () {
-        const session = yield* project(input.id);
-        yield* generateChart(session, onProgress);
-        return yield* projectOverview(session);
-      }),
-    ),
-
   "recents.list": () =>
     Effect.gen(function* () {
       const projects = yield* Recents.use((recents) => recents.list);
