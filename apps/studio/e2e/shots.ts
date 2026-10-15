@@ -122,6 +122,13 @@ try {
       await shot(studio, "03e-project-draw-tool");
       await page.keyboard.press("Enter");
       await page.keyboard.press("v");
+      // Dragging the line break left across "world": the preview and how many notes move.
+      const marker = (await page.getByTestId("break-marker").first().boundingBox())!;
+      await page.mouse.move(marker.x + marker.width / 2, marker.y + marker.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(marker.x - 240, marker.y + marker.height / 2, { steps: 6 });
+      await shot(studio, "03f-project-break-drag");
+      await page.mouse.up();
       await page.getByTestId("export-song").waitFor();
     }
     await page.getByTestId("close-project").click();

@@ -48,6 +48,12 @@ function noteLabel(note: DrawnNote, overlaps: boolean): string {
 /** How wide the pitch labels at the roll's left are; the other lanes leave the same room. */
 export const GUTTER_PX = 40;
 
+/**
+ * Where a break's 1 px line is drawn: just before its time. A note is drawn 1 px short of its end, so a break at a
+ * note's start or end sits right outside it either way.
+ */
+export const breakX = (view: TimeView, time: number) => timeToX(view, time) - 1;
+
 /** Notes narrower than this have no resize edges: a press anywhere moves them (px). */
 const MIN_EDGES_PX = 12;
 
@@ -273,7 +279,7 @@ export function PianoRoll(props: {
               data-singer={item.singer}
               data-auto={item.auto ? "" : undefined}
               class="pointer-events-none absolute inset-y-0 border-l border-dashed border-violet data-auto:opacity-45 data-[singer=2]:border-violet-text"
-              style={{ left: `${timeToX(props.view, item.time)}px` }}
+              style={{ left: `${breakX(props.view, item.time)}px` }}
               data-testid="line-break"
             />
           )}

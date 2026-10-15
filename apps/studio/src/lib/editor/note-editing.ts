@@ -325,6 +325,8 @@ export function createNoteEditing(options: {
   return {
     /** The drag in progress, if any. */
     drag,
+    /** The singer (id) new notes and line breaks go to: the one whose note was touched last, else the first. */
+    activeSinger: () => singerFor(),
     /** Whether a drag or a drawing is in progress (Esc stops it before anything else). */
     busy: () => cancelDrag !== null,
     /**

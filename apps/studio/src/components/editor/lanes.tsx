@@ -1,16 +1,24 @@
 import type { JSX } from "@solidjs/web";
-import { For } from "solid-js";
+import { For, Show } from "solid-js";
 
+import type { BreakDrag } from "~/lib/editor/break-editing";
 import type { LineBreak, LineSpan } from "~/lib/editor/chart";
 import { formatTime, rulerStep, rulerTicks, timeToX, type TimeView, xToTime } from "~/lib/editor/view";
 
-import { GUTTER_PX } from "./piano-roll";
+import { breakX, GUTTER_PX } from "./piano-roll";
 
 /** A line's text shows only with at least this much room. */
 const MIN_TEXT_PX = 24;
 
 /** A lane aligned with the roll: the gutter's room on the left, the content on the right. */
-function Lane(props: { class?: string; testid: string; children: JSX.Element; onSeek?: (x: number) => void }) {
+function Lane(props: {
+  class?: string;
+  testid: string;
+  children: JSX.Element;
+  onSeek?: (x: number) => void;
+  /** A double-click on the lane itself (not on what is in it), at `x`. */
+  onDoubleClick?: (x: number) => void;
+}) {
   return (
     <div class={`flex shrink-0 border-b border-border ${props.class ?? ""}`} data-testid={props.testid}>
       <div class="shrink-0 border-r border-border bg-background" style={{ width: `${GUTTER_PX}px` }} />
@@ -26,6 +34,10 @@ function Lane(props: { class?: string; testid: string; children: JSX.Element; on
           if (props.onSeek && event.currentTarget.hasPointerCapture(event.pointerId)) {
             props.onSeek(event.clientX - event.currentTarget.getBoundingClientRect().left);
           }
+        }}
+        onDblClick={(event) => {
+          if (props.onDoubleClick && event.target === event.currentTarget)
+            props.onDoubleClick(event.clientX - event.currentTarget.getBoundingClientRect().left);
         }}
       >
         {props.children}
@@ -54,23 +66,60 @@ export function TimeRuler(props: { view: TimeView; width: number; onSeek: (secon
 }
 
 /**
- * The handles of the line breaks above the roll: one per break at its switch time, fainter when the chart doesn't
- * store one. (They become draggable when lines can be edited.)
+ * The line breaks above the roll, as markers at their switch times (fainter when the chart doesn't store one; singer
+ * 2's lighter). A marker is pressed to select and drag it, double-clicked to remove it; a double-click on the lane adds
+ * one. A dragged break is drawn where it would go, with its label.
  */
-export function BreakLane(props: { breaks: LineBreak[]; view: TimeView }) {
+export function BreakLane(props: {
+  breaks: LineBreak[];
+  view: TimeView;
+  /** The selected break, by the line it ends. */
+  selected: number | null;
+  drag: BreakDrag | null;
+  onDown: (item: LineBreak, event: PointerEvent) => void;
+  onDoubleClick: (item: LineBreak) => void;
+  onLaneDoubleClick: (seconds: number) => void;
+}) {
   return (
-    <Lane class="h-3.5 bg-bar" testid="break-lane">
-      <For each={props.breaks}>
+    <Lane class="h-5 bg-bar" testid="break-lane" onDoubleClick={(x) => props.onLaneDoubleClick(xToTime(props.view, x))}>
+      <For each={props.breaks} keyed={(item) => item.lineId}>
         {(item) => (
           <span
-            data-singer={item.singer}
-            data-auto={item.auto ? "" : undefined}
-            title={item.auto ? "Line break (default timing)" : "Line break"}
-            class="absolute top-0.5 h-2.5 w-1.5 -translate-x-1/2 rounded-[2px] bg-violet data-auto:opacity-45 data-[singer=2]:bg-violet-text"
-            style={{ left: `${timeToX(props.view, item.time)}px` }}
+            data-singer={item().singer}
+            data-auto={item().auto ? "" : undefined}
+            data-selected={props.selected === item().lineId ? "true" : undefined}
+            title={
+              item().auto
+                ? "Line break (default timing): drag to move, double-click to remove"
+                : "Line break: drag to move, double-click to remove"
+            }
+            class="absolute top-1 h-3 w-2 -translate-x-1/2 cursor-ew-resize rounded-[2px] bg-violet data-auto:opacity-45 data-[singer=2]:bg-violet-text data-selected:opacity-100 data-selected:ring-2 data-selected:ring-foreground"
+            // Centred on the break's line in the roll.
+            style={{ left: `${breakX(props.view, item().time) + 0.5}px` }}
+            onPointerDown={(event) => {
+              if (event.button !== 0) return;
+              event.stopPropagation();
+              props.onDown(item(), event);
+            }}
+            onDblClick={(event) => {
+              event.stopPropagation();
+              props.onDoubleClick(item());
+            }}
+            data-testid="break-marker"
           />
         )}
       </For>
+      <Show when={props.drag}>
+        {(drag) => (
+          <span
+            class="pointer-events-none absolute top-0 z-10 ml-2 rounded-[3px] border border-tooltip-border bg-tooltip px-1.5 font-mono text-[10px] leading-4 whitespace-nowrap text-foreground"
+            style={{ left: `${timeToX(props.view, drag().time)}px` }}
+            data-testid="break-drag-label"
+          >
+            {drag().label}
+          </span>
+        )}
+      </Show>
     </Lane>
   );
 }

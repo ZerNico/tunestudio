@@ -20,6 +20,7 @@ import { Button } from "~/components/ui/button";
 import { toast } from "~/components/ui/toast";
 import { platform, revealLabel } from "~/lib/desktop";
 import { isTyping, runEditCommand, setEditHandler } from "~/lib/edit-commands";
+import { createBreakEditing } from "~/lib/editor/break-editing";
 import { chartEnd, drawnNotes, lineBreaks, lineIndexAt, lineSpans, longest, stepLine } from "~/lib/editor/chart";
 import { createChartDocument } from "~/lib/editor/document";
 import { overlapping } from "~/lib/editor/edits";
@@ -149,13 +150,33 @@ export default function ProjectScreen() {
     },
   );
 
+  const breakEditing = createBreakEditing({
+    doc,
+    singer: () => editing.activeSinger(),
+    playheadTime: () => playback.time(),
+    onSelect: () => setSelection([]),
+    onRefused: (message) => toast.add({ title: message }),
+  });
+  /** Both gestures: a note drag or drawing, or a break drag. */
+  const gestureBusy = () => editing.busy() || breakEditing.busy();
+  const cancelGestures = () => {
+    editing.cancel();
+    breakEditing.cancel();
+  };
+
   const visibleNotes = createMemo(() =>
     visibleItems(notes(), view().start, view().start + visibleSeconds(view(), width()), longestNote()),
   );
   const visibleBreaks = createMemo(() => {
     const from = view().start;
     const to = from + visibleSeconds(view(), width());
-    return breaks().filter((item) => item.time >= from && item.time <= to);
+    // A break being dragged is drawn where it would go.
+    const dragged = breakEditing.drag();
+    return breaks()
+      .map((item) =>
+        dragged?.lineId === item.lineId ? Object.assign({}, item, { time: dragged.time, auto: false }) : item,
+      )
+      .filter((item) => item.time >= from && item.time <= to);
   });
   const visibleLines = createMemo(() =>
     visibleItems(lines(), view().start, view().start + visibleSeconds(view(), width()), longestLine()),
@@ -270,11 +291,11 @@ export default function ProjectScreen() {
         return;
       }
       // Esc: stops a drag first, then goes back to Select, then deselects.
-      if (event.key === "Escape" && !editing.busy() && tools.tool() !== "select") {
+      if (event.key === "Escape" && !gestureBusy() && tools.tool() !== "select") {
         tools.setTool("select");
         return;
       }
-      if (editing.key(event)) {
+      if (breakEditing.key(event) || editing.key(event)) {
         event.preventDefault();
         return;
       }
@@ -301,17 +322,17 @@ export default function ProjectScreen() {
     // A drag in progress was worked out for the chart before the undo: it stops first.
     const stopEditing = setEditHandler({
       undo: () => {
-        editing.cancel();
+        cancelGestures();
         doc().undo();
       },
       redo: () => {
-        editing.cancel();
+        cancelGestures();
         doc().redo();
       },
     });
     return () => {
       stopEditing();
-      editing.cancel();
+      cancelGestures();
       pitchController.abort();
       observer.disconnect();
       editArea?.removeEventListener("wheel", onWheel);
@@ -424,7 +445,15 @@ export default function ProjectScreen() {
           />
           <div class="relative flex min-h-0 flex-1 flex-col overflow-hidden">
             <TimeRuler view={view()} width={width()} onSeek={seek} />
-            <BreakLane breaks={visibleBreaks()} view={view()} />
+            <BreakLane
+              breaks={visibleBreaks()}
+              view={view()}
+              selected={breakEditing.selected()}
+              drag={breakEditing.drag()}
+              onDown={(item, event) => breakEditing.breakDown(item, event, view().pxPerSecond)}
+              onDoubleClick={(item) => breakEditing.breakDoubleClick(item)}
+              onLaneDoubleClick={(seconds) => breakEditing.laneDoubleClick(seconds)}
+            />
             <div ref={(element) => (rollArea = element)} class="flex min-h-0 flex-1">
               <PianoRoll
                 notes={visibleNotes()}
@@ -436,13 +465,20 @@ export default function ProjectScreen() {
                 pitch={showPitch() ? pitch() : null}
                 selected={selectedIds()}
                 overlapping={overlaps()}
-                onNoteDown={(note, event, part, scale) => editing.noteDown(note, event, part, scale)}
+                onNoteDown={(note, event, part, scale) => {
+                  breakEditing.deselect();
+                  editing.noteDown(note, event, part, scale);
+                }}
                 drag={editing.drag()}
                 onEmptyClick={(seconds) => {
+                  breakEditing.deselect();
                   editing.emptyClick();
                   seek(seconds);
                 }}
-                onBox={(area, add) => editing.box(area, add)}
+                onBox={(area, add) => {
+                  breakEditing.deselect();
+                  editing.box(area, add);
+                }}
                 tool={tools.tool()}
                 onDrawDown={(at, event, scale) => editing.drawDown(event, at, scale)}
                 drawing={editing.drawing()}

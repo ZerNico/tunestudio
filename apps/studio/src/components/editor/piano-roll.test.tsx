@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { DrawnNote, LineSpan } from "~/lib/editor/chart";
 import type { Tool } from "~/lib/editor/tools";
 
-import { LyricsLane } from "./lanes";
+import { BreakLane, LyricsLane } from "./lanes";
 import { PianoRoll } from "./piano-roll";
 
 const note = (id: number, start: number, lyric: string, extra: Partial<DrawnNote> = {}): DrawnNote => ({
@@ -89,7 +89,8 @@ describe("PianoRoll", () => {
     expect(first!.title).toBe("Som · E4 · ⚠ overlaps another note");
     // The break at its switch time, fainter: default timing.
     const marker = screen.getByTestId("line-break");
-    expect(Number.parseFloat(marker.style.left)).toBeCloseTo(180);
+    // Just before its time (179 px is 1.8 s in), so it sits outside a note starting or ending there.
+    expect(Number.parseFloat(marker.style.left)).toBeCloseTo(179);
     expect(marker).toHaveAttribute("data-auto");
   });
 
@@ -254,6 +255,44 @@ describe("PianoRoll tools", () => {
     expect(props.onLyricDone).toHaveBeenLastCalledWith(null);
     fireEvent.keyDown(input, { key: "Enter" });
     expect(props.onLyricDone).toHaveBeenLastCalledWith("Sonn");
+  });
+});
+
+describe("BreakLane", () => {
+  it("presses, selects and double-clicks markers, adds where the lane is double-clicked, and labels a drag", () => {
+    const props = { onDown: vi.fn(), onDoubleClick: vi.fn(), onLaneDoubleClick: vi.fn() };
+    const breaks = [{ lineId: 7, singer: 1, time: 11.5, auto: true, gapStart: 11.5, gapEnd: 12 }];
+    render(() => (
+      <BreakLane
+        breaks={breaks}
+        view={view}
+        selected={7}
+        drag={{ lineId: 7, time: 11.5, label: "0:11.5 · 2 notes move" }}
+        {...props}
+      />
+    ));
+    const marker = screen.getByTestId("break-marker");
+    expect(marker).toHaveAttribute("data-selected", "true");
+    fireEvent.pointerDown(marker, { button: 0 });
+    expect(props.onDown).toHaveBeenCalledWith(breaks[0], expect.anything());
+    fireEvent.dblClick(marker);
+    expect(props.onDoubleClick).toHaveBeenCalledWith(breaks[0]);
+    expect(props.onLaneDoubleClick).not.toHaveBeenCalled();
+    const lane = marker.parentElement!;
+    lane.getBoundingClientRect = () => ({
+      left: 0,
+      top: 0,
+      right: 800,
+      bottom: 20,
+      width: 800,
+      height: 20,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    fireEvent.dblClick(lane, { clientX: 250 });
+    expect(props.onLaneDoubleClick).toHaveBeenCalledWith(12.5);
+    expect(screen.getByTestId("break-drag-label")).toHaveTextContent("0:11.5 · 2 notes move");
   });
 });
 
