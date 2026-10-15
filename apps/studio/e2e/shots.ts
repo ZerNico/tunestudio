@@ -141,6 +141,15 @@ try {
       await page.getByTestId("note-menu").waitFor();
       await shot(studio, "03i-note-menu");
       await page.keyboard.press("Escape");
+      // A loop range marked on the ruler, and the transport's loop, speed, follow and tones controls.
+      const ruler = (await page.getByTestId("time-ruler").boundingBox())!;
+      await page.mouse.move(ruler.x + ruler.width * 0.25, ruler.y + ruler.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(ruler.x + ruler.width * 0.55, ruler.y + ruler.height / 2, { steps: 5 });
+      await page.mouse.up();
+      await page.getByTestId("tones").click();
+      await shot(studio, "03j-loop-transport");
+      await page.getByTestId("tones").click();
       await page.getByTestId("export-song").waitFor();
     }
     await page.getByTestId("close-project").click();

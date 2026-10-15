@@ -7,6 +7,8 @@ class FakeAudio {
   static made: FakeAudio[] = [];
   currentTime = 0;
   duration = 200;
+  playbackRate = 1;
+  preservesPitch = false;
   paused = true;
   preload = "";
   listeners = new Map<string, () => void>();
@@ -113,5 +115,22 @@ describe("playback", () => {
     audio.fire("ended");
     expect(playback.playing()).toBe(false);
     expect(playback.time()).toBe(200);
+  });
+
+  it("plays slower with the pitch kept, on every source, and starts where it is told", () => {
+    const playback = createPlayback(
+      urls,
+      () => {},
+      (time) => (time < 5 ? 5 : time),
+    );
+    playback.setSpeed(0.5);
+    playback.play();
+    const song = FakeAudio.made[0]!;
+    expect([song.playbackRate, song.preservesPitch, song.currentTime]).toEqual([0.5, true, 5]);
+    expect(playback.time()).toBe(5);
+    playback.setSource("vocals");
+    expect(FakeAudio.made[1]!.playbackRate).toBe(0.5);
+    playback.setSpeed(1);
+    expect([song.playbackRate, FakeAudio.made[1]!.playbackRate]).toEqual([1, 1]);
   });
 });

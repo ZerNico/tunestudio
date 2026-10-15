@@ -4,6 +4,7 @@ import {
   clampView,
   fitRange,
   follow,
+  onPage,
   formatTime,
   pitchName,
   pitchRange,
@@ -54,6 +55,8 @@ describe("time view", () => {
 
   it("follows the playhead a page at a time", () => {
     expect(follow(view, 12, 800, 200)).toBe(view);
+    // On the page: up to just short of the right edge.
+    expect([onPage(view, 12, 800), onPage(view, 17.9, 800), onPage(view, 9, 800)]).toEqual([true, false, false]);
     const paged = follow(view, 17.9, 800, 200);
     expect(paged.start).toBeGreaterThan(17);
     expect(paged.start).toBeLessThan(17.9);

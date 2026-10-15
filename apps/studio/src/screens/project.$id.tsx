@@ -1,5 +1,5 @@
 import { getRouteApi, useNavigate, useRouter } from "@tanstack/solid-router";
-import { createMemo, createSignal, flush, onSettled, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, flush, onSettled, Show } from "solid-js";
 import DownloadIcon from "~icons/lucide/download";
 import LoaderCircleIcon from "~icons/lucide/loader-circle";
 import PanelRightIcon from "~icons/lucide/panel-right";
@@ -34,14 +34,17 @@ import {
   stepLine,
 } from "~/lib/editor/chart";
 import { createChartDocument } from "~/lib/editor/document";
-import { overlapping } from "~/lib/editor/edits";
+import { onGrid, overlapping } from "~/lib/editor/edits";
+import { createLoop } from "~/lib/editor/loop";
 import { createNoteEditing } from "~/lib/editor/note-editing";
 import { createPlayback } from "~/lib/editor/playback";
+import { createTones } from "~/lib/editor/tones";
 import { createTools } from "~/lib/editor/tools";
 import {
   clampView,
   fitRange,
   follow,
+  onPage,
   type PitchRange,
   pitchRange,
   scrollBy,
@@ -73,6 +76,10 @@ function reveal(path: string) {
 
 /** How much of the song the view shows at first. */
 const FIRST_VIEW_SECONDS = 12;
+
+/** Where the editor remembers whether the view follows the playhead, and which notes are heard as tones. */
+const FOLLOW_KEY = "tunestudio.editor.follow";
+const TONES_KEY = "tunestudio.editor.tones";
 
 /**
  * An open project: the chart editor. The editing area shows the song at a glance (overview), the notes against time
@@ -148,18 +155,60 @@ export default function ProjectScreen() {
   const media = (role: string) => overview().media.find((item) => item.role === role)?.url;
   const [view, setView] = createSignal<TimeView>({ start: 0, pxPerSecond: 80 });
   const [size, setSize] = createSignal({ width: 0, height: 0 });
-  /** The user scrolled while playing: the view stops following the playhead until playback starts again. */
+  /**
+   * The user scrolled while playing: the view stops following the playhead until playback starts again, the playhead
+   * is moved, or it comes back on screen.
+   */
   let scrolledAway = false;
   let placed = false;
   const width = () => size().width;
   const length = () => Math.max(playback.duration(), chartEnd(notes()) + 1, 1);
 
+  /** Whether the view follows the playhead while playing (remembered). */
+  const [following, setFollowing] = createSignal(localStorage.getItem(FOLLOW_KEY) !== "off");
+  /** Whether notes are heard as tones, while playing and while their pitch changes (remembered; off at first). */
+  const [tonesOn, setTonesOn] = createSignal(localStorage.getItem(TONES_KEY) === "on");
+  const tones = createTones({ notes });
+  const loop = createLoop({ snap: (seconds) => onGrid(chart(), seconds), length, onSeek: (seconds) => seek(seconds) });
+
   const playback = createPlayback(
     { audio: media("audio"), vocals: media("vocals"), instrumental: media("instrumental") },
     (time) => {
-      if (!scrolledAway && width() > 0) setView((current) => follow(current, time, width(), length()));
+      const back = loop.back(time);
+      if (back !== null) playback.seek(back);
+      const now = back ?? time;
+      if (tonesOn()) tones.frame(now, playback.speed());
+      // Scrolled away, then the playhead came back on screen (or the view back to it): following goes on.
+      if (scrolledAway && width() > 0 && onPage(view(), now, width())) scrolledAway = false;
+      if (following() && !scrolledAway && width() > 0) setView((current) => follow(current, now, width(), length()));
     },
+    (time) => loop.startAt(time),
   );
+  // Tones stop with playback, at another speed (they start again on the next frame) and when turned off.
+  createEffect(
+    () => [playback.playing(), playback.speed(), tonesOn()] as const,
+    () => tones.stop(),
+  );
+  const changeFollowing = (next: boolean) => {
+    setFollowing(next);
+    localStorage.setItem(FOLLOW_KEY, next ? "on" : "off");
+    if (next) scrolledAway = false;
+  };
+  const changeTones = (next: boolean) => {
+    setTonesOn(next);
+    localStorage.setItem(TONES_KEY, next ? "on" : "off");
+  };
+  /** L: looping on (over the selected notes when there are any) or off; says what to do when there's nothing. */
+  const toggleLoop = () => {
+    const chosen = notes().filter((note) => selectedIds().has(note.id));
+    const span = chosen.length
+      ? {
+          start: Math.min(...chosen.map((note) => note.start)),
+          end: Math.max(...chosen.map((note) => note.start + note.duration)),
+        }
+      : null;
+    if (!loop.toggle(span)) toast.add({ title: "Drag on the time ruler or select notes to loop them." });
+  };
 
   /** Scrolls the view while a drag is at the roll's left or right edge. */
   const autoScroll = createAutoScroll({
@@ -276,6 +325,9 @@ export default function ProjectScreen() {
 
   const editing = createNoteEditing({
     onAutoPitch: (ids) => void runAutoPitch(ids),
+    onPitch: (midi) => {
+      if (tonesOn()) tones.preview(midi);
+    },
     autoScroll,
     viewStart: () => view().start,
     doc,
@@ -424,6 +476,9 @@ export default function ProjectScreen() {
       } else if (event.key === "." || event.key === ",") {
         event.preventDefault();
         goToLine(stepLine(lines(), playback.time(), event.key === "." ? 1 : -1));
+      } else if ((event.key === "l" || event.key === "L") && !event.shiftKey && !event.repeat) {
+        event.preventDefault();
+        toggleLoop();
       } else if (event.key === "z" || event.key === "Z") {
         event.preventDefault();
         goToLine(lines()[lineIndexAt(lines(), playback.time())], true);
@@ -474,6 +529,7 @@ export default function ProjectScreen() {
       document.removeEventListener("cut", onCopy);
       document.removeEventListener("paste", onPaste);
       playback.dispose();
+      tones.dispose();
     };
   });
 
@@ -587,7 +643,7 @@ export default function ProjectScreen() {
             onScrollTo={(seconds) => changeView({ ...view(), start: seconds - visibleSeconds(view(), width()) / 2 })}
           />
           <div class="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-            <TimeRuler view={view()} width={width()} onSeek={seek} autoScroll={autoScroll} />
+            <TimeRuler view={view()} width={width()} loop={loop} autoScroll={autoScroll} />
             <BreakLane
               breaks={visibleBreaks()}
               view={view()}
@@ -643,7 +699,14 @@ export default function ProjectScreen() {
             <Show when={opening() !== undefined}>
               <OpeningOverlay progress={opening() ?? null} />
             </Show>
-            <Playhead view={view()} width={width()} time={playback.time()} onScrub={seek} autoScroll={autoScroll} />
+            <Playhead
+              view={view()}
+              width={width()}
+              time={playback.time()}
+              onScrub={seek}
+              onDoubleClick={(seconds) => loop.clearAt(seconds)}
+              autoScroll={autoScroll}
+            />
           </div>
           <Show when={notes().length === 0}>
             <p
@@ -668,6 +731,12 @@ export default function ProjectScreen() {
         onZoom={(factor) => changeView(zoomAt(view(), factor, width() / 2, width(), length()))}
         showPitch={pitch() ? showPitch() : undefined}
         onShowPitch={setShowPitch}
+        looping={loop.on()}
+        onLoop={toggleLoop}
+        following={following()}
+        onFollow={changeFollowing}
+        tones={tonesOn()}
+        onTones={changeTones}
       />
 
       <ReplaceExportDialog

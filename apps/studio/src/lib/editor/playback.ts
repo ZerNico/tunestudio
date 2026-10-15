@@ -1,7 +1,8 @@
 /**
  * The editor's playback: the song, its vocals or its music (one audio element each, all on the project's media URLs),
  * one playing at a time. Switching keeps the position and whether it plays. While playing, the time is read on every
- * animation frame (an audio element's own `timeupdate` comes only about four times a second).
+ * animation frame (an audio element's own `timeupdate` comes only about four times a second). Slower speeds keep the
+ * pitch (the element's own time-stretch).
  */
 import { createSignal } from "solid-js";
 
@@ -14,16 +15,27 @@ export const SOURCE_LABELS: Record<PlaybackSource, string> = {
   instrumental: "Music",
 };
 
-/** `onFrame` gets the time on every frame while playing (to follow the playhead). */
+/** The speeds offered: normal, three quarters and half. */
+export const SPEEDS = [1, 0.75, 0.5] as const;
+export type Speed = (typeof SPEEDS)[number];
+
+/**
+ * `onFrame` gets the time on every frame while playing (to follow the playhead, to loop); `startAt` may move where
+ * playing starts (a loop starts at its range).
+ */
 export function createPlayback(
   urls: Partial<Record<PlaybackSource, string>>,
   onFrame: (seconds: number) => void = () => {},
+  startAt: (seconds: number) => number = (seconds) => seconds,
 ) {
   const available = PLAYBACK_SOURCES.filter((source) => urls[source]);
   const [source, setSource] = createSignal<PlaybackSource | null>(available[0] ?? null);
   const [time, setTime] = createSignal(0);
   const [playing, setPlaying] = createSignal(false);
   const [duration, setDuration] = createSignal(0);
+  const [speed, setSpeed] = createSignal<Speed>(1);
+  /** The speed in effect now (the signal reads its old value just after a write). */
+  let rate: Speed = 1;
   /** Made on first use, so nothing loads before the editor is shown. */
   const elements = new Map<PlaybackSource, HTMLAudioElement>();
   let frame = 0;
@@ -35,6 +47,8 @@ export function createPlayback(
     if (!audio) {
       audio = new Audio(urls[which]);
       audio.preload = "auto";
+      audio.preservesPitch = true;
+      audio.playbackRate = rate;
       audio.addEventListener("loadedmetadata", () => {
         if (Number.isFinite(audio!.duration)) setDuration(Math.max(duration(), audio!.duration));
       });
@@ -64,6 +78,11 @@ export function createPlayback(
   const play = () => {
     if (!current) return;
     const audio = element(current);
+    const from = startAt(audio.currentTime);
+    if (from !== audio.currentTime) {
+      audio.currentTime = from;
+      setTime(from);
+    }
     setPlaying(true);
     audio.play().catch(() => stopTicking(audio.currentTime));
     cancelAnimationFrame(frame);
@@ -92,6 +111,12 @@ export function createPlayback(
     play,
     pause,
     toggle: () => (playing() ? pause() : play()),
+    speed,
+    setSpeed: (next: Speed) => {
+      rate = next;
+      setSpeed(next);
+      for (const audio of elements.values()) audio.playbackRate = next;
+    },
     seek: (seconds: number) => {
       const at = Math.max(0, seconds);
       if (current) element(current).currentTime = at;

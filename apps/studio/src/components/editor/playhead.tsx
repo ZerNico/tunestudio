@@ -14,6 +14,11 @@ export function Playhead(props: {
   width: number;
   time: number;
   onScrub: (seconds: number) => void;
+  /**
+   * A double-click on the head. A click on the ruler moves the head under the pointer, so a double-click on the ruler
+   * ends on the head: it is passed on (the loop range there is removed).
+   */
+  onDoubleClick?: (seconds: number) => void;
   /** Scrolls the view while the head is dragged at the roll's edge. */
   autoScroll?: AutoScroll;
 }) {
@@ -51,6 +56,7 @@ export function Playhead(props: {
         }}
         onPointerUp={() => props.autoScroll?.end()}
         onLostPointerCapture={() => props.autoScroll?.end()}
+        onDblClick={() => props.onDoubleClick?.(props.time)}
         data-testid="playhead-head"
       />
     </Show>

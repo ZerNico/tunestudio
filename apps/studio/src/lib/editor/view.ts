@@ -60,11 +60,15 @@ export function fitRange(from: number, to: number, width: number, length: number
   return clampView({ pxPerSecond, start: from - span * margin }, width, length);
 }
 
+/** Whether `time` is on the page following leaves alone: on screen, short of the right edge where it turns the page. */
+export function onPage(view: TimeView, time: number, width: number): boolean {
+  return time >= view.start && time < view.start + visibleSeconds(view, width) * 0.92;
+}
+
 /** Scrolls just enough to bring `time` back on screen, a page at a time (playback following the playhead). */
 export function follow(view: TimeView, time: number, width: number, length: number): TimeView {
-  const seconds = visibleSeconds(view, width);
-  if (time >= view.start && time < view.start + seconds * 0.92) return view;
-  return clampView({ ...view, start: time - seconds * 0.05 }, width, length);
+  if (onPage(view, time, width)) return view;
+  return clampView({ ...view, start: time - visibleSeconds(view, width) * 0.05 }, width, length);
 }
 
 /** Ruler steps in seconds, from fine to coarse. */

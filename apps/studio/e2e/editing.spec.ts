@@ -117,6 +117,41 @@ test("the note menu acts on the selection, pastes on empty space, and auto pitch
   await expect(autoPitch).toBeVisible();
 });
 
+test("a drag on the ruler loops a range, L loops the selected notes, a double-click removes the range", async () => {
+  await openSong();
+  const { page } = studio;
+  const ruler = (await page.getByTestId("time-ruler").boundingBox())!;
+  const range = page.getByTestId("loop-range");
+  const loop = page.getByTestId("loop");
+  await expect(loop).toHaveAttribute("aria-pressed", "false");
+  // Nothing to loop yet.
+  await page.keyboard.press("l");
+  await expect(page.getByText("Drag on the time ruler or select notes to loop them.")).toBeVisible();
+
+  await page.mouse.move(ruler.x + ruler.width * 0.3, ruler.y + ruler.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(ruler.x + ruler.width * 0.6, ruler.y + ruler.height / 2, { steps: 5 });
+  await page.mouse.up();
+  await expect(range).toBeVisible();
+  await expect(range).toHaveAttribute("data-on", "");
+  await expect(loop).toHaveAttribute("aria-pressed", "true");
+  // L: off (the range stays), and on again.
+  await page.keyboard.press("l");
+  await expect(loop).toHaveAttribute("aria-pressed", "false");
+  await expect(range).not.toHaveAttribute("data-on");
+  await range.dblclick();
+  await expect(range).toHaveCount(0);
+
+  // The selected note: the range is just around it.
+  const note = page.getByTestId("roll-note").first();
+  await note.click();
+  await page.keyboard.press("l");
+  const noteBox = (await note.boundingBox())!;
+  const rangeBox = (await range.boundingBox())!;
+  expect(Math.abs(rangeBox.x - noteBox.x)).toBeLessThan(3);
+  expect(Math.abs(rangeBox.x + rangeBox.width - (noteBox.x + noteBox.width))).toBeLessThan(3);
+});
+
 test("scrubbing to the roll's edge scrolls the view, and the playhead goes on with it", async () => {
   await openSong();
   const { page } = studio;
@@ -125,7 +160,10 @@ test("scrubbing to the roll's edge scrolls the view, and the playhead goes on wi
   const ticks = () => ruler.locator("span").allTextContents();
   const before = await ticks();
   const box = (await ruler.boundingBox())!;
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  // The playhead's head (a drag on the ruler itself marks a loop range), brought into view with a click.
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  const head = (await page.getByTestId("playhead-head").boundingBox())!;
+  await page.mouse.move(head.x + head.width / 2, head.y + head.height / 2);
   await page.mouse.down();
   // Held just inside the right edge: the view scrolls on, the playhead with it.
   await page.mouse.move(box.x + box.width - 4, box.y + box.height / 2, { steps: 8 });

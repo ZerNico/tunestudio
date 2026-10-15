@@ -4,6 +4,7 @@ import { For, Show } from "solid-js";
 import type { AutoScroll } from "~/lib/editor/autoscroll";
 import type { BreakDrag } from "~/lib/editor/break-editing";
 import type { LineBreak, LineSpan } from "~/lib/editor/chart";
+import type { Loop } from "~/lib/editor/loop";
 import { formatTime, rulerStep, rulerTicks, timeToX, type TimeView, xToTime } from "~/lib/editor/view";
 
 import { breakX, GUTTER_PX } from "./piano-roll";
@@ -55,31 +56,80 @@ function Lane(props: {
   );
 }
 
-/** Seconds along the top of the roll; clicking it moves the playhead there. */
-export function TimeRuler(props: {
-  view: TimeView;
-  width: number;
-  onSeek: (seconds: number) => void;
-  autoScroll?: AutoScroll;
-}) {
+/** Where the pointer is on a lane (px), kept to the lane. */
+function laneX(event: MouseEvent, lane: HTMLElement): number {
+  return Math.min(lane.clientWidth, Math.max(0, event.clientX - lane.getBoundingClientRect().left));
+}
+
+/**
+ * Seconds along the top of the roll, with the loop range. A click moves the playhead there; a drag marks a loop range
+ * (`loop.ts`), whose edges are dragged to change it and which a double-click removes.
+ */
+export function TimeRuler(props: { view: TimeView; width: number; loop: Loop; autoScroll?: AutoScroll }) {
   const tenths = () => rulerStep(props.view.pxPerSecond) < 1;
   return (
-    <Lane
-      class="h-5 cursor-ew-resize bg-bar"
-      testid="time-ruler"
-      onSeek={(x) => props.onSeek(xToTime(props.view, x))}
-      autoScroll={props.autoScroll}
-    >
-      <For each={rulerTicks(props.view, props.width)}>
-        {(tick) => (
-          <span
-            class="pointer-events-none absolute top-0 h-full border-l border-border pl-1 font-mono text-[9.5px] leading-5 text-faint-foreground"
-            style={{ left: `${timeToX(props.view, tick)}px` }}
-          >
-            {formatTime(tick, tenths())}
-          </span>
-        )}
-      </For>
+    <Lane class="h-5 bg-bar" testid="time-ruler">
+      <div
+        class="absolute inset-0 cursor-ew-resize touch-none"
+        data-testid="ruler-area"
+        onPointerDown={(event) => {
+          if (event.button !== 0) return;
+          const lane = event.currentTarget;
+          lane.setPointerCapture(event.pointerId);
+          const edge = (event.target as HTMLElement).dataset.edge;
+          const x = laneX(event, lane);
+          props.loop.down(xToTime(props.view, x), x, edge === "start" || edge === "end" ? edge : null);
+        }}
+        onPointerMove={(event) => {
+          const lane = event.currentTarget;
+          if (!lane.hasPointerCapture(event.pointerId)) return;
+          // Past the lane's ends it goes to them (and the view scrolls on).
+          const move = () => {
+            const x = laneX(event, lane);
+            props.loop.move(xToTime(props.view, x), x);
+          };
+          move();
+          props.autoScroll?.track(event.clientX, move);
+        }}
+        onPointerUp={() => {
+          props.autoScroll?.end();
+          props.loop.up();
+        }}
+        onLostPointerCapture={() => {
+          props.autoScroll?.end();
+          props.loop.cancel();
+        }}
+        // The press captures the pointer, so the clicks come here rather than to the range.
+        onDblClick={(event) => props.loop.clearAt(xToTime(props.view, laneX(event, event.currentTarget)))}
+      >
+        <For each={rulerTicks(props.view, props.width)}>
+          {(tick) => (
+            <span
+              class="pointer-events-none absolute top-0 h-full border-l border-border pl-1 font-mono text-[9.5px] leading-5 text-faint-foreground"
+              style={{ left: `${timeToX(props.view, tick)}px` }}
+            >
+              {formatTime(tick, tenths())}
+            </span>
+          )}
+        </For>
+        <Show when={props.loop.range()}>
+          {(range) => (
+            <div
+              class="absolute inset-y-0 border-x border-faint-foreground bg-foreground/8 data-on:border-primary data-on:bg-primary/20"
+              data-on={props.loop.on() ? "" : undefined}
+              style={{
+                left: `${timeToX(props.view, range().start)}px`,
+                width: `${(range().end - range().start) * props.view.pxPerSecond}px`,
+              }}
+              title="Loop range: drag its edges to change it, double-click to remove it"
+              data-testid="loop-range"
+            >
+              <span data-edge="start" class="absolute inset-y-0 -left-1 w-2 cursor-col-resize" />
+              <span data-edge="end" class="absolute inset-y-0 -right-1 w-2 cursor-col-resize" />
+            </div>
+          )}
+        </Show>
+      </div>
     </Lane>
   );
 }

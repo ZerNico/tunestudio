@@ -4,11 +4,11 @@
  */
 import type { JSX } from "@solidjs/web";
 import { createSignal, For, Show } from "solid-js";
+import CheckIcon from "~icons/lucide/check";
 import DeleteIcon from "~icons/lucide/delete";
 
 import {
   ContextMenu,
-  ContextMenuCheckboxItem,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
@@ -37,8 +37,6 @@ export interface NoteMenuActions {
 }
 
 const COMMAND = platform === "macos" ? "⌘" : "Ctrl+";
-/** The plain items' shortcuts sit as far in as the check items' (their right padding is wider, for the tick). */
-const KEY = "mr-6";
 
 const FLAGS: { flag: NoteFlag; label: string; key: string }[] = [
   { flag: "golden", label: "Golden", key: "G" },
@@ -64,18 +62,18 @@ export function NoteMenu(props: { actions: NoteMenuActions; children: JSX.Elemen
             <>
               <ContextMenuItem onClick={() => props.actions.paste()}>
                 Paste
-                <ContextMenuShortcut class={KEY}>{COMMAND}V</ContextMenuShortcut>
+                <ContextMenuShortcut>{COMMAND}V</ContextMenuShortcut>
               </ContextMenuItem>
               <ContextMenuItem onClick={() => props.actions.selectAll()}>
                 Select all
-                <ContextMenuShortcut class={KEY}>{COMMAND}A</ContextMenuShortcut>
+                <ContextMenuShortcut>{COMMAND}A</ContextMenuShortcut>
               </ContextMenuItem>
             </>
           }
         >
           <ContextMenuItem disabled={!props.actions.canAutoPitch()} onClick={() => props.actions.autoPitch()}>
             Auto pitch
-            <ContextMenuShortcut class={KEY}>A</ContextMenuShortcut>
+            <ContextMenuShortcut>A</ContextMenuShortcut>
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem
@@ -83,42 +81,46 @@ export function NoteMenu(props: { actions: NoteMenuActions; children: JSX.Elemen
             onClick={() => props.actions.splitAtPlayhead()}
           >
             Split at playhead
-            <ContextMenuShortcut class={KEY}>{COMMAND}K</ContextMenuShortcut>
+            <ContextMenuShortcut>{COMMAND}K</ContextMenuShortcut>
           </ContextMenuItem>
           <ContextMenuItem disabled={!props.actions.canMerge()} onClick={() => props.actions.merge()}>
             Merge
-            <ContextMenuShortcut class={KEY}>M</ContextMenuShortcut>
+            <ContextMenuShortcut>M</ContextMenuShortcut>
           </ContextMenuItem>
           <ContextMenuSeparator />
           <For each={FLAGS}>
             {(item) => (
-              <ContextMenuCheckboxItem
-                checked={props.actions.flagOn(item.flag)}
-                onCheckedChange={() => props.actions.toggleFlag(item.flag)}
-                closeOnClick
+              // A plain row with the tick by its name: a check item keeps a column free for the tick on every row.
+              <ContextMenuItem
+                role="menuitemcheckbox"
+                aria-checked={props.actions.flagOn(item.flag) ? "true" : "false"}
+                onClick={() => props.actions.toggleFlag(item.flag)}
               >
                 {item.label}
+                <Show when={props.actions.flagOn(item.flag)}>
+                  <CheckIcon class="size-3 text-primary" aria-hidden="true" />
+                </Show>
                 <ContextMenuShortcut>{item.key}</ContextMenuShortcut>
-              </ContextMenuCheckboxItem>
+              </ContextMenuItem>
             )}
           </For>
           <ContextMenuSeparator />
           <ContextMenuItem onClick={() => props.actions.cut()}>
             Cut
-            <ContextMenuShortcut class={KEY}>{COMMAND}X</ContextMenuShortcut>
+            <ContextMenuShortcut>{COMMAND}X</ContextMenuShortcut>
           </ContextMenuItem>
           <ContextMenuItem onClick={() => props.actions.copy()}>
             Copy
-            <ContextMenuShortcut class={KEY}>{COMMAND}C</ContextMenuShortcut>
+            <ContextMenuShortcut>{COMMAND}C</ContextMenuShortcut>
           </ContextMenuItem>
           <ContextMenuItem onClick={() => props.actions.paste()}>
             Paste
-            <ContextMenuShortcut class={KEY}>{COMMAND}V</ContextMenuShortcut>
+            <ContextMenuShortcut>{COMMAND}V</ContextMenuShortcut>
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem variant="destructive" onClick={() => props.actions.remove()}>
             Delete
-            <ContextMenuShortcut class={KEY}>
+            <ContextMenuShortcut>
               <Show when={platform === "macos"} fallback="Del">
                 <DeleteIcon class="size-3" aria-label="Delete key" />
               </Show>

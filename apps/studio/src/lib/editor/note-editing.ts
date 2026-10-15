@@ -136,6 +136,8 @@ export function createNoteEditing(options: {
   pointerTarget?: EventTarget;
   /** Scrolls the view while a drag is at the roll's edge (`autoscroll.ts`). */
   autoScroll?: AutoScroll;
+  /** A pitch (MIDI) the user just landed on: a note dragged or moved up or down, or one drawn (to hear it). */
+  onPitch?: (midi: number) => void;
   /** A: works out the selected notes' pitch (in main; slow), then hands it to `applyPitches`. */
   onAutoPitch?: (ids: number[]) => void;
   /** Where the view starts (seconds): a drag counts how far it scrolled. */
@@ -186,6 +188,8 @@ export function createNoteEditing(options: {
 
   const repitch = (ids: number[], semitones: number) => {
     if (!pitchFits(chart(), new Set(ids), semitones)) return;
+    const first = options.notes().find((note) => note.id === ids[0]);
+    if (first) options.onPitch?.(first.pitch + semitones);
     options.doc().edit(`Change pitch of ${count(ids)}`, (tx) => shiftPitch(tx, ids, semitones), {
       merge: `pitch:${ids.join()}`,
     });
@@ -369,6 +373,7 @@ export function createNoteEditing(options: {
         part === "body"
           ? [stepsLabel(steps), pitchName(note.pitch + semitones)].filter(Boolean).join(" · ")
           : stepsLabel(steps) || "±0";
+      if (semitones !== (latest?.pitch ?? 0)) options.onPitch?.(note.pitch + semitones);
       latest = { ids, part, time: seconds, pitch: semitones, anchor: note.id, label };
       setDrag(latest);
     };
@@ -422,6 +427,7 @@ export function createNoteEditing(options: {
       const startView = options.viewStart?.() ?? 0;
       let dragging = false;
       let drawn: { start: number; duration: number; pitch: number } | null = null;
+      options.onPitch?.(at.pitch);
       const move = (event: Event) => {
         const pointer = event as PointerEvent;
         const dx = pointer.clientX - press.clientX;

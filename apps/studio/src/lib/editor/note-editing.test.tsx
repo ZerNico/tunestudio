@@ -48,6 +48,7 @@ function setup(playhead = 0, start: EditorChart = chart, viewStart?: () => numbe
     const onReveal = vi.fn();
     const onRefused = vi.fn();
     const onAutoPitch = vi.fn();
+    const onPitch = vi.fn();
     const pointer = new EventTarget();
     const editing = createNoteEditing({
       pointerTarget: pointer,
@@ -61,6 +62,7 @@ function setup(playhead = 0, start: EditorChart = chart, viewStart?: () => numbe
       onReveal,
       onRefused,
       onAutoPitch,
+      onPitch,
     });
     /** Presses a key; returns whether the editor took it. */
     const press = (key: string, modifiers: Partial<Record<"shiftKey" | "metaKey" | "ctrlKey", boolean>> = {}) => {
@@ -134,6 +136,7 @@ function setup(playhead = 0, start: EditorChart = chart, viewStart?: () => numbe
       onReveal,
       onRefused,
       onAutoPitch,
+      onPitch,
       pointer,
     };
   });
@@ -634,5 +637,22 @@ describe("note editing", () => {
     flush();
     expect(editing.commands.canMerge()).toBe(false);
     expect(find(100)).toBeUndefined();
+  });
+
+  it("tells the pitch landed on when a note is dragged or moved up or down, or drawn", () => {
+    const { click, drag, draw, press, onPitch } = setup();
+    // 10 px a semitone: up two, then the same again (said once), then down one.
+    drag(100, "body", [
+      [0, -20],
+      [2, -21],
+      [0, -10],
+    ]);
+    expect(onPitch.mock.calls).toEqual([[66], [65]]);
+    onPitch.mockClear();
+    click(101);
+    press("ArrowDown");
+    expect(onPitch).toHaveBeenLastCalledWith(63);
+    draw(5, 70);
+    expect(onPitch).toHaveBeenLastCalledWith(70);
   });
 });
