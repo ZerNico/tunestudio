@@ -15,6 +15,7 @@ import { toast } from "~/components/ui/toast";
 import { pathForFile } from "~/lib/desktop";
 import { AUDIO_ACCEPT, dropKind, isAudioFile, summarizeAudioFile } from "~/lib/import-files";
 import { native } from "~/lib/native/client";
+import { effectNative } from "~/lib/native/effect-client";
 import { errorMessage } from "~/lib/native/errors";
 import type { OpenedProject } from "~/lib/native/types";
 import { type RecentProject, toEntry } from "~/lib/recent-projects";
@@ -51,7 +52,7 @@ export default function HomeScreen() {
 
   const openProject = async (path: string) => {
     try {
-      showProject(await native.project.open({ path }));
+      showProject(await effectNative.project.open({ path }));
     } catch (error) {
       toast.add({ type: "error", title: "Couldn't open the project", description: errorMessage(error) });
       // A file that is gone also drops out of the list.

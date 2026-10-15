@@ -14,6 +14,7 @@ import { MEDIA_SCHEME } from "./protocols/media-url";
 import { handleRendererProtocol } from "./protocols/renderer";
 import { APP_ORIGIN, originOf, registerSchemes } from "./protocols/schemes";
 import { createRpcHandler, listenForRpc } from "./rpc";
+import { nativeHandlers, startEffectRpc } from "./rpc/effect-server";
 import { makeRuntime } from "./runtime";
 import { PathGrants } from "./services/path-grants";
 import { loadWindowState, saveWindowState } from "./window-state";
@@ -178,7 +179,7 @@ function start() {
   protocol.handle(MEDIA_SCHEME, (request) => mediaResponse(request, (effect) => runtime.runPromise(effect)));
   handleGrantedPaths();
 
-  listenForRpc(createRpcHandler(runtime), appOrigin, (id) => {
+  listenForRpc(createRpcHandler(runtime), startEffectRpc(runtime, nativeHandlers), appOrigin, (id) => {
     const contents = webContents.fromId(id);
     return contents ? BrowserWindow.fromWebContents(contents) : null;
   });

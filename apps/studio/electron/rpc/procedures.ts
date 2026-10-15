@@ -33,7 +33,7 @@ import { os, runRpc } from "./base";
 export const PROJECTS_FOLDER = "Tune Studio";
 
 /** `path`, if the user picked or dropped it in this session (or it is a listed recent project). */
-const allowedPath = (path: string) =>
+export const allowedPath = (path: string) =>
   Effect.gen(function* () {
     const grants = yield* PathGrants;
     if (!(yield* grants.allows(path))) return yield* notAllowed();
@@ -49,7 +49,7 @@ const grant = (path: string | null) =>
       );
 
 /** Puts an opened project at the top of the recents; failing to save the list doesn't stop the open. */
-const remember = (session: ProjectSession) =>
+export const remember = (session: ProjectSession) =>
   Effect.gen(function* () {
     const desktop = yield* Desktop;
     const recents = yield* Recents;

@@ -4,6 +4,9 @@
  */
 export const RPC_CONNECT_CHANNEL = "tunestudio:connect-rpc";
 
+/** The same for the Effect RPC connection (`rpcs.ts`), while calls move over from oRPC. */
+export const EFFECT_RPC_CONNECT_CHANNEL = "tunestudio:connect-effect-rpc";
+
 /**
  * IPC channel the preload uses to report the path of a dropped or picked file, so main lets the
  * renderer use it (see `pathForFile` in `electron/preload.ts`).

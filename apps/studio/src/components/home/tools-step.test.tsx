@@ -10,6 +10,7 @@ import { ToolsStep } from "./tools-step";
 // The main process isn't there in jsdom: its client is the one thing replaced.
 const native = vi.hoisted(() => ({ tools: { prepare: vi.fn() } }));
 vi.mock("~/lib/native/client", () => ({ native }));
+vi.mock("~/lib/native/effect-client", () => ({ effectNative: native }));
 
 /** Yields `steps`, waiting for `gate` before finishing, so a test can look at the progress. */
 async function* progress(steps: ToolProgress[], gate: Promise<void>): AsyncGenerator<ToolProgress, ToolStatus[]> {

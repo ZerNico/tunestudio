@@ -13,6 +13,7 @@ import { toast } from "~/components/ui/toast";
 import { formatFileSize, formatRelativeTime } from "~/lib/format";
 import { MODEL_FEATURE_INFO, type ModelFeature } from "~/lib/models";
 import { native } from "~/lib/native/client";
+import { effectNative } from "~/lib/native/effect-client";
 import { errorMessage, isAbort } from "~/lib/native/errors";
 import type { ImportProgress, ModelFeatureStatus, ToolName, ToolProgress, ToolStatus } from "~/lib/native/types";
 import {
@@ -254,7 +255,7 @@ function ChoiceRow<V extends string | number>(props: {
 
 /** What is installed of the download tools, with a way to check for updates now. */
 function ToolsSection(props: { initial: ToolStatus[] }) {
-  const [status, setStatus] = createSignal(props.initial);
+  const [status, setStatus] = createSignal<readonly ToolStatus[]>(props.initial);
   const [progress, setProgress] = createSignal<ToolProgress | null>(null);
   const [checking, setChecking] = createSignal(false);
   let controller: AbortController | undefined;
@@ -281,7 +282,7 @@ function ToolsSection(props: { initial: ToolStatus[] }) {
     setChecking(true);
     setProgress(null);
     try {
-      const iterator = await native.tools.prepare(
+      const iterator = await effectNative.tools.prepare(
         { tools: TOOLS.map((entry) => entry.tool), force: true },
         { signal: controller.signal },
       );

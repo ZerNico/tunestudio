@@ -37,6 +37,7 @@ const native = vi.hoisted(() => ({
   dialogs: { chooseProjectLocation: vi.fn(), chooseCoverImage: vi.fn() },
 }));
 vi.mock("~/lib/native/client", () => ({ native }));
+vi.mock("~/lib/native/effect-client", () => ({ effectNative: native }));
 
 const VIDEO: YoutubeVideo = {
   videoId: "dQw4w9WgXcQ",
