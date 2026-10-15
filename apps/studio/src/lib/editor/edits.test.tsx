@@ -5,7 +5,12 @@ import type { EditorChart, NoteType } from "~/lib/native/types";
 
 import { createChartDocument } from "./document";
 import {
+  addNote,
+  canSplit,
+  defaultLength,
   deleteNotes,
+  lineAt,
+  splitNote,
   fits,
   gridStep,
   lengthLimits,
@@ -198,5 +203,91 @@ describe("edits", () => {
     doc.edit("Type", (tx) => toggleFlag(tx, doc.chart(), new Set([100, 101]), "golden"));
     flush();
     expect([100, 101].map((id) => find(doc.chart(), id)!.type)).toEqual(["golden", "golden"]);
+  });
+
+  it("finds the line a time falls in, between the line breaks", () => {
+    expect(lineAt(chart, 1, 0)).toBe(10);
+    expect(lineAt(chart, 1, 2.4)).toBe(10);
+    // The stored break is at 2.5.
+    expect(lineAt(chart, 1, 2.6)).toBe(11);
+    expect(lineAt(chart, 1, 9)).toBe(11);
+    expect(lineAt(chart, 2, 1)).toBeNull();
+  });
+
+  it("adds a note on the grid to the line it falls in, without a syllable", () => {
+    const doc = setup();
+    let id: number | null = 0;
+    doc.edit("Add", (tx) => (id = addNote(tx, chart, { singerId: 1, start: 3.42, duration: 0.01, pitch: 60 }, 10)));
+    flush();
+    const line = doc.chart().singers[0]!.lines.find((item) => item.notes.some((n) => n.id === id))!;
+    expect(line.id).toBe(11);
+    expect(find(doc.chart(), id)).toMatchObject({
+      start: expect.closeTo(3.4, 9),
+      duration: expect.closeTo(0.05, 9),
+      lyric: "",
+      edited: true,
+    });
+    expect(defaultLength(chart)).toBeCloseTo(0.15);
+  });
+
+  it("cuts a new note short at its line's stored break, and adds none where not a step fits", () => {
+    const doc = setup();
+    const add = (start: number, duration: number, length = 10) => {
+      let id: number | null = null;
+      doc.edit("Add", (tx) => (id = addNote(tx, chart, { singerId: 1, start, duration, pitch: 60 }, length)));
+      flush();
+      return id === null ? null : find(doc.chart(), id);
+    };
+    // The break after line 10 is at 2.5.
+    expect(add(2.3, 0.5)).toMatchObject({ start: expect.closeTo(2.3, 9), duration: expect.closeTo(0.2, 9) });
+    expect(add(2.49, 0.5)).toBeNull();
+    // Not past the song's end either.
+    expect(add(9.9, 0.5)).toMatchObject({ duration: expect.closeTo(0.1, 9) });
+  });
+
+  it("never starts a new note before 0", () => {
+    // With the grid from 0.03 s, the grid line nearest 0 is at -0.02 s.
+    const shifted = { ...chart, gap: 0.03 };
+    const doc = setup();
+    let id: number | null = null;
+    doc.edit("Add", (tx) => (id = addNote(tx, shifted, { singerId: 1, start: 0, duration: 0.1, pitch: 60 }, 10)));
+    flush();
+    expect(find(doc.chart(), id!)!.start).toBeCloseTo(0.03, 9);
+  });
+
+  it("keeps lines apart at a default break: up to the next line's first note", () => {
+    const unstored: EditorChart = {
+      ...chart,
+      singers: chart.singers.map((singer) => ({
+        ...singer,
+        lines: singer.lines.map((line) => ({ ...line, switchStart: null })),
+      })),
+    };
+    const placed = placeNotes(unstored, 10);
+    // Line 10's last note ends at 2.1, line 11 starts at 3.
+    expect(moveLimits(placed, new Set([102])).max).toBeCloseTo(0.9);
+    expect(moveLimits(placed, new Set([103])).min).toBeCloseTo(-0.9);
+  });
+
+  it("splits a note on the grid: the second part holds the syllable", () => {
+    const doc = setup();
+    let second: number | null = null;
+    doc.edit("Split", (tx) => (second = splitNote(tx, chart, 101, 1.62)));
+    flush();
+    expect(find(doc.chart(), 101)).toMatchObject({ start: 1.5, duration: expect.closeTo(0.1, 9), lyric: "wa" });
+    expect(find(doc.chart(), second!)).toMatchObject({
+      start: expect.closeTo(1.6, 9),
+      duration: expect.closeTo(0.2, 9),
+      lyric: "~",
+      pitch: 64,
+    });
+  });
+
+  it("doesn't split closer than a step to an end", () => {
+    expect(canSplit(chart, { start: 1.5, duration: 0.3 }, 1.52)).toBe(false);
+    expect(canSplit(chart, { start: 1.5, duration: 0.3 }, 1.55)).toBe(true);
+    expect(canSplit(chart, { start: 1.5, duration: 0.3 }, 1.79)).toBe(false);
+    const doc = setup();
+    expect(doc.edit("Split", (tx) => void splitNote(tx, chart, 101, 1.52))).toBe(false);
   });
 });

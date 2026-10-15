@@ -2,6 +2,7 @@ import { createSignal, For, Show } from "solid-js";
 
 import type { DrawnNote, LineBreak } from "~/lib/editor/chart";
 import { type DragPreview, type NotePart, previewed, type RollScale } from "~/lib/editor/note-editing";
+import type { Tool } from "~/lib/editor/tools";
 import {
   type PitchRange,
   pitchName,
@@ -53,6 +54,12 @@ const MIN_EDGES_PX = 12;
 /** A press that moves less than this is a click, not a drag (px). */
 const DRAG_PX = 3;
 
+/** A point in the roll: seconds and pitch. */
+export interface RollPoint {
+  time: number;
+  pitch: number;
+}
+
 /** What a selection box covers: seconds and pitches, both inclusive. */
 export interface SelectionBox {
   from: number;
@@ -67,8 +74,10 @@ export interface SelectionBox {
  * one). Only what is in view is given; the playhead is drawn over all lanes (`Playhead`).
  *
  * Notes look as `roll-note` (styles.css) says: selected ones lime with resize grips, overlapping ones a red border and
- * ⚠, rap ones italic. A click on empty space is `onEmptyClick` (at
- * its time); a drag there draws a selection box (`onBox`, with whether Shift or Cmd/Ctrl added to the selection).
+ * ⚠, rap ones italic. What a press does depends on the tool: with Select a click on empty space is `onEmptyClick` (at
+ * its time) and a drag there draws a selection box (`onBox`, with whether Shift or Cmd/Ctrl added to the selection);
+ * with Draw a press there is `onDrawDown`; with Split a press on a note cuts it where `cut` shows (`onSplit`). A
+ * double-click on empty space adds a note, on a note types its syllable (`editingLyric`).
  */
 export function PianoRoll(props: {
   notes: DrawnNote[];
@@ -87,7 +96,30 @@ export function PianoRoll(props: {
   drag?: DragPreview | null;
   onEmptyClick: (seconds: number) => void;
   onBox: (box: SelectionBox, add: boolean) => void;
+  tool: Tool;
+  onDrawDown: (at: RollPoint, event: PointerEvent, scale: RollScale) => void;
+  /** A note being drawn, drawn faintly. */
+  drawing?: { start: number; duration: number; pitch: number } | null;
+  onEmptyDoubleClick: (at: RollPoint) => void;
+  /** Split tool: where the note under the pointer would be cut. */
+  cut?: { noteId: number; time: number; valid: boolean } | null;
+  onHover: (note: DrawnNote | null, seconds: number) => void;
+  onSplit: (note: DrawnNote, seconds: number, every: boolean) => void;
+  onNoteDoubleClick: (note: DrawnNote) => void;
+  /** The note whose syllable is being typed, and what to do with the text (null: cancelled; Tab moves on). */
+  editingLyric?: number | null;
+  onLyricDone: (text: string | null, move?: 1 | -1) => void;
 }) {
+  let area: HTMLDivElement | undefined;
+  /** The time and pitch under a pointer. */
+  const pointAt = (event: { clientX: number; clientY: number }): RollPoint => {
+    const rect = area!.getBoundingClientRect();
+    return {
+      time: xToTime(props.view, event.clientX - rect.left),
+      pitch: yToPitch(props.range, rowHeight(), event.clientY - rect.top),
+    };
+  };
+  const scale = (): RollScale => ({ pxPerSecond: props.view.pxPerSecond, rowHeight: rowHeight() });
   const rowHeight = () => props.height / rowCount(props.range);
   /** Where the drag's label goes: just above the pressed note, as it is drawn now. */
   const dragLabel = () => {
@@ -101,6 +133,30 @@ export function PianoRoll(props: {
       y: Math.max(0, pitchToY(props.range, rowHeight(), shown.pitch) - 18),
     };
   };
+  /** The Split tool's cut line: across the hovered note's row, at the cut. */
+  const cutLine = () => {
+    const cut = props.cut;
+    const note = cut && props.notes.find((item) => item.id === cut.noteId);
+    if (!cut || !note || props.tool !== "split") return null;
+    return {
+      x: timeToX(props.view, cut.time),
+      y: pitchToY(props.range, rowHeight(), note.pitch) - 2,
+      height: rowHeight() + 2,
+      valid: cut.valid,
+    };
+  };
+  /** Where the syllable being typed is edited: over its note, at least wide enough to type in. */
+  const lyricField = () => {
+    const note = props.notes.find((item) => item.id === props.editingLyric);
+    if (!note) return null;
+    return {
+      lyric: note.lyric,
+      x: timeToX(props.view, note.start),
+      y: pitchToY(props.range, rowHeight(), note.pitch),
+      width: Math.max(80, note.duration * props.view.pxPerSecond),
+      height: Math.max(18, rowHeight()),
+    };
+  };
   /** The selection box being drawn, in px from the drawing area's corner. */
   const [box, setBox] = createSignal<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
 
@@ -110,19 +166,32 @@ export function PianoRoll(props: {
     const at = (pointer: PointerEvent) => ({ x: pointer.clientX - rect.left, y: pointer.clientY - rect.top });
     const start = at(event);
     let dragging = false;
+    /** The box as last drawn (the signal is written on the next microtask; a release can come first). */
+    let drawn: { x0: number; y0: number; x1: number; y1: number } | null = null;
     area.setPointerCapture(event.pointerId);
     const move = (pointer: PointerEvent) => {
       const now = at(pointer);
       if (!dragging && Math.hypot(now.x - start.x, now.y - start.y) < DRAG_PX) return;
       dragging = true;
-      setBox({ x0: start.x, y0: start.y, x1: now.x, y1: now.y });
+      drawn = { x0: start.x, y0: start.y, x1: now.x, y1: now.y };
+      setBox(drawn);
     };
-    const up = (pointer: PointerEvent) => {
+    const stop = () => {
       area.removeEventListener("pointermove", move);
       area.removeEventListener("pointerup", up);
       area.removeEventListener("pointercancel", up);
-      const drawn = box();
+      window.removeEventListener("keydown", escape, true);
       setBox(null);
+    };
+    /** Esc drops the box (and goes no further: it isn't a deselect or a tool change). */
+    const escape = (key: KeyboardEvent) => {
+      if (key.key !== "Escape" || !dragging) return;
+      key.preventDefault();
+      key.stopImmediatePropagation();
+      stop();
+    };
+    const up = (pointer: PointerEvent) => {
+      stop();
       if (!dragging || !drawn || pointer.type === "pointercancel") {
         if (!dragging) props.onEmptyClick(xToTime(props.view, start.x));
         return;
@@ -142,6 +211,7 @@ export function PianoRoll(props: {
     area.addEventListener("pointermove", move);
     area.addEventListener("pointerup", up);
     area.addEventListener("pointercancel", up);
+    window.addEventListener("keydown", escape, true);
   };
   const rows = () => {
     const pitches: number[] = [];
@@ -166,9 +236,15 @@ export function PianoRoll(props: {
       <div
         class="relative min-w-0 flex-1 overflow-hidden bg-background"
         data-testid="roll-area"
+        data-tool={props.tool}
+        ref={(element) => (area = element)}
         onPointerDown={(event) => {
           if (event.button !== 0 || event.target !== event.currentTarget) return;
-          startBox(event);
+          if (props.tool === "draw") props.onDrawDown(pointAt(event), event, scale());
+          else startBox(event);
+        }}
+        onDblClick={(event) => {
+          if (event.target === event.currentTarget) props.onEmptyDoubleClick(pointAt(event));
         }}
       >
         <For each={rows()}>
@@ -202,26 +278,37 @@ export function PianoRoll(props: {
             />
           )}
         </For>
-        <For each={props.notes}>
+        <For each={props.notes} keyed={(item) => item.id}>
           {(note) => {
+            // Keyed by id: an edit (which makes new note objects) updates the element instead of making a new one.
             /** Where the note is drawn: moved along while it is dragged. */
-            const shown = () => previewed(note, props.drag ?? null);
+            const shown = () => previewed(note(), props.drag ?? null);
             const widthPx = () => shown().duration * props.view.pxPerSecond;
             const press = (event: PointerEvent, part: NotePart) => {
               if (event.button !== 0) return;
               event.stopPropagation();
-              props.onNoteDown(note, event, part, { pxPerSecond: props.view.pxPerSecond, rowHeight: rowHeight() });
+              if (props.tool === "split") props.onSplit(note(), pointAt(event).time, event.shiftKey);
+              else props.onNoteDown(note(), event, part, scale());
             };
             return (
               <div
-                data-singer={note.singer}
-                data-type={note.type}
-                data-selected={props.selected.has(note.id) ? "true" : undefined}
-                data-overlap={props.overlapping.has(note.id) ? "" : undefined}
-                aria-selected={props.selected.has(note.id) ? "true" : "false"}
-                title={noteTitle(note, props.overlapping.has(note.id))}
+                data-singer={note().singer}
+                data-type={note().type}
+                data-selected={props.selected.has(note().id) ? "true" : undefined}
+                data-overlap={props.overlapping.has(note().id) ? "" : undefined}
+                aria-selected={props.selected.has(note().id) ? "true" : "false"}
+                title={noteTitle(note(), props.overlapping.has(note().id))}
                 onPointerDown={(event) => press(event, "body")}
-                class="roll-note cursor-grab"
+                onPointerMove={(event) => {
+                  if (props.tool === "split") props.onHover(note(), pointAt(event).time);
+                }}
+                onPointerLeave={() => props.onHover(null, 0)}
+                onDblClick={(event) => {
+                  event.stopPropagation();
+                  props.onNoteDoubleClick(note());
+                }}
+                data-tool={props.tool}
+                class="roll-note cursor-grab data-[tool=split]:cursor-scissors"
                 style={{
                   left: `${timeToX(props.view, shown().start)}px`,
                   width: `${Math.max(2, widthPx() - 1)}px`,
@@ -232,9 +319,9 @@ export function PianoRoll(props: {
                 data-testid="roll-note"
               >
                 {/* Too narrow for a readable syllable: the title still names it. */}
-                {widthPx() >= MIN_LABEL_PX ? noteLabel(note, props.overlapping.has(note.id)) : ""}
+                {widthPx() >= MIN_LABEL_PX ? noteLabel(note(), props.overlapping.has(note().id)) : ""}
                 {/* Edges move the start or end; a note too narrow for them is only moved. */}
-                <Show when={widthPx() >= MIN_EDGES_PX}>
+                <Show when={widthPx() >= MIN_EDGES_PX && props.tool !== "split"}>
                   <span
                     class="absolute inset-y-0 left-0 w-1.5 cursor-ew-resize"
                     onPointerDown={(event) => press(event, "start")}
@@ -250,6 +337,61 @@ export function PianoRoll(props: {
             );
           }}
         </For>
+        <Show when={props.drawing}>
+          {(drawn) => (
+            <div
+              class="pointer-events-none roll-note opacity-70"
+              data-selected="true"
+              style={{
+                left: `${timeToX(props.view, drawn().start)}px`,
+                width: `${Math.max(2, drawn().duration * props.view.pxPerSecond - 1)}px`,
+                top: `${pitchToY(props.range, rowHeight(), drawn().pitch) + 1}px`,
+                height: `${Math.max(4, rowHeight() - 2)}px`,
+              }}
+              data-testid="drawing-note"
+            />
+          )}
+        </Show>
+        <Show when={cutLine()}>
+          {(line) => (
+            <div
+              class="pointer-events-none absolute z-20 w-0.5 -translate-x-1/2 rounded-full bg-foreground data-invalid:bg-destructive"
+              data-invalid={line().valid ? undefined : ""}
+              style={{ left: `${line().x}px`, top: `${line().y}px`, height: `${line().height}px` }}
+              data-testid="split-cut"
+            />
+          )}
+        </Show>
+        <Show when={lyricField()}>
+          {(field) => (
+            <input
+              ref={(input) => queueMicrotask(() => input.select())}
+              class="absolute z-40 rounded-[3px] border border-ring bg-field px-1 font-sans text-[11px] text-foreground outline-none"
+              style={{
+                left: `${field().x}px`,
+                top: `${field().y}px`,
+                width: `${field().width}px`,
+                height: `${field().height}px`,
+              }}
+              value={field().lyric}
+              aria-label="Syllable"
+              spellcheck={false}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") props.onLyricDone(event.currentTarget.value);
+                else if (event.key === "Escape") props.onLyricDone(null);
+                else if (event.key === "Tab") props.onLyricDone(event.currentTarget.value, event.shiftKey ? -1 : 1);
+                else return;
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+              onBlur={(event) => {
+                if (props.editingLyric !== null && props.editingLyric !== undefined)
+                  props.onLyricDone(event.currentTarget.value);
+              }}
+              data-testid="lyric-input"
+            />
+          )}
+        </Show>
         <Show when={dragLabel()}>
           {(label) => (
             <div

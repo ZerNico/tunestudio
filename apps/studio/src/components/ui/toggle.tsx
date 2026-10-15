@@ -24,6 +24,8 @@ export const toggleVariants = cva(
         sm: "size-[30px]",
         xs: "h-[22px] rounded-[5px] px-[7px] text-[10px] [&_svg:not([class*='size-'])]:size-3",
         segment: "h-7 gap-1.5 rounded-[6px] px-3 text-[11.5px] [&_svg:not([class*='size-'])]:size-3.5",
+        /** An icon-only segment (the editor's tool strip). */
+        "segment-icon": "size-7 rounded-[6px] [&_svg:not([class*='size-'])]:size-3.5",
         lg: "h-[26px] gap-[5px] rounded-[5px] px-2 text-[10px] [&_svg:not([class*='size-'])]:size-3.5",
       },
     },

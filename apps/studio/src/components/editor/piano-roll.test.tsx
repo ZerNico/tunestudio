@@ -3,6 +3,7 @@ import { flush } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
 
 import type { DrawnNote, LineSpan } from "~/lib/editor/chart";
+import type { Tool } from "~/lib/editor/tools";
 
 import { LyricsLane } from "./lanes";
 import { PianoRoll } from "./piano-roll";
@@ -30,6 +31,13 @@ const handlers = () => ({
   onNoteDown: vi.fn(),
   onEmptyClick: vi.fn(),
   onBox: vi.fn(),
+  tool: "select" as Tool,
+  onDrawDown: vi.fn(),
+  onEmptyDoubleClick: vi.fn(),
+  onHover: vi.fn(),
+  onSplit: vi.fn(),
+  onNoteDoubleClick: vi.fn(),
+  onLyricDone: vi.fn(),
 });
 
 /** The drawing area at the page's corner, 800 × 180 px, with pointer capture (jsdom has none). */
@@ -111,6 +119,24 @@ describe("PianoRoll", () => {
     expect(screen.queryByTestId("selection-box")).toBeNull();
   });
 
+  it("drops the selection box on Esc, before anything else hears it", () => {
+    const props = handlers();
+    render(() => <PianoRoll notes={[]} breaks={[]} range={range} view={view} width={800} height={180} {...props} />);
+    const area = rollArea();
+    const later = vi.fn();
+    window.addEventListener("keydown", later);
+    fireEvent.pointerDown(area, { button: 0, clientX: 100, clientY: 15, pointerId: 1 });
+    fireEvent.pointerMove(area, { clientX: 300, clientY: 85, pointerId: 1 });
+    fireEvent.keyDown(window, { key: "Escape" });
+    flush();
+    expect(screen.queryByTestId("selection-box")).toBeNull();
+    expect(later).not.toHaveBeenCalled();
+    fireEvent.pointerUp(area, { clientX: 300, clientY: 85, pointerId: 1 });
+    expect(props.onBox).not.toHaveBeenCalled();
+    expect(props.onEmptyClick).not.toHaveBeenCalled();
+    window.removeEventListener("keydown", later);
+  });
+
   it("reports a press on a note's body or edges, with the roll's scale", () => {
     const props = handlers();
     render(() => (
@@ -162,6 +188,72 @@ describe("PianoRoll", () => {
     expect(moved.style.left).toBe("150px");
     expect(moved.style.top).toBe("61px");
     expect(screen.getByTestId("drag-label")).toHaveTextContent("+2 steps · F♯4");
+  });
+});
+
+describe("PianoRoll tools", () => {
+  const roll = (extra: Partial<ReturnType<typeof handlers>> & Record<string, unknown> = {}) => {
+    const props = { ...handlers(), ...extra };
+    render(() => (
+      <PianoRoll
+        notes={[note(1, 11, "Som")]}
+        breaks={[]}
+        range={range}
+        view={view}
+        width={800}
+        height={180}
+        {...props}
+      />
+    ));
+    return { props, area: rollArea() };
+  };
+
+  it("draws with a press on empty space in the Draw tool, with the time and pitch there", () => {
+    const { props, area } = roll({ tool: "draw" });
+    fireEvent.pointerDown(area, { button: 0, clientX: 250, clientY: 85, pointerId: 1 });
+    expect(props.onDrawDown).toHaveBeenCalledWith({ time: 12.5, pitch: 64 }, expect.anything(), {
+      pxPerSecond: 100,
+      rowHeight: 10,
+    });
+    expect(props.onEmptyClick).not.toHaveBeenCalled();
+  });
+
+  it("splits where a note is clicked in the Split tool, and shows the cut", () => {
+    const { props } = roll({ tool: "split", cut: { noteId: 1, time: 11.2, valid: false } });
+    const target = screen.getByTestId("roll-note");
+    fireEvent.pointerMove(target, { clientX: 120, clientY: 85 });
+    expect(props.onHover).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }), 11.2);
+    fireEvent.pointerDown(target, { button: 0, clientX: 120, clientY: 85, shiftKey: true });
+    expect(props.onSplit).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }), 11.2, true);
+    expect(props.onNoteDown).not.toHaveBeenCalled();
+    const cut = screen.getByTestId("split-cut");
+    expect(Number.parseFloat(cut.style.left)).toBeCloseTo(120);
+    expect(cut).toHaveAttribute("data-invalid");
+    // No resize edges while splitting.
+    expect(screen.queryByTestId("note-end-edge")).toBeNull();
+  });
+
+  it("adds a note on a double-click on empty space, and types a syllable on one on a note", () => {
+    const { props, area } = roll();
+    fireEvent.dblClick(area, { clientX: 250, clientY: 85 });
+    expect(props.onEmptyDoubleClick).toHaveBeenCalledWith({ time: 12.5, pitch: 64 });
+    fireEvent.dblClick(screen.getByTestId("roll-note"));
+    expect(props.onNoteDoubleClick).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }));
+  });
+
+  it("types a syllable in place: Enter keeps it, Tab goes on, Esc drops it", () => {
+    const { props } = roll({ editingLyric: 1 });
+    const input = screen.getByTestId("lyric-input") as HTMLInputElement;
+    expect(input.value).toBe("Som");
+    input.value = "Sonn";
+    fireEvent.keyDown(input, { key: "Tab" });
+    expect(props.onLyricDone).toHaveBeenLastCalledWith("Sonn", 1);
+    fireEvent.keyDown(input, { key: "Tab", shiftKey: true });
+    expect(props.onLyricDone).toHaveBeenLastCalledWith("Sonn", -1);
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(props.onLyricDone).toHaveBeenLastCalledWith(null);
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(props.onLyricDone).toHaveBeenLastCalledWith("Sonn");
   });
 });
 

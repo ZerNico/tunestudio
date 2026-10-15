@@ -1,11 +1,12 @@
 /**
  * Editing notes: what the selection can do and how far it can go, without Solid or the document. Notes keep to the
- * grid (a step is 15 / #BPM seconds from #GAP) and the song, and never cross a line break the chart stores (lines
- * change by moving the breaks). They may overlap while editing (pasting a section over others is easier that way);
+ * grid (a step is 15 / #BPM seconds from #GAP) and the song, and stay in their line's room: up to its stored break,
+ * or without one, up to the next line's first note (lines never interleave; they change by moving the breaks). They may overlap while editing (pasting a section over others is easier that way);
  * `overlapping` finds them, to show as a problem. The edits record through an `EditRecorder`.
  */
 import type { EditorChart, EditorNote, NoteType } from "~/lib/native/types";
 
+import { defaultSwitch } from "./chart";
 import type { EditRecorder } from "./document";
 
 /** Times closer than this are the same (seconds, against float rounding). */
@@ -23,7 +24,43 @@ export function onGrid(chart: EditorChart, seconds: number): number {
   return chart.gap + Math.round((seconds - chart.gap) / step) * step;
 }
 
-/** A note with the room its line has: from the stored break before it (or 0) to its own (or the song's end). */
+/** The highest grid line at or below `seconds`. */
+export function gridFloor(chart: EditorChart, seconds: number): number {
+  const step = gridStep(chart);
+  return chart.gap + Math.floor((seconds - chart.gap) / step + EPSILON) * step;
+}
+
+/** The lowest grid line at or above `seconds`. */
+export function gridCeil(chart: EditorChart, seconds: number): number {
+  const step = gridStep(chart);
+  return chart.gap + Math.ceil((seconds - chart.gap) / step - EPSILON) * step;
+}
+
+/**
+ * The room each line has (by id): from the line before it (its stored break, else the end of its notes; 0 for the
+ * first) to the line after it (this line's stored break, else the next line's first note; the song's end for the
+ * last).
+ */
+export function lineRooms(chart: EditorChart, length: number): Map<number, { before: number; after: number }> {
+  const rooms = new Map<number, { before: number; after: number }>();
+  for (const singer of chart.singers) {
+    const lines = singer.lines.filter((line) => line.notes.length > 0);
+    const end = (line: (typeof lines)[number]) =>
+      line.switchStart ?? Math.max(...line.notes.map((note) => note.start + note.duration));
+    lines.forEach((line, l) => {
+      const previous = lines[l - 1];
+      const next = lines[l + 1];
+      rooms.set(line.id, {
+        before: previous ? end(previous) : 0,
+        after: next ? (line.switchStart ?? Math.min(...next.notes.map((note) => note.start))) : length,
+      });
+    });
+    for (const line of singer.lines) if (!rooms.has(line.id)) rooms.set(line.id, { before: 0, after: length });
+  }
+  return rooms;
+}
+
+/** A note with the room its line has (`lineRooms`). */
 interface Placed extends EditorNote {
   singerId: number;
   lineId: number;
@@ -31,22 +68,20 @@ interface Placed extends EditorNote {
   after: number;
 }
 
-/** Every note with the stored line breaks it can't cross. */
+/** Every note with its line's room. */
 export function placeNotes(chart: EditorChart, length: number): Map<number, Placed> {
+  const rooms = lineRooms(chart, length);
   const placed = new Map<number, Placed>();
   for (const singer of chart.singers) {
-    singer.lines.forEach((line, l) => {
-      // A stored break ends the line before it and this one.
-      const before = l > 0 ? (singer.lines[l - 1]!.switchStart ?? 0) : 0;
-      const after = l < singer.lines.length - 1 ? (line.switchStart ?? length) : length;
-      for (const note of line.notes)
-        placed.set(note.id, { ...note, singerId: singer.id, lineId: line.id, before, after });
-    });
+    for (const line of singer.lines) {
+      const room = rooms.get(line.id)!;
+      for (const note of line.notes) placed.set(note.id, { ...note, singerId: singer.id, lineId: line.id, ...room });
+    }
   }
   return placed;
 }
 
-/** How far (seconds) the selected notes can move together: up to a stored break, or the song's start or end. */
+/** How far (seconds) the selected notes can move together: within their lines' room. */
 export function moveLimits(placed: Map<number, Placed>, ids: ReadonlySet<number>) {
   let min = -Infinity;
   let max = Infinity;
@@ -248,4 +283,80 @@ export function overlapping(chart: EditorChart): Set<number> {
     }
   }
   return found;
+}
+
+/** How long a note added with a click is at first: about an eighth of a second (a short syllable), in whole steps. */
+export function defaultLength(chart: EditorChart): number {
+  const step = gridStep(chart);
+  return Math.max(1, Math.round(0.125 / step)) * step;
+}
+
+/**
+ * The line of a singer's that `time` falls in: lines reach from one line break (stored, or the default) to the next,
+ * so a time before the first is in the first and one after the last in the last. Null without lines.
+ */
+export function lineAt(chart: EditorChart, singerId: number, time: number): number | null {
+  const lines = chart.singers.find((singer) => singer.id === singerId)?.lines.filter((line) => line.notes.length > 0);
+  if (!lines?.length) return null;
+  for (let i = 0; i < lines.length - 1; i++) {
+    const line = lines[i]!;
+    const last = line.notes.at(-1)!;
+    const gapStart = last.start + last.duration;
+    const gapEnd = Math.max(gapStart, lines[i + 1]!.notes[0]!.start);
+    if (time < (line.switchStart ?? defaultSwitch(gapStart, gapEnd))) return line.id;
+  }
+  return lines.at(-1)!.id;
+}
+
+/**
+ * Adds a note without a syllable yet to the singer's line at its start (or a first line when the singer has none):
+ * on the grid, inside that line's room and the song, cut short where it would reach past them. Returns its id, or
+ * null when not even a step fits there.
+ */
+export function addNote(
+  tx: EditRecorder,
+  chart: EditorChart,
+  note: { singerId: number; start: number; duration: number; pitch: number },
+  length: number,
+): number | null {
+  const step = gridStep(chart);
+  const existing = lineAt(chart, note.singerId, note.start);
+  const room = (existing === null ? undefined : lineRooms(chart, length).get(existing)) ?? { before: 0, after: length };
+  const start = Math.max(gridCeil(chart, room.before), onGrid(chart, note.start));
+  const end = Math.min(gridFloor(chart, room.after), Math.max(start + step, onGrid(chart, start + note.duration)));
+  if (end - start < step - EPSILON) return null;
+  const lineId =
+    existing ??
+    chart.singers.find((singer) => singer.id === note.singerId)?.lines[0]?.id ??
+    tx.createLine({ singerId: note.singerId, switchStart: null, switchEnd: null });
+  return tx.createNote({ lineId, start, duration: end - start, pitch: note.pitch, lyric: "", type: "normal" });
+}
+
+/**
+ * Splits a note at `time` (on the grid, a step or more from either end): the first part keeps the syllable, the second
+ * holds it (`~`). Returns the second part, or null when the note is too short to split there.
+ */
+export function splitNote(tx: EditRecorder, chart: EditorChart, id: number, time: number): number | null {
+  const note = tx.note(id);
+  if (!note) return null;
+  const step = gridStep(chart);
+  const at = onGrid(chart, time);
+  const end = note.start + note.duration;
+  if (at < note.start + step - EPSILON || at > end - step + EPSILON) return null;
+  tx.updateNote(id, { duration: at - note.start });
+  return tx.createNote({
+    lineId: note.lineId,
+    start: at,
+    duration: onGrid(chart, end) - at,
+    pitch: note.pitch,
+    lyric: "~",
+    type: note.type,
+  });
+}
+
+/** Whether a split at `time` (put on the grid) leaves a step or more either side of it. */
+export function canSplit(chart: EditorChart, note: { start: number; duration: number }, time: number): boolean {
+  const step = gridStep(chart);
+  const at = onGrid(chart, time);
+  return at >= note.start + step - EPSILON && at <= note.start + note.duration - step + EPSILON;
 }

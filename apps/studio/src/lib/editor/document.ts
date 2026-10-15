@@ -150,11 +150,15 @@ export function createChartDocument<Selection>(options: {
     });
   };
 
-  /** Records an edit: what `build` changes, as one undoable step. Returns false when it changed nothing. */
+  /**
+   * Records an edit: what `build` changes, as one undoable step. Returns false when it changed nothing. `selection` is
+   * the selection after it (as of then; `selectionAfter` works it out once `build` ran, for ids it made), which redo
+   * brings back.
+   */
   const edit = (
     label: string,
     build: (tx: EditRecorder) => void,
-    edit: { merge?: string; selection?: Selection } = {},
+    edit: { merge?: string; selection?: Selection; selectionAfter?: () => Selection } = {},
   ): boolean => {
     if (failed) return false;
     const notes = new Map<number, (NoteFields & { id: number }) | null>();
@@ -229,8 +233,9 @@ export function createChartDocument<Selection>(options: {
       changes.push({ table: "song", before: songBefore, after: songAfter });
     if (changes.length === 0) return false;
     commit(changes);
-    const after = edit.selection ?? before;
-    if (edit.selection !== undefined) options.setSelection(edit.selection);
+    const chosen = edit.selectionAfter ? edit.selectionAfter() : edit.selection;
+    const after = chosen ?? before;
+    if (chosen !== undefined) options.setSelection(chosen);
     history.push({ label, changes, selection: { before, after }, merge: edit.merge, at: Date.now() });
     setVersion((v) => v + 1);
     return true;

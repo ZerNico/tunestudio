@@ -96,6 +96,10 @@ try {
       await notes.nth(4).click({ modifiers: ["ControlOrMeta"] });
       await page.mouse.move(0, 0);
       await shot(studio, "03b-project-editing");
+      // Undo from the title bar puts the freestyle note back, Redo makes it freestyle again.
+      await page.getByTestId("undo").click();
+      if ((await notes.nth(1).getAttribute("data-type")) === "freestyle") throw new Error("Undo didn't undo");
+      await page.getByTestId("redo").click();
       // Halfway through dragging "good" right and up: the preview and its label.
       const box = (await notes.nth(3).boundingBox())!;
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -103,6 +107,21 @@ try {
       await page.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2 - 70, { steps: 5 });
       await shot(studio, "03c-project-dragging");
       await page.mouse.up();
+      // The Split tool over "bye": the cut line where a click would split it.
+      await page.keyboard.press("c");
+      const bye = (await notes.nth(4).boundingBox())!;
+      await page.mouse.move(bye.x + bye.width * 0.4, bye.y + bye.height / 2);
+      await shot(studio, "03d-project-split-tool");
+      // The Draw tool: a new note drawn, its syllable being typed.
+      await page.keyboard.press("d");
+      await page.mouse.move(bye.x - 260, bye.y - 40);
+      await page.mouse.down();
+      await page.mouse.move(bye.x - 140, bye.y - 40, { steps: 4 });
+      await page.mouse.up();
+      await page.keyboard.type("new");
+      await shot(studio, "03e-project-draw-tool");
+      await page.keyboard.press("Enter");
+      await page.keyboard.press("v");
       await page.getByTestId("export-song").waitFor();
     }
     await page.getByTestId("close-project").click();

@@ -1,4 +1,3 @@
-import type { JSX } from "@solidjs/web";
 import { getRouteApi, useNavigate, useRouter } from "@tanstack/solid-router";
 import { createMemo, createSignal, onSettled, Show } from "solid-js";
 import DownloadIcon from "~icons/lucide/download";
@@ -8,6 +7,7 @@ import Redo2Icon from "~icons/lucide/redo-2";
 import Undo2Icon from "~icons/lucide/undo-2";
 import XIcon from "~icons/lucide/x";
 
+import { HistoryButton, ToolSwitch } from "~/components/editor/edit-controls";
 import { BreakLane, LyricsLane, OverviewBar, TimeRuler } from "~/components/editor/lanes";
 import { GUTTER_PX, PianoRoll } from "~/components/editor/piano-roll";
 import { Playhead } from "~/components/editor/playhead";
@@ -18,7 +18,6 @@ import { ReplaceExportDialog } from "~/components/project/replace-export-dialog"
 import { TitleBar } from "~/components/title-bar";
 import { Button } from "~/components/ui/button";
 import { toast } from "~/components/ui/toast";
-import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import { platform, revealLabel } from "~/lib/desktop";
 import { isTyping, runEditCommand, setEditHandler } from "~/lib/edit-commands";
 import { chartEnd, drawnNotes, lineBreaks, lineIndexAt, lineSpans, longest, stepLine } from "~/lib/editor/chart";
@@ -26,6 +25,7 @@ import { createChartDocument } from "~/lib/editor/document";
 import { overlapping } from "~/lib/editor/edits";
 import { createNoteEditing } from "~/lib/editor/note-editing";
 import { createPlayback } from "~/lib/editor/playback";
+import { createTools } from "~/lib/editor/tools";
 import {
   clampView,
   fitRange,
@@ -103,9 +103,17 @@ export default function ProjectScreen() {
   const chart = () => doc().chart();
   const notes = createMemo(() => drawnNotes(chart()));
   const lines = createMemo(() => lineSpans(chart()));
-  /** The pitch rows: they grow to fit notes moved past them, but don't shrink while editing (the roll would jump). */
+  /**
+   * The pitch rows: they grow to fit notes moved past them, but don't shrink while editing (the roll would jump); a
+   * chart loaded again starts over.
+   */
   let shownRange: PitchRange | null = null;
+  let rangeFor: unknown = null;
   const range = createMemo(() => {
+    if (rangeFor !== doc()) {
+      rangeFor = doc();
+      shownRange = null;
+    }
     const fitted = pitchRange(notes().map((note) => note.pitch));
     shownRange = shownRange
       ? { low: Math.min(shownRange.low, fitted.low), high: Math.max(shownRange.high, fitted.high) }
@@ -179,7 +187,8 @@ export default function ProjectScreen() {
     notes,
     selection,
     setSelection,
-    length,
+    // Notes stay inside the audio (not `length`, which grows with them); no limit until its length is known.
+    length: () => (playback.duration() > 0 ? playback.duration() : Infinity),
     playheadTime: () => playback.time(),
     onReveal: (note) => {
       if (!playback.playing()) seek(note.start);
@@ -190,6 +199,9 @@ export default function ProjectScreen() {
     },
     onRefused: (message) => toast.add({ title: message }),
   });
+
+  const tools = createTools();
+  const onKeyUp = (event: KeyboardEvent) => tools.keyUp(event);
 
   let editArea: HTMLDivElement | undefined;
   let rollArea: HTMLDivElement | undefined;
@@ -257,7 +269,16 @@ export default function ProjectScreen() {
         runEditCommand(command);
         return;
       }
+      // Esc: stops a drag first, then goes back to Select, then deselects.
+      if (event.key === "Escape" && !editing.busy() && tools.tool() !== "select") {
+        tools.setTool("select");
+        return;
+      }
       if (editing.key(event)) {
+        event.preventDefault();
+        return;
+      }
+      if (!event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && tools.keyDown(event)) {
         event.preventDefault();
         return;
       }
@@ -275,13 +296,27 @@ export default function ProjectScreen() {
       }
     };
     window.addEventListener("keydown", onKey);
-    const stopEditing = setEditHandler({ undo: () => doc().undo(), redo: () => doc().redo() });
+
+    window.addEventListener("keyup", onKeyUp);
+    // A drag in progress was worked out for the chart before the undo: it stops first.
+    const stopEditing = setEditHandler({
+      undo: () => {
+        editing.cancel();
+        doc().undo();
+      },
+      redo: () => {
+        editing.cancel();
+        doc().redo();
+      },
+    });
     return () => {
       stopEditing();
+      editing.cancel();
       pitchController.abort();
       observer.disconnect();
       editArea?.removeEventListener("wheel", onWheel);
       window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onKeyUp);
       playback.dispose();
     };
   });
@@ -326,17 +361,25 @@ export default function ProjectScreen() {
 
   return (
     <div class="flex h-dvh min-h-0 flex-col overflow-hidden bg-background" data-testid="project">
-      <TitleBar>
+      <TitleBar
+        start={
+          <>
+            <HistoryButton label={doc().undoLabel()} action="Undo" onClick={() => runEditCommand("undo")} testid="undo">
+              <Undo2Icon />
+            </HistoryButton>
+            <HistoryButton label={doc().redoLabel()} action="Redo" onClick={() => runEditCommand("redo")} testid="redo">
+              <Redo2Icon />
+            </HistoryButton>
+            <div class="mx-1.5 h-4 w-px bg-bar-border" aria-hidden="true" />
+            <ToolSwitch tool={tools.tool()} onTool={tools.setTool} />
+          </>
+        }
+      >
         <div class="mr-auto flex max-w-[420px] min-w-0 items-baseline gap-1.5 text-[12.5px]">
           <h1 class="m-0 truncate text-[12.5px] font-medium text-foreground">{overview().song.title || "Untitled"}</h1>
           <span class="truncate text-muted-foreground">· {overview().song.artist || "Unknown artist"}</span>
         </div>
-        <HistoryButton label={doc().undoLabel()} action="Undo" onClick={() => runEditCommand("undo")} testid="undo">
-          <Undo2Icon />
-        </HistoryButton>
-        <HistoryButton label={doc().redoLabel()} action="Redo" onClick={() => runEditCommand("redo")} testid="redo">
-          <Redo2Icon />
-        </HistoryButton>
+
         <Button
           variant={songPanel() ? "secondary" : "ghost"}
           size="sm"
@@ -400,6 +443,16 @@ export default function ProjectScreen() {
                   seek(seconds);
                 }}
                 onBox={(area, add) => editing.box(area, add)}
+                tool={tools.tool()}
+                onDrawDown={(at, event, scale) => editing.drawDown(event, at, scale)}
+                drawing={editing.drawing()}
+                onEmptyDoubleClick={(at) => editing.emptyDoubleClick(at)}
+                cut={editing.cut()}
+                onHover={(note, seconds) => editing.hover(note, seconds)}
+                onSplit={(note, seconds, every) => editing.splitAt(note, seconds, every)}
+                onNoteDoubleClick={(note) => editing.noteDoubleClick(note)}
+                editingLyric={editing.editingLyric()}
+                onLyricDone={(text, move) => editing.finishLyric(text, move)}
               />
             </div>
             <LyricsLane lines={visibleLines()} all={lines()} view={view()} duet={duet()} />
@@ -462,36 +515,5 @@ function OpeningOverlay(props: { progress: ImportProgress | null }) {
         <progress aria-label="Opening progress" max="100" value={percentOf(props.progress)} class={progressBarClass} />
       </div>
     </div>
-  );
-}
-
-/** Undo or Redo in the title bar: says what it would do ("Undo Move note"), disabled when there is nothing. */
-function HistoryButton(props: {
-  label: string | null;
-  action: "Undo" | "Redo";
-  onClick: () => void;
-  testid: string;
-  children: JSX.Element;
-}) {
-  const text = () => (props.label ? `${props.action} ${props.label}` : props.action);
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={(triggerProps: JSX.HTMLAttributes<HTMLButtonElement>) => (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label={text()}
-            disabled={!props.label}
-            onClick={() => props.onClick()}
-            data-testid={props.testid}
-            {...triggerProps}
-          >
-            {props.children}
-          </Button>
-        )}
-      />
-      <TooltipContent>{text()}</TooltipContent>
-    </Tooltip>
   );
 }

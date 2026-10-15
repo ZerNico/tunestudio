@@ -41,7 +41,8 @@ export function adjacentNote(
   direction: 1 | -1,
   time: number,
 ): DrawnNote | undefined {
-  const selected = notes.filter((note) => selection.includes(note.id));
+  const chosen = new Set(selection);
+  const selected = notes.filter((note) => chosen.has(note.id));
   if (selected.length === 0) {
     return direction === 1 ? notes.find((note) => note.start >= time) : notes.findLast((note) => note.start < time);
   }

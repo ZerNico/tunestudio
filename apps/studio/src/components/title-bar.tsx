@@ -1,4 +1,5 @@
 import type { JSX } from "@solidjs/web";
+import { Show } from "solid-js";
 
 import { BrandMark } from "~/components/brand-mark";
 import { appVersion, platform } from "~/lib/desktop";
@@ -6,9 +7,10 @@ import { appVersion, platform } from "~/lib/desktop";
 /**
  * The app's own title bar. The window has no native one (`titleBarStyle: "hidden"`): on macOS
  * the traffic lights sit at its left, on Windows and Linux the caption buttons at its right.
- * The bar drags the window; interactive children must opt out with `app-no-drag`.
+ * The bar drags the window; interactive children must opt out with `app-no-drag`. `start` goes right after the app's
+ * name (the editor's Undo and Redo), `children` at the other end.
  */
-export function TitleBar(props: { children?: JSX.Element }) {
+export function TitleBar(props: { start?: JSX.Element; children?: JSX.Element }) {
   return (
     <header
       data-slot="title-bar"
@@ -22,6 +24,9 @@ export function TitleBar(props: { children?: JSX.Element }) {
           v{appVersion}
         </span>
       </div>
+      <Show when={props.start}>
+        <div class="flex items-center gap-1 border-l border-bar-border pl-3 app-no-drag">{props.start}</div>
+      </Show>
       <div class="ml-auto flex items-center gap-1 app-no-drag">{props.children}</div>
     </header>
   );

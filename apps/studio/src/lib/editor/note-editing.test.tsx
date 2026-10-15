@@ -34,11 +34,11 @@ const chart: EditorChart = {
   ],
 };
 
-function setup() {
+function setup(playhead = 0, start: EditorChart = chart) {
   return createRoot(() => {
     const [selection, setSelection] = createSignal<number[]>([]);
     const doc = createChartDocument<number[]>({
-      chart,
+      chart: start,
       save: async () => {},
       onFailed: () => {},
       selection,
@@ -55,7 +55,7 @@ function setup() {
       selection,
       setSelection,
       length: () => 10,
-      playheadTime: () => 0,
+      playheadTime: () => playhead,
       onReveal,
       onRefused,
     });
@@ -103,8 +103,22 @@ function setup() {
         flush();
       }
     };
+    /** Draw tool: a press at `time` / `pitch` and a drag of `dx` px (none: a click). */
+    const draw = (time: number, pitch: number, dx?: number) => {
+      editing.drawDown(
+        { clientX: 0, clientY: 0, shiftKey: false, metaKey: false, ctrlKey: false },
+        { time, pitch },
+        {
+          pxPerSecond: 100,
+          rowHeight: 10,
+        },
+      );
+      if (dx !== undefined) pointer.dispatchEvent(Object.assign(new Event("pointermove"), { clientX: dx, clientY: 0 }));
+      pointer.dispatchEvent(new Event("pointerup"));
+      flush();
+    };
     const find = (id: number) => notes().find((item) => item.id === id);
-    return { doc, editing, selection, press, click, drag, find, onReveal, onRefused };
+    return { doc, editing, selection, press, click, drag, draw, find, notes, onReveal, onRefused };
   });
 }
 
@@ -257,5 +271,171 @@ describe("note editing", () => {
     expect(editing.drag()).toBeNull();
     expect(find(101)!.start).toBe(1.5);
     expect(doc.undoLabel()).toBeNull();
+  });
+
+  it("draws a note as long as the drag, in the line it falls in, then types its syllable", () => {
+    const { draw, notes, editing, selection, doc } = setup();
+    draw(2.02, 60, 30);
+    const added = notes().find((note) => note.pitch === 60)!;
+    // Line 10's break is at its default, right where its last note ends (1.8 s): 2 s is in line 11.
+    expect(added).toMatchObject({ start: 2, duration: expect.closeTo(0.3, 9), lyric: "", lineId: 11 });
+    expect(selection()).toEqual([added.id]);
+    expect(editing.editingLyric()).toBe(added.id);
+    expect(doc.undoLabel()).toBe("Add note");
+    editing.finishLyric("la ");
+    flush();
+    expect(notes().find((note) => note.id === added.id)!.lyric).toBe("la ");
+    expect(editing.editingLyric()).toBeNull();
+  });
+
+  it("adds a short note with a click or a double-click, then as long as the last drawn or clicked", () => {
+    const { draw, editing, notes, click } = setup();
+    draw(4, 70);
+    editing.finishLyric(null);
+    draw(6, 72, 40);
+    editing.finishLyric(null);
+    editing.emptyDoubleClick({ time: 5, pitch: 71 });
+    editing.finishLyric(null);
+    click(102);
+    draw(7, 73);
+    flush();
+    expect(
+      notes()
+        .filter((note) => note.pitch >= 70)
+        .map((note) => [note.start, note.duration]),
+    ).toEqual([
+      [4, expect.closeTo(0.15, 9)],
+      [5, expect.closeTo(0.4, 9)],
+      [6, expect.closeTo(0.4, 9)],
+      [7, expect.closeTo(0.3, 9)],
+    ]);
+  });
+
+  it("splits a note where the Split tool clicks, or every note at that time with Shift", () => {
+    const { editing, notes, find, selection } = setup();
+    editing.hover(find(101)!, 1.62);
+    flush();
+    expect(editing.cut()).toEqual({ noteId: 101, time: expect.closeTo(1.6, 9), valid: true });
+    editing.splitAt(find(101)!, 1.62, false);
+    flush();
+    expect(find(101)!.duration).toBeCloseTo(0.1, 9);
+    const second = notes().find((note) => note.lyric === "~")!;
+    expect(second.start).toBeCloseTo(1.6, 9);
+    expect(selection()).toEqual([101, second.id]);
+    editing.hover(find(100)!, 1.01);
+    flush();
+    expect(editing.cut()!.valid).toBe(false);
+  });
+
+  it("splits at the playhead with Cmd/Ctrl+K, and says so when it can't", () => {
+    const { press, find, onRefused, notes } = setup(1.1);
+    expect(press("k", { metaKey: true })).toBe(true);
+    expect(find(100)!.duration).toBeCloseTo(0.1, 9);
+    expect(notes()).toHaveLength(4);
+    const far = setup(2.5);
+    far.press("k", { ctrlKey: true });
+    expect(far.onRefused).toHaveBeenCalled();
+    expect(onRefused).not.toHaveBeenCalled();
+  });
+
+  it("types syllables one after another with Tab, from Enter on a selected note", () => {
+    const { click, press, editing, find } = setup();
+    click(100);
+    press("Enter");
+    expect(editing.editingLyric()).toBe(100);
+    editing.finishLyric("Wir ", 1);
+    flush();
+    expect(find(100)!.lyric).toBe("Wir ");
+    expect(editing.editingLyric()).toBe(101);
+    editing.finishLyric(null);
+    flush();
+    expect(find(101)!.lyric).toBe("walk");
+  });
+
+  it("brings back the new notes' selection on redo after adding, splitting and merging", () => {
+    const { draw, editing, doc, selection, find, click, press } = setup();
+    draw(4, 70);
+    editing.finishLyric(null);
+    const added = selection()[0]!;
+    doc.undo();
+    flush();
+    doc.redo();
+    flush();
+    expect(selection()).toEqual([added]);
+
+    editing.splitAt(find(101)!, 1.62, false);
+    flush();
+    const parts = selection();
+    expect(parts).toHaveLength(2);
+    doc.undo();
+    flush();
+    doc.redo();
+    flush();
+    expect(selection()).toEqual(parts);
+
+    click(100);
+    click(101, { shiftKey: true });
+    press("m");
+    doc.undo();
+    flush();
+    expect(selection()).toEqual([100, 101]);
+    doc.redo();
+    flush();
+    expect(selection()).toEqual([100]);
+  });
+
+  it("doesn't record a syllable left as it was", () => {
+    const { click, press, editing, doc, find } = setup();
+    click(100);
+    press("Enter");
+    editing.finishLyric("We ");
+    flush();
+    expect(doc.undoLabel()).toBeNull();
+    expect(find(100)!.edited).toBe(false);
+  });
+
+  it("adds to the singer of the last note pressed, even after a click deselected it", () => {
+    const duet: EditorChart = {
+      ...chart,
+      singers: [
+        ...chart.singers,
+        {
+          id: 2,
+          index: 2,
+          name: null,
+          lines: [{ id: 20, switchStart: null, switchEnd: null, notes: [note(200, 2, "da")] }],
+        },
+      ],
+    };
+    const { click, editing, notes } = setup(0, duet);
+    click(200);
+    // A double-click's first click deselects; the note still goes to singer 2.
+    editing.emptyClick();
+    editing.emptyDoubleClick({ time: 2.5, pitch: 72 });
+    flush();
+    expect(notes().find((item) => item.pitch === 72)).toMatchObject({ singer: 2, lineId: 20 });
+  });
+
+  it("stops a drag without changing anything when cancelled (before an undo)", () => {
+    const { drag, editing, find, doc } = setup();
+    drag(101, "body", [[50, 0]], false);
+    editing.cancel();
+    flush();
+    expect(editing.drag()).toBeNull();
+    expect(editing.busy()).toBe(false);
+    expect(find(101)!.start).toBe(1.5);
+    expect(doc.undoLabel()).toBeNull();
+  });
+
+  it("clears the cut line after a split, and says why when there's no room to add a note", () => {
+    const { editing, find, onRefused } = setup();
+    editing.hover(find(101)!, 1.62);
+    editing.splitAt(find(101)!, 1.62, false);
+    flush();
+    expect(editing.cut()).toBeNull();
+    // 10 s is the song's end.
+    editing.emptyDoubleClick({ time: 10, pitch: 60 });
+    flush();
+    expect(onRefused).toHaveBeenCalledWith(expect.stringContaining("no room"));
   });
 });
