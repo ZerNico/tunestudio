@@ -140,7 +140,6 @@ function createWindow(): BrowserWindow {
       webSecurity: true,
       devTools: !app.isPackaged,
       spellcheck: false,
-      additionalArguments: [`--ts-version=${app.getVersion()}`],
     },
   });
 

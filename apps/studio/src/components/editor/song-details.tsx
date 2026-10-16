@@ -6,6 +6,7 @@ import { createSignal } from "solid-js";
 
 import type { LineSpan } from "~/lib/editor/chart";
 import type { ChartDocument } from "~/lib/editor/document";
+import type { Selection } from "~/lib/editor/selection";
 import type { SongMarkers } from "~/lib/editor/song-markers";
 import type { EditorChart, LyricsLine, ProjectMedia } from "~/lib/native/types";
 
@@ -17,7 +18,7 @@ import { SongTiming } from "./song-timing";
 export function SongDetails(props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  doc: ChartDocument<number[]>;
+  doc: ChartDocument<Selection>;
   chart: EditorChart;
   media: readonly ProjectMedia[];
   artwork: ArtworkActions;
@@ -30,7 +31,7 @@ export function SongDetails(props: {
   lyrics?: readonly LyricsLine[];
 }) {
   const [coverOpen, setCoverOpen] = createSignal(false);
-  const edit = (label: string, build: Parameters<ChartDocument<number[]>["edit"]>[1]) => props.doc.edit(label, build);
+  const edit = (label: string, build: Parameters<ChartDocument<Selection>["edit"]>[1]) => props.doc.edit(label, build);
   return (
     <SongDetailsDialog
       open={props.open}

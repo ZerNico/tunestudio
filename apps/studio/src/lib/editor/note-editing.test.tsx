@@ -3,9 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { EditorChart } from "~/lib/native/types";
 
-import { drawnNotes } from "./chart";
+import { createBreakEditing } from "./break-editing";
+import { drawnNotes, lineBreaks } from "./chart";
 import { createChartDocument } from "./document";
 import { createNoteEditing, type NotePart } from "./note-editing";
+import { NOTHING, type Selection } from "./selection";
 import { testNote as note, testSong } from "./test-chart";
 
 /** Grid: 0.05 s steps from 1 s. */
@@ -28,8 +30,8 @@ const chart: EditorChart = {
 
 function setup(playhead = 0, start: EditorChart = chart, viewStart?: () => number) {
   return createRoot(() => {
-    const [selection, setSelection] = createSignal<number[]>([]);
-    const doc = createChartDocument<number[]>({
+    const [selection, setSelection] = createSignal<Selection>(NOTHING);
+    const doc = createChartDocument<Selection>({
       chart: start,
       save: async () => {},
       onFailed: () => {},
@@ -42,8 +44,20 @@ function setup(playhead = 0, start: EditorChart = chart, viewStart?: () => numbe
     const onAutoPitch = vi.fn();
     const onPitch = vi.fn();
     const pointer = new EventTarget();
+    const breaks = createMemo(() => lineBreaks(doc.chart()));
+    const oneBreak = createBreakEditing({
+      doc: () => doc,
+      selection,
+      setSelection,
+      singer: () => 1,
+      playheadTime: () => playhead,
+      onRefused,
+      pointerTarget: pointer,
+    });
     const editing = createNoteEditing({
       pointerTarget: pointer,
+      breaks,
+      oneBreak,
       viewStart,
       doc: () => doc,
       notes,
@@ -115,10 +129,30 @@ function setup(playhead = 0, start: EditorChart = chart, viewStart?: () => numbe
       flush();
     };
     const find = (id: number) => notes().find((item) => item.id === id);
+    /** The first line break, as drawn. */
+    const marker = () => lineBreaks(doc.chart())[0]!;
+    /** Presses the first break's marker (with `modifiers`) and drags it through `moves` (px, 100 px a second). */
+    const markerDown = (
+      modifiers: Partial<Record<"shiftKey" | "metaKey" | "ctrlKey", boolean>> = {},
+      moves: number[] = [],
+    ) => {
+      editing.breakDown(
+        marker(),
+        { clientX: 0, clientY: 0, shiftKey: false, metaKey: false, ctrlKey: false, ...modifiers },
+        100,
+      );
+      for (const clientX of moves) pointer.dispatchEvent(Object.assign(new Event("pointermove"), { clientX }));
+      flush();
+      pointer.dispatchEvent(new Event("pointerup"));
+      flush();
+    };
     return {
+      marker,
+      markerDown,
       doc,
       editing,
       selection,
+      setSelection,
       press,
       click,
       drag,
@@ -138,11 +172,11 @@ describe("note editing", () => {
   it("selects with clicks: one, a range with Shift, toggling with Cmd/Ctrl", () => {
     const { click, selection } = setup();
     click(100);
-    expect(selection()).toEqual([100]);
+    expect(selection().notes).toEqual([100]);
     click(102, { shiftKey: true });
-    expect(selection()).toEqual([100, 101, 102]);
+    expect(selection().notes).toEqual([100, 101, 102]);
     click(101, { metaKey: true });
-    expect(selection()).toEqual([100, 102]);
+    expect(selection().notes).toEqual([100, 102]);
   });
 
   it("leaves keys alone with nothing selected, except Tab and select all", () => {
@@ -150,12 +184,12 @@ describe("note editing", () => {
     expect(press("ArrowUp")).toBe(false);
     expect(press("Escape")).toBe(false);
     expect(press("Tab")).toBe(true);
-    expect(selection()).toEqual([100]);
+    expect(selection().notes).toEqual([100]);
     expect(onReveal).toHaveBeenCalledWith(expect.objectContaining({ id: 100 }));
     expect(press("a", { metaKey: true })).toBe(true);
-    expect(selection()).toEqual([100, 101, 102]);
+    expect(selection().notes).toEqual([100, 101, 102]);
     expect(press("Escape")).toBe(true);
-    expect(selection()).toEqual([]);
+    expect(selection().notes).toEqual([]);
   });
 
   it("changes pitch, position and length with the arrows, holding one as one undo step", () => {
@@ -190,7 +224,7 @@ describe("note editing", () => {
     press("Backspace");
     expect(find(100)).toBeUndefined();
     expect(find(101)).toBeUndefined();
-    expect(selection()).toEqual([]);
+    expect(selection().notes).toEqual([]);
   });
 
   it("merges neighbours into one note, and says why when it can't", () => {
@@ -199,7 +233,7 @@ describe("note editing", () => {
     click(101, { shiftKey: true });
     press("m");
     expect(find(100)!.lyric).toBe("We walk");
-    expect(selection()).toEqual([100]);
+    expect(selection().notes).toEqual([100]);
     click(102, { shiftKey: true });
     press("m");
     expect(onRefused).toHaveBeenCalledWith("Select notes next to each other in one line to merge them.");
@@ -271,9 +305,9 @@ describe("note editing", () => {
     click(101, { shiftKey: true });
     drag(101, "body", [[10, 0]]);
     expect([find(100)!.start, find(101)!.start]).toEqual([expect.closeTo(1.1, 9), expect.closeTo(1.6, 9)]);
-    expect(selection()).toEqual([100, 101]);
+    expect(selection().notes).toEqual([100, 101]);
     drag(101, "body", []);
-    expect(selection()).toEqual([101]);
+    expect(selection().notes).toEqual([101]);
   });
 
   it("puts the notes back on Esc", () => {
@@ -287,11 +321,16 @@ describe("note editing", () => {
 
   it("draws a note as long as the drag, in the line it falls in, then types its syllable", () => {
     const { draw, notes, editing, selection, doc } = setup();
-    draw(2.02, 60, 30);
+    draw(2.42, 60, 30);
     const added = notes().find((note) => note.pitch === 60)!;
-    // Line 10's break is at its default, right where its last note ends (1.8 s): 2 s is in line 11.
-    expect(added).toMatchObject({ start: 2, duration: expect.closeTo(0.3, 9), lyric: "", lineId: 11 });
-    expect(selection()).toEqual([added.id]);
+    // Line 10's break is at its default, ten steps after its last note ends (2.3 s): 2.4 s is in line 11.
+    expect(added).toMatchObject({
+      start: expect.closeTo(2.4, 9),
+      duration: expect.closeTo(0.3, 9),
+      lyric: "",
+      lineId: 11,
+    });
+    expect(selection().notes).toEqual([added.id]);
     expect(editing.editingLyric()).toBe(added.id);
     expect(doc.undoLabel()).toBe("Add note");
     editing.finishLyric("la ");
@@ -333,7 +372,7 @@ describe("note editing", () => {
     expect(find(101)!.duration).toBeCloseTo(0.1, 9);
     const second = notes().find((note) => note.lyric === "~")!;
     expect(second.start).toBeCloseTo(1.6, 9);
-    expect(selection()).toEqual([101, second.id]);
+    expect(selection().notes).toEqual([101, second.id]);
     editing.hover(find(100)!, 1.01);
     flush();
     expect(editing.cut()!.valid).toBe(false);
@@ -368,32 +407,32 @@ describe("note editing", () => {
     const { draw, editing, doc, selection, find, click, press } = setup();
     draw(4, 70);
     editing.finishLyric(null);
-    const added = selection()[0]!;
+    const added = selection().notes[0]!;
     doc.undo();
     flush();
     doc.redo();
     flush();
-    expect(selection()).toEqual([added]);
+    expect(selection().notes).toEqual([added]);
 
     editing.splitAt(find(101)!, 1.62, false);
     flush();
-    const parts = selection();
+    const parts = selection().notes;
     expect(parts).toHaveLength(2);
     doc.undo();
     flush();
     doc.redo();
     flush();
-    expect(selection()).toEqual(parts);
+    expect(selection().notes).toEqual(parts);
 
     click(100);
     click(101, { shiftKey: true });
     press("m");
     doc.undo();
     flush();
-    expect(selection()).toEqual([100, 101]);
+    expect(selection().notes).toEqual([100, 101]);
     doc.redo();
     flush();
-    expect(selection()).toEqual([100]);
+    expect(selection().notes).toEqual([100]);
   });
 
   it("doesn't record a syllable left as it was", () => {
@@ -451,11 +490,12 @@ describe("note editing", () => {
     expect(onRefused).toHaveBeenCalledWith(expect.stringContaining("no room"));
   });
 
-  it("copies notes with their line break and pastes them at the playhead as one step, selected", () => {
+  it("copies notes with their selected line break and pastes them at the playhead as one step, selected", () => {
     // Line 10 is "We walk" (1–1.8 s), line 11 "on" (3 s); the playhead is at 6 s.
-    const { click, editing, doc, selection, notes } = setup(6);
+    const { click, editing, doc, selection, notes, markerDown } = setup(6);
     click(100);
     click(102, { shiftKey: true });
+    markerDown({ shiftKey: true });
     expect(editing.copySelection()).toBe("We walk\non");
     expect(editing.pasteClip("We walk\non")).toBe(true);
     flush();
@@ -468,7 +508,7 @@ describe("note editing", () => {
     // The break between the copied lines came along: "on" is on its own line again.
     expect(pasted[2]!.lineId).not.toBe(pasted[0]!.lineId);
     expect(pasted[1]!.lineId).toBe(pasted[0]!.lineId);
-    expect(selection()).toEqual(pasted.map((note) => note.id));
+    expect(selection().notes).toEqual(pasted.map((note) => note.id));
     expect(doc.undoLabel()).toBe("Paste 3 notes");
     doc.undo();
     flush();
@@ -597,10 +637,10 @@ describe("note editing", () => {
     click(101, { shiftKey: true });
     editing.menuOpen(find(101)!);
     flush();
-    expect(selection()).toEqual([100, 101]);
+    expect(selection().notes).toEqual([100, 101]);
     editing.menuOpen(find(102)!);
     flush();
-    expect(selection()).toEqual([102]);
+    expect(selection().notes).toEqual([102]);
   });
 
   it("says which of the menu's actions apply to the selection", () => {
@@ -623,7 +663,7 @@ describe("note editing", () => {
     expect([commands.flagOn("golden"), commands.flagOn("rap")]).toEqual([true, true]);
     commands.selectAll();
     flush();
-    expect(selection()).toEqual([100, 101, 102]);
+    expect(selection().notes).toEqual([100, 101, 102]);
     expect(commands.flagOn("golden")).toBe(false);
     commands.remove();
     flush();
@@ -707,5 +747,146 @@ describe("note editing", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  describe("with line breaks", () => {
+    // Line 10's break is at its default, ten steps after its last note (1.8 s): 2.3 s. Line 11 starts at 3 s.
+    const lines = (doc: ReturnType<typeof setup>["doc"]) =>
+      doc.chart().singers[0]!.lines.map((line) => ({ notes: line.notes.map((note) => note.id), at: line.switchStart }));
+
+    it("selects the breaks a box crosses, and everything with Cmd/Ctrl+A", () => {
+      const { editing, selection, press } = setup();
+      editing.box({ from: 1.4, to: 2.5, low: 0, high: 127 }, false);
+      flush();
+      expect(selection()).toEqual({ notes: [101], breaks: [10] });
+      press("Escape");
+      expect(selection()).toEqual({ notes: [], breaks: [] });
+      press("a", { metaKey: true });
+      expect(selection()).toEqual({ notes: [100, 101, 102], breaks: [10] });
+    });
+
+    it("adds a break to the selection with Shift or Cmd/Ctrl on its marker, which Cmd/Ctrl takes out again", () => {
+      const { click, markerDown, selection } = setup();
+      click(102);
+      markerDown({ shiftKey: true });
+      expect(selection()).toEqual({ notes: [102], breaks: [10] });
+      markerDown({ metaKey: true });
+      expect(selection()).toEqual({ notes: [102], breaks: [] });
+    });
+
+    it("drags a break that isn't selected on its own, across notes, and ← / → move just a break so too", () => {
+      const { click, markerDown, selection, doc, press } = setup();
+      click(102);
+      // 80 px back: to 1.5 s, where "walk" starts; it goes to the next line.
+      markerDown({}, [-80]);
+      expect(selection()).toEqual({ notes: [], breaks: [10] });
+      expect(lines(doc)).toEqual([
+        { notes: [100], at: 1.5 },
+        { notes: [101, 102], at: null },
+      ]);
+      doc.undo();
+      flush();
+      // From 2.3 s a step at a time to "walk"'s end (1.8 s), then over it to its start.
+      markerDown();
+      for (let i = 0; i < 11; i++) press("ArrowLeft");
+      expect(lines(doc)).toEqual([
+        { notes: [100], at: expect.closeTo(1.5, 9) },
+        { notes: [101, 102], at: null },
+      ]);
+      expect(doc.undoLabel()).toBe("Move line break");
+    });
+
+    it("moves selected breaks with the notes on the arrows, up to the notes that stay", () => {
+      const { editing, press, doc } = setup();
+      editing.box({ from: 2.2, to: 3.5, low: 0, high: 127 }, false);
+      flush();
+      press("ArrowLeft");
+      expect(lines(doc)).toEqual([
+        { notes: [100, 101], at: expect.closeTo(2.25, 9) },
+        { notes: [102], at: null },
+      ]);
+      expect(doc.undoLabel()).toBe("Move note and line break");
+      // Line 10 ends at 1.8 s: the break goes no further.
+      for (let i = 0; i < 20; i++) press("ArrowLeft");
+      expect(lines(doc)[0]!.at).toBeCloseTo(1.8, 9);
+      expect(lines(doc)[1]!.notes).toEqual([102]);
+    });
+
+    it("moves the selection by dragging a selected marker, and a click on it selects just the break", () => {
+      const { click, markerDown, selection, find, doc } = setup();
+      click(102);
+      markerDown({ shiftKey: true });
+      // 20 px at 100 px a second: four steps back.
+      markerDown({}, [-20]);
+      expect(find(102)!.start).toBeCloseTo(2.8, 9);
+      expect(lines(doc)[0]!.at).toBeCloseTo(2.1, 9);
+      expect(doc.undoLabel()).toBe("Move note and line break");
+      markerDown();
+      expect(selection()).toEqual({ notes: [], breaks: [10] });
+    });
+
+    it("leaves a selected default break the default when a drag only changes pitch", () => {
+      const { editing, drag, doc } = setup();
+      editing.box({ from: 1.4, to: 3.5, low: 0, high: 127 }, false);
+      flush();
+      // A semitone up, no time.
+      drag(101, "body", [[0, -10]]);
+      expect(doc.undoLabel()).toBe("Move 2 notes and line break");
+      expect(lines(doc)[0]!.at).toBeNull();
+    });
+
+    it("drags selected breaks along with a dragged note", () => {
+      const { click, markerDown, drag, doc } = setup();
+      click(102);
+      markerDown({ shiftKey: true });
+      drag(102, "body", [[10, 0]]);
+      expect(lines(doc)).toEqual([
+        { notes: [100, 101], at: expect.closeTo(2.4, 9) },
+        { notes: [102], at: null },
+      ]);
+    });
+
+    it("leaves a default break the default when everything around it moves", () => {
+      const { press, doc } = setup();
+      press("a", { metaKey: true });
+      press("ArrowRight");
+      expect(lines(doc)).toEqual([
+        { notes: [100, 101], at: null },
+        { notes: [102], at: null },
+      ]);
+      expect(doc.undoLabel()).toBe("Move 3 notes and line break");
+    });
+
+    it("cuts only the breaks it copied: others selected stay", () => {
+      const three: EditorChart = {
+        ...chart,
+        singers: [
+          {
+            ...chart.singers[0]!,
+            lines: [
+              ...chart.singers[0]!.lines,
+              { id: 12, switchStart: null, switchEnd: null, notes: [note(103, 6, "go")] },
+            ],
+          },
+        ],
+      };
+      const { editing, doc, setSelection } = setup(0, three);
+      // Both breaks and "go": the copy takes the break before it (line 11's), not line 10's.
+      setSelection({ notes: [103], breaks: [10, 11] });
+      flush();
+      expect(editing.cutSelection()).toBe("go");
+      flush();
+      expect(lines(doc).map((line) => line.notes)).toEqual([[100, 101], [102]]);
+    });
+
+    it("deletes the selected breaks with the notes, joining the lines", () => {
+      const { editing, press, doc, selection } = setup();
+      editing.box({ from: 1.4, to: 2.5, low: 0, high: 127 }, false);
+      flush();
+      press("Delete");
+      expect(lines(doc)).toEqual([{ notes: [100, 102], at: null }]);
+      expect(doc.undoLabel()).toBe("Delete note and line break");
+      expect(selection()).toEqual({ notes: [], breaks: [] });
+    });
   });
 });

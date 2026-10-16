@@ -5,9 +5,9 @@
  * may overlap while editing (pasting a section over others is easier that way); `overlapping` finds them, to show as a
  * problem. The edits record through an `EditRecorder`.
  */
-import type { EditorChart, EditorNote, NoteType } from "~/lib/native/types";
+import type { EditorChart, EditorLine, EditorNote, NoteType } from "~/lib/native/types";
 
-import { defaultSwitch } from "./chart";
+import { gridCeil, gridFloor, gridStep, lineBreaks, onGrid } from "./chart";
 import type { EditRecorder } from "./document";
 
 /** Times closer than this are the same (seconds, against float rounding). */
@@ -15,27 +15,6 @@ const EPSILON = 1e-6;
 
 /** The highest pitch a note can have (MIDI). */
 const HIGHEST_PITCH = 127;
-
-/** One grid step in seconds. */
-export const gridStep = (chart: EditorChart) => 15 / chart.bpm;
-
-/** `seconds` on the nearest grid line. */
-export function onGrid(chart: EditorChart, seconds: number): number {
-  const step = gridStep(chart);
-  return chart.gap + Math.round((seconds - chart.gap) / step) * step;
-}
-
-/** The highest grid line at or below `seconds`. */
-export function gridFloor(chart: EditorChart, seconds: number): number {
-  const step = gridStep(chart);
-  return chart.gap + Math.floor((seconds - chart.gap) / step + EPSILON) * step;
-}
-
-/** The lowest grid line at or above `seconds`. */
-export function gridCeil(chart: EditorChart, seconds: number): number {
-  const step = gridStep(chart);
-  return chart.gap + Math.ceil((seconds - chart.gap) / step - EPSILON) * step;
-}
 
 /**
  * The room each line has (by id): from the line before it (its stored break, else the end of its notes; 0 for the
@@ -82,17 +61,96 @@ export function placeNotes(chart: EditorChart, length: number): Map<number, Plac
   return placed;
 }
 
-/** How far (seconds) the selected notes can move together: within their lines' room. */
-export function moveLimits(placed: Map<number, Placed>, ids: ReadonlySet<number>) {
+/** When the notes start and end; over no notes, Infinity and -Infinity (no limit). */
+const firstStart = (notes: readonly EditorNote[]) => Math.min(...notes.map((note) => note.start));
+const lastEnd = (notes: readonly EditorNote[]) => Math.max(...notes.map((note) => note.start + note.duration));
+
+/**
+ * Moving the selected notes and line breaks (by the line they end) together in time, worked out once for a drag or a
+ * key press: how far they can go, and where each selected break goes.
+ */
+export interface MovePlan {
+  notes: ReadonlySet<number>;
+  breaks: ReadonlySet<number>;
+  /**
+   * How far (seconds) they can go, in the song. Every note stays in its line: a selected break goes along and stays out
+   * of the notes that don't move, one that isn't selected is a wall when it is stored, and without a switch stored it
+   * goes with the gap (the moving notes stay out of the other line's notes that don't move). Never less than nothing (a
+   * chart that breaks the rules already can still be left as it is).
+   */
+  limits: { min: number; max: number };
+  /**
+   * Where a selected break goes when they move by `delta`: stored, on the grid; or, when every note of the lines either
+   * side moves too and it has no switch stored, still the default (it goes along with the gap and keeps the rule).
+   */
+  breakAt(lineId: number, delta: number): { time: number; auto: boolean } | null;
+}
+
+export function planMove(
+  chart: EditorChart,
+  length: number,
+  notes: ReadonlySet<number>,
+  breaks: ReadonlySet<number> = new Set(),
+): MovePlan {
   let min = -Infinity;
   let max = Infinity;
-  for (const id of ids) {
-    const note = placed.get(id);
-    if (!note) continue;
-    min = Math.max(min, note.before - note.start);
-    max = Math.min(max, note.after - (note.start + note.duration));
+  const atLeast = (delta: number) => void (min = Math.max(min, delta));
+  const atMost = (delta: number) => void (max = Math.min(max, delta));
+  const drawn = new Map(lineBreaks(chart).map((item) => [item.lineId, item]));
+  /** The selected breaks that go along with the gap, keeping the default. */
+  const withGap = new Set<number>();
+  for (const singer of chart.singers) {
+    const lines = singer.lines
+      .filter((line) => line.notes.length > 0)
+      .map((line) => ({
+        line,
+        moving: line.notes.filter((note) => notes.has(note.id)),
+        still: line.notes.filter((note) => !notes.has(note.id)),
+      }));
+    for (const { moving } of lines) {
+      if (moving.length > 0) {
+        atLeast(-firstStart(moving));
+        atMost(length - lastEnd(moving));
+      }
+    }
+    lines.slice(0, -1).forEach(({ line, moving, still }, l) => {
+      const next = lines[l + 1]!;
+      const item = drawn.get(line.id)!;
+      if (breaks.has(line.id)) {
+        atLeast(Math.max(lastEnd(still), 0) - item.time);
+        atMost(Math.min(firstStart(next.still), length) - item.time);
+        if (item.auto && still.length === 0 && next.still.length === 0) withGap.add(line.id);
+      } else if (line.switchStart !== null) {
+        atMost(item.time - lastEnd(moving));
+        atLeast(item.time - firstStart(next.moving));
+      } else {
+        atMost(firstStart(next.still) - lastEnd(moving));
+        atLeast(lastEnd(still) - firstStart(next.moving));
+      }
+    });
   }
-  return { min, max };
+  return {
+    notes,
+    breaks,
+    limits: { min: Math.min(min, 0), max: Math.max(max, 0) },
+    breakAt(lineId, delta) {
+      const item = drawn.get(lineId);
+      if (!item || !breaks.has(lineId)) return null;
+      // Not moved in time (a drag only up or down): as it is.
+      if (delta === 0) return { time: item.time, auto: item.auto };
+      if (withGap.has(lineId)) return { time: item.time + delta, auto: true };
+      return { time: onGrid(chart, item.time + delta), auto: false };
+    },
+  };
+}
+
+/** Moves what `plan` is for by `delta` seconds (on the grid; breaks as `breakAt` says). */
+export function moveSelection(tx: EditRecorder, chart: EditorChart, plan: MovePlan, delta: number) {
+  moveNotes(tx, chart, plan.notes, delta);
+  for (const lineId of plan.breaks) {
+    const moved = plan.breakAt(lineId, delta);
+    if (moved && !moved.auto) tx.updateLine(lineId, { switchStart: moved.time, switchEnd: null });
+  }
 }
 
 /** How far (seconds) the selected notes' ends can move: down to one step long, up to a stored break or the end. */
@@ -196,13 +254,43 @@ export function shiftPitch(tx: EditRecorder, ids: Iterable<number>, semitones: n
   }
 }
 
-/** Deletes the notes, and the lines that are left without any. */
-export function deleteNotes(tx: EditRecorder, chart: EditorChart, ids: ReadonlySet<number>) {
+/**
+ * Deletes the notes and line breaks (by the line they end): the lines on either side of a deleted break are one, its
+ * first line keeping its notes (and the last one's switch), and lines left without notes go.
+ */
+export function deleteSelection(
+  tx: EditRecorder,
+  chart: EditorChart,
+  notes: ReadonlySet<number>,
+  breaks: ReadonlySet<number> = new Set(),
+) {
   for (const singer of chart.singers) {
-    for (const line of singer.lines) {
-      const doomed = line.notes.filter((note) => ids.has(note.id));
-      for (const note of doomed) tx.deleteNote(note.id);
-      if (doomed.length > 0 && doomed.length === line.notes.length) tx.deleteLine(line.id);
+    // The singer's lines with notes, in runs joined by deleted breaks.
+    const runs: EditorLine[][] = [];
+    let joined = false;
+    for (const line of singer.lines.filter((item) => item.notes.length > 0)) {
+      if (joined) runs.at(-1)!.push(line);
+      else runs.push([line]);
+      joined = breaks.has(line.id);
+    }
+    for (const run of runs) {
+      const [head, ...rest] = run;
+      const kept = run.flatMap((line) => line.notes).filter((note) => !notes.has(note.id));
+      for (const line of run) for (const note of line.notes) if (notes.has(note.id)) tx.deleteNote(note.id);
+      if (kept.length === 0) {
+        for (const line of run) tx.deleteLine(line.id);
+        continue;
+      }
+      // Changing line isn't changing the note: it keeps its `edited`.
+      for (const line of rest) {
+        for (const note of line.notes)
+          if (!notes.has(note.id)) tx.updateNote(note.id, { lineId: head!.id, edited: note.edited });
+      }
+      if (rest.length > 0) {
+        const last = rest.at(-1)!;
+        tx.updateLine(head!.id, { switchStart: last.switchStart, switchEnd: last.switchEnd });
+        for (const line of rest) tx.deleteLine(line.id);
+      }
     }
   }
 }
@@ -322,14 +410,8 @@ export function defaultLength(chart: EditorChart): number {
 export function lineAt(chart: EditorChart, singerId: number, time: number): number | null {
   const lines = chart.singers.find((singer) => singer.id === singerId)?.lines.filter((line) => line.notes.length > 0);
   if (!lines?.length) return null;
-  for (let i = 0; i < lines.length - 1; i++) {
-    const line = lines[i]!;
-    const last = line.notes.at(-1)!;
-    const gapStart = last.start + last.duration;
-    const gapEnd = Math.max(gapStart, lines[i + 1]!.notes[0]!.start);
-    if (time < (line.switchStart ?? defaultSwitch(gapStart, gapEnd))) return line.id;
-  }
-  return lines.at(-1)!.id;
+  const ids = new Set(lines.map((line) => line.id));
+  return lineBreaks(chart).find((item) => ids.has(item.lineId) && time < item.time)?.lineId ?? lines.at(-1)!.id;
 }
 
 /**

@@ -3,25 +3,25 @@ import { describe, expect, it } from "vitest";
 
 import type { EditorChart } from "~/lib/native/types";
 
+import { gridStep, onGrid } from "./chart";
 import { createChartDocument } from "./document";
 import {
   addNote,
   canSplit,
   defaultLength,
-  deleteNotes,
+  deleteSelection,
   lineAt,
   splitNote,
   fits,
-  gridStep,
   lengthLimits,
   mergeNotes,
-  moveLimits,
   moveNotes,
-  onGrid,
+  moveSelection,
   overlapping,
   pitchFits,
   pitchLimits,
   placeNotes,
+  planMove,
   resizeNotes,
   resizeStarts,
   snapDelta,
@@ -82,8 +82,21 @@ describe("limits", () => {
   const placed = placeNotes(chart, 10);
 
   it("lets notes move up to a stored break and the song's start, through other notes", () => {
-    expect(moveLimits(placed, new Set([101]))).toEqual({ min: -1.5, max: expect.closeTo(0.7) });
-    expect(moveLimits(placed, new Set([103]))).toEqual({ min: -0.5, max: expect.closeTo(6.7) });
+    expect(planMove(chart, 10, new Set([101])).limits).toEqual({ min: -1.5, max: expect.closeTo(0.7) });
+    expect(planMove(chart, 10, new Set([103])).limits).toEqual({ min: -0.5, max: expect.closeTo(6.7) });
+  });
+
+  it("takes selected line breaks along: they stay out of the notes that don't move", () => {
+    // Line 10's notes that stay end at 2.1, the break is at 2.5.
+    expect(planMove(chart, 10, new Set([103]), new Set([10])).limits).toEqual({
+      min: expect.closeTo(-0.4),
+      max: expect.closeTo(6.7),
+    });
+    // The break alone: between line 10's end and line 11's start.
+    expect(planMove(chart, 10, new Set(), new Set([10])).limits).toEqual({
+      min: expect.closeTo(-0.4),
+      max: expect.closeTo(0.5),
+    });
   });
 
   it("keeps notes at least a step long, and their end before the break", () => {
@@ -150,9 +163,93 @@ describe("edits", () => {
 
   it("deletes notes, and a line left empty", () => {
     const doc = setup();
-    doc.edit("Delete", (tx) => deleteNotes(tx, chart, new Set([101, 103])));
+    doc.edit("Delete", (tx) => deleteSelection(tx, chart, new Set([101, 103])));
     flush();
     expect(doc.chart().singers[0]!.lines.map((line) => line.notes.map((item) => item.id))).toEqual([[100, 102]]);
+  });
+
+  it("deletes line breaks with notes: the lines either side are one, or go when no note is left", () => {
+    const doc = setup();
+    doc.edit("Delete", (tx) => deleteSelection(tx, chart, new Set([101]), new Set([10])));
+    flush();
+    expect(doc.chart().singers[0]!.lines.map((line) => line.notes.map((item) => item.id))).toEqual([[100, 102, 103]]);
+    // It ends where the later line did: no switch stored.
+    expect(doc.chart().singers[0]!.lines[0]!.switchStart).toBeNull();
+    const all = setup();
+    all.edit("Delete", (tx) => deleteSelection(tx, chart, new Set([100, 101, 102, 103]), new Set([10])));
+    flush();
+    expect(all.chart().singers[0]!.lines).toEqual([]);
+  });
+
+  it("joins three lines when the two breaks between them are deleted, and undoes it", () => {
+    const three: EditorChart = {
+      ...chart,
+      singers: [
+        {
+          ...chart.singers[0]!,
+          lines: [
+            { id: 10, switchStart: 1.4, switchEnd: null, notes: [note(100, 1)] },
+            { id: 11, switchStart: 2.4, switchEnd: null, notes: [note(101, 2)] },
+            { id: 12, switchStart: 3.4, switchEnd: null, notes: [note(102, 3)] },
+            { id: 13, switchStart: null, switchEnd: null, notes: [note(103, 4)] },
+          ],
+        },
+      ],
+    };
+    const doc = createRoot(() => {
+      const [selection, setSelection] = createSignal<number[]>([]);
+      return createChartDocument<number[]>({
+        chart: three,
+        save: async () => {},
+        onFailed: () => {},
+        selection,
+        setSelection,
+      });
+    });
+    const lines = () =>
+      doc.chart().singers[0]!.lines.map((line) => ({ notes: line.notes.map((item) => item.id), at: line.switchStart }));
+    const before = lines();
+    doc.edit("Delete", (tx) => deleteSelection(tx, three, new Set([101]), new Set([10, 11])));
+    flush();
+    expect(lines()).toEqual([
+      { notes: [100, 102], at: 3.4 },
+      { notes: [103], at: null },
+    ]);
+    doc.undo();
+    flush();
+    expect(lines()).toEqual(before);
+    doc.redo();
+    flush();
+    expect(lines()).toEqual([
+      { notes: [100, 102], at: 3.4 },
+      { notes: [103], at: null },
+    ]);
+  });
+
+  it("limits each singer's notes by their own lines in a duet", () => {
+    const duet: EditorChart = {
+      ...chart,
+      singers: [
+        ...chart.singers,
+        {
+          id: 2,
+          index: 2,
+          name: null,
+          lines: [{ id: 20, switchStart: null, switchEnd: null, notes: [note(200, 2.2)] }],
+        },
+      ],
+    };
+    // Singer 2's note at 2.2 s is no wall for singer 1's, nor the other way round.
+    expect(planMove(duet, 10, new Set([101])).limits).toEqual({ min: -1.5, max: expect.closeTo(0.7) });
+    expect(planMove(duet, 10, new Set([200])).limits).toEqual({ min: expect.closeTo(-2.2), max: expect.closeTo(7.5) });
+  });
+
+  it("moves selected line breaks with the notes, storing where they go", () => {
+    const doc = setup();
+    doc.edit("Move", (tx) => moveSelection(tx, chart, planMove(chart, 10, new Set([103]), new Set([10])), 0.2));
+    flush();
+    expect(find(doc.chart(), 103)!.start).toBeCloseTo(3.2);
+    expect(doc.chart().singers[0]!.lines[0]!.switchStart).toBeCloseTo(2.7);
   });
 
   it("merges notes next to each other in a line, joining the syllables without the held vowel's ~", () => {
@@ -255,10 +352,11 @@ describe("edits", () => {
         lines: singer.lines.map((line) => ({ ...line, switchStart: null })),
       })),
     };
-    const placed = placeNotes(unstored, 10);
     // Line 10's last note ends at 2.1, line 11 starts at 3.
-    expect(moveLimits(placed, new Set([102])).max).toBeCloseTo(0.9);
-    expect(moveLimits(placed, new Set([103])).min).toBeCloseTo(-0.9);
+    expect(planMove(unstored, 10, new Set([102])).limits.max).toBeCloseTo(0.9);
+    expect(planMove(unstored, 10, new Set([103])).limits.min).toBeCloseTo(-0.9);
+    // Both lines moving: the gap goes with them, to the song's start and end.
+    expect(planMove(unstored, 10, new Set([100, 101, 102, 103])).limits).toEqual({ min: -1, max: expect.closeTo(6.7) });
   });
 
   it("splits a note on the grid: the second part holds the syllable", () => {

@@ -45,9 +45,10 @@ const TOOL_ICONS: Record<Tool, (props: { class?: string }) => JSX.Element> = {
 };
 
 /** The tools as icons; each tooltip names it and its key. */
-export function ToolSwitch(props: { tool: Tool; onTool: (tool: Tool) => void }) {
+export function ToolSwitch(props: { tool: Tool; onTool: (tool: Tool) => void; class?: string }) {
   return (
     <ToggleGroup
+      class={props.class}
       variant="segment"
       size="segment-icon"
       spacing={0.5}

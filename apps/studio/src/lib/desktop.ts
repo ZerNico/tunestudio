@@ -9,7 +9,6 @@ export interface FilePath {
 /** Values and helpers the preload provides (see `electron/preload.ts`). */
 interface DesktopGlobals {
   platform: string;
-  version: string;
   pathForFile?: (file: File) => Promise<FilePath | null>;
   onEditCommand?: (listener: (command: EditCommand, text?: string) => void) => () => void;
   clipboard?: (request: ClipboardRequest) => void;
@@ -22,7 +21,7 @@ declare global {
 }
 
 // Missing when the renderer runs in a plain browser (`bun run dev:vite`).
-const globals: DesktopGlobals = window.tunestudio ?? { platform: "browser", version: "0.0.0-dev" };
+const globals: DesktopGlobals = window.tunestudio ?? { platform: "browser" };
 
 export type Platform = "macos" | "windows" | "linux" | "browser";
 
@@ -34,8 +33,6 @@ export const platform: Platform =
       : globals.platform === "linux"
         ? "linux"
         : "browser";
-
-export const appVersion: string = globals.version;
 
 /** "Reveal in Finder" on macOS, "Show in Explorer" on Windows, "Show in folder" elsewhere. */
 export const revealLabel =

@@ -28,20 +28,23 @@ import { createBreakEditing } from "~/lib/editor/break-editing";
 import {
   chartEnd,
   type DrawnNote,
+  type LineBreak,
   drawnNotes,
   lineBreaks,
   lineIndexAt,
   lineSpans,
   longest,
+  onGrid,
   spanOf,
   stepLine,
 } from "~/lib/editor/chart";
 import { createChartDocument } from "~/lib/editor/document";
-import { onGrid, overlapping } from "~/lib/editor/edits";
+import { overlapping } from "~/lib/editor/edits";
 import { createLoop } from "~/lib/editor/loop";
-import { createNoteEditing } from "~/lib/editor/note-editing";
+import { createNoteEditing, previewChart } from "~/lib/editor/note-editing";
 import { createPlayback } from "~/lib/editor/playback";
 import { createEditorPrefs } from "~/lib/editor/prefs";
+import { NOTHING, type Selection } from "~/lib/editor/selection";
 import { createSongMarkers } from "~/lib/editor/song-markers";
 import { createTones } from "~/lib/editor/tones";
 import { createTools } from "~/lib/editor/tools";
@@ -102,14 +105,14 @@ export default function ProjectScreen() {
   const [exporting, setExporting] = createSignal(false);
   const [replacing, setReplacing] = createSignal<{ folder: string; existing: string } | null>(null);
 
-  /** The selected notes (by id); undo and redo bring back the selection that went with a step. */
-  const [selection, setSelection] = createSignal<number[]>([]);
+  /** The selected notes and line breaks; undo and redo bring back the selection that went with a step. */
+  const [selection, setSelection] = createSignal<Selection>(NOTHING);
   /**
    * The chart being edited, with its history. Made anew when the project's chart is loaded again (when saving failed),
    * which also starts the history over.
    */
   const doc = createMemo(() =>
-    createChartDocument<number[]>({
+    createChartDocument<Selection>({
       chart: data().chart,
       save: async (changes) => {
         await native.project.applyChanges({ id: overview().id, changes });
@@ -152,7 +155,8 @@ export default function ProjectScreen() {
   const [detailsOpen, setDetailsOpen] = createSignal(false);
   const notes = createMemo(() => drawnNotes(chart()));
   const lines = createMemo(() => lineSpans(chart()));
-  const selectedIds = createMemo(() => new Set(selection()));
+  const selectedIds = createMemo(() => new Set(selection().notes));
+  const selectedBreaks = createMemo(() => new Set(selection().breaks));
   const selectedNotes = createMemo(() => notes().filter((note) => selectedIds().has(note.id)));
   const overlaps = createMemo(() => overlapping(chart()));
   const longestNote = createMemo(() => longest(notes()));
@@ -247,7 +251,8 @@ export default function ProjectScreen() {
     doc,
     singer: () => editing.activeSinger(),
     playheadTime: () => playback.time(),
-    onSelect: () => setSelection([]),
+    selection,
+    setSelection,
     onRefused: (message) => toast.add({ title: message }),
   });
   /** Every gesture: a note drag or drawing, a break drag, a loop range or a song marker on the ruler. */
@@ -262,17 +267,6 @@ export default function ProjectScreen() {
   const visibleNotes = createMemo(() =>
     visibleItems(notes(), view().start, view().start + visibleSeconds(view(), width()), longestNote()),
   );
-  const visibleBreaks = createMemo(() => {
-    const from = view().start;
-    const to = from + visibleSeconds(view(), width());
-    // A break being dragged is drawn where it would go.
-    const dragged = breakEditing.drag();
-    return breaks()
-      .map((item) =>
-        dragged?.lineId === item.lineId ? Object.assign({}, item, { time: dragged.time, auto: false }) : item,
-      )
-      .filter((item) => item.time >= from && item.time <= to);
-  });
   const visibleLines = createMemo(() =>
     visibleItems(lines(), view().start, view().start + visibleSeconds(view(), width()), longestLine()),
   );
@@ -324,8 +318,24 @@ export default function ProjectScreen() {
       setView(revealSpan(view(), { start: note.start, end: note.start + note.duration }, width(), length(), NOTE_LEAD));
     },
     onRefused: (message) => toast.add({ title: message }),
+    breaks,
+    oneBreak: breakEditing,
   });
 
+  const visibleBreaks = createMemo(() => {
+    const from = view().start;
+    const to = from + visibleSeconds(view(), width());
+    // During a move the breaks are drawn as it would leave them (those going along with a gap too); a break dragged on
+    // its own where it would go.
+    const moving = editing.drag();
+    const dragged = breakEditing.drag();
+    return (moving ? lineBreaks(previewChart(chart(), moving)) : breaks())
+      .map((item) =>
+        dragged?.lineId === item.lineId ? Object.assign({}, item, { time: dragged.time, auto: false }) : item,
+      )
+      .filter((item) => item.time >= from && item.time <= to);
+  });
+  const breakDown = (item: LineBreak, event: PointerEvent) => editing.breakDown(item, event, view().pxPerSecond);
   /** The note a right-click is on, until the note menu opens (it is told on the way up). */
   let menuNote: DrawnNote | null = null;
   const noteMenu: NoteMenuActions = {
@@ -580,9 +590,7 @@ export default function ProjectScreen() {
             <HistoryButton label={doc().redoLabel()} action="Redo" onClick={() => runEditCommand("redo")} testid="redo">
               <Redo2Icon />
             </HistoryButton>
-            <div class="mx-1.5 h-4 w-px bg-bar-border" aria-hidden="true" />
-            <ToolSwitch tool={tools.tool()} onTool={tools.setTool} />
-            <div class="mx-1.5 h-4 w-px bg-bar-border" aria-hidden="true" />
+            <ToolSwitch class="mx-3" tool={tools.tool()} onTool={tools.setTool} />
             <AutoPitchButton
               status={autoPitch.busy() ? (autoPitch.progress()?.step ?? null) : undefined}
               percent={percentOf(autoPitch.progress() ?? null) ?? null}
@@ -650,9 +658,9 @@ export default function ProjectScreen() {
             <BreakLane
               breaks={visibleBreaks()}
               view={view()}
-              selected={breakEditing.selected()}
-              drag={breakEditing.drag()}
-              onDown={(item, event) => breakEditing.breakDown(item, event, view().pxPerSecond)}
+              selected={selectedBreaks()}
+              drag={breakEditing.drag() ?? editing.markerDrag()}
+              onDown={breakDown}
               onDoubleClick={(item) => breakEditing.breakDoubleClick(item)}
               onLaneDoubleClick={(seconds) => breakEditing.laneDoubleClick(seconds)}
             />
@@ -668,23 +676,18 @@ export default function ProjectScreen() {
                   height={size().height}
                   pitch={showPitch() ? pitch() : null}
                   selected={selectedIds()}
+                  selectedBreaks={selectedBreaks()}
+                  onBreakDown={breakDown}
                   overlapping={overlaps()}
                   pending={autoPitch.pending()}
                   played={{ start: songMarkers.at("start"), end: songMarkers.at("end") }}
-                  onNoteDown={(note, event, part, scale) => {
-                    breakEditing.deselect();
-                    editing.noteDown(note, event, part, scale);
-                  }}
+                  onNoteDown={(note, event, part, scale) => editing.noteDown(note, event, part, scale)}
                   drag={editing.drag()}
                   onEmptyClick={(seconds) => {
-                    breakEditing.deselect();
                     editing.emptyClick();
                     seek(seconds);
                   }}
-                  onBox={(area, add) => {
-                    breakEditing.deselect();
-                    editing.box(area, add);
-                  }}
+                  onBox={(area, add) => editing.box(area, add)}
                   tool={tools.tool()}
                   onDrawDown={(at, event, scale) => editing.drawDown(event, at, scale)}
                   drawing={editing.drawing()}

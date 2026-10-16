@@ -6,6 +6,7 @@ import type { EditorChart } from "~/lib/native/types";
 import { createBreakEditing } from "./break-editing";
 import { lineBreaks } from "./chart";
 import { createChartDocument } from "./document";
+import { breaksOnly, notesOnly, type Selection } from "./selection";
 import { testNote as note, testSong } from "./test-chart";
 
 /** Grid: 0.05 s steps from 1 s. Line 10's break is stored at 2.5 s. */
@@ -28,8 +29,8 @@ const chart: EditorChart = {
 
 function setup(playhead = 0) {
   return createRoot(() => {
-    const [selection, setSelection] = createSignal<number[]>([5]);
-    const doc = createChartDocument<number[]>({
+    const [selection, setSelection] = createSignal<Selection>(notesOnly([5]));
+    const doc = createChartDocument<Selection>({
       chart,
       save: async () => {},
       onFailed: () => {},
@@ -40,16 +41,17 @@ function setup(playhead = 0) {
     const onRefused = vi.fn();
     const editing = createBreakEditing({
       doc: () => doc,
+      selection,
+      setSelection,
       singer: () => 1,
       playheadTime: () => playhead,
-      onSelect: () => setSelection([]),
       onRefused,
       pointerTarget: pointer,
     });
     const marker = () => lineBreaks(doc.chart()).find((item) => item.lineId === 10)!;
     /** Presses the break after line 10 and drags it `dx` px (100 px a second). */
     const drag = (moves: number[], release = true) => {
-      editing.breakDown(marker(), { clientX: 0 }, 100);
+      editing.follow(marker(), { clientX: 0 }, 100);
       for (const clientX of moves) pointer.dispatchEvent(Object.assign(new Event("pointermove"), { clientX }));
       flush();
       if (release) {
@@ -63,18 +65,11 @@ function setup(playhead = 0) {
       return handled;
     };
     const lines = () => doc.chart().singers[0]!.lines.map((line) => line.notes.map((item) => item.id));
-    return { doc, editing, drag, press, lines, marker, selection, onRefused };
+    return { doc, editing, drag, press, lines, marker, selection, setSelection, onRefused };
   });
 }
 
 describe("break editing", () => {
-  it("selects a marker when pressed, which deselects the notes", () => {
-    const { drag, editing, selection } = setup();
-    drag([]);
-    expect(editing.selected()).toBe(10);
-    expect(selection()).toEqual([]);
-  });
-
   it("previews a dragged break with how many notes it moves, and writes it when let go", () => {
     const { drag, editing, lines, doc } = setup();
     // 2.5 s - 0.8 s = 1.7 s: "1.8" moves to the next line.
@@ -101,16 +96,13 @@ describe("break editing", () => {
     expect(doc.undoLabel()).toBeNull();
   });
 
-  it("removes a selected break with Delete, or one double-clicked", () => {
-    const first = setup();
-    first.drag([]);
-    first.press("Delete");
-    expect(first.lines()).toEqual([[100, 101, 102, 103, 104]]);
-    expect(first.editing.selected()).toBeNull();
-    const second = setup();
-    second.editing.breakDoubleClick(second.marker());
+  it("removes a double-clicked break, and it from the selection", () => {
+    const { editing, marker, lines, selection, setSelection } = setup();
+    setSelection(breaksOnly([10]));
+    editing.breakDoubleClick(marker());
     flush();
-    expect(second.lines()).toHaveLength(1);
+    expect(lines()).toHaveLength(1);
+    expect(selection()).toEqual({ notes: [], breaks: [] });
   });
 
   it("adds a break where the lane is double-clicked, or in the gap nearest the playhead with B", () => {
@@ -121,6 +113,23 @@ describe("break editing", () => {
     const atPlayhead = setup(3.1);
     expect(atPlayhead.press("b")).toBe(true);
     expect(atPlayhead.lines()).toEqual([[100, 101, 102], [103], [104]]);
+  });
+
+  it("keeps the selected break the one picked when a break is added or removed next to it", () => {
+    const { editing, setSelection, selection, doc } = setup();
+    const lineOf = (note: number) =>
+      doc.chart().singers[0]!.lines.find((line) => line.notes.some((item) => item.id === note))!.id;
+    // The break at 2.5 s is selected; one added at 1.4 s splits its line, and 2.5 s now ends the new line.
+    setSelection(breaksOnly([10]));
+    editing.laneDoubleClick(1.4);
+    flush();
+    expect(lineOf(101)).not.toBe(10);
+    expect(selection().breaks).toEqual([lineOf(101)]);
+    // Removing the new break joins the lines again: 2.5 s ends line 10 once more.
+    editing.breakDoubleClick(lineBreaks(doc.chart()).find((item) => item.lineId === 10)!);
+    flush();
+    expect(selection().breaks).toEqual([10]);
+    expect(lineBreaks(doc.chart())).toMatchObject([{ lineId: 10, time: 2.5 }]);
   });
 
   it("says so when a break can't go there", () => {

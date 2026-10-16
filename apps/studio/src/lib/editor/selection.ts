@@ -1,5 +1,37 @@
-/** Which notes a click, a Shift-click, a selection box or Tab selects (over the notes as drawn, by start time). */
-import type { DrawnNote } from "./chart";
+/**
+ * What a click, a Shift-click, a selection box or Tab selects (over the notes as drawn, by start time). A selection is
+ * notes and line breaks: selected breaks go along when the notes move, and are removed when they are deleted.
+ */
+import type { DrawnNote, LineBreak } from "./chart";
+
+/** The selected notes (by id) and line breaks (by the line they end). */
+export interface Selection {
+  notes: readonly number[];
+  breaks: readonly number[];
+}
+
+/** Nothing selected. */
+export const NOTHING: Selection = { notes: [], breaks: [] };
+
+/** Just these notes. */
+export const notesOnly = (notes: readonly number[]): Selection => ({ notes, breaks: [] });
+
+/** Just these line breaks. */
+export const breaksOnly = (breaks: readonly number[]): Selection => ({ notes: [], breaks });
+
+/**
+ * The line breaks a selection box from `from` to `to` seconds crosses (they reach over the whole roll): of the singers
+ * whose notes it touched, or of every singer when it touched none.
+ */
+export function breaksInBox(
+  breaks: readonly LineBreak[],
+  box: { from: number; to: number },
+  singers: ReadonlySet<number>,
+): number[] {
+  return breaks
+    .filter((item) => item.time > box.from && item.time < box.to && (singers.size === 0 || singers.has(item.singer)))
+    .map((item) => item.lineId);
+}
 
 /** Shift-click: the notes of the clicked note's singer from the anchor to it, either way round. */
 export function rangeSelection(notes: readonly DrawnNote[], anchor: number, target: number): number[] {

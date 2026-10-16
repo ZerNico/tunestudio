@@ -108,6 +108,10 @@ export function PianoRoll(props: {
   width: number;
   height: number;
   selected: ReadonlySet<number>;
+  /** The selected line breaks, by the line they end: drawn solid, in the selection's colour. */
+  selectedBreaks?: ReadonlySet<number>;
+  /** A press on a line break's line (Select tool), as on its marker above the roll. */
+  onBreakDown?: (item: LineBreak, event: PointerEvent) => void;
   overlapping: ReadonlySet<number>;
   /** Where the game starts and stops playing (seconds; null: the song's start or end): outside is dimmed. */
   played?: { start: number | null; end: number | null };
@@ -156,7 +160,8 @@ export function PianoRoll(props: {
   /** Where the drag's label goes: just above the pressed note, as it is drawn now. */
   const dragLabel = () => {
     const drag = props.drag;
-    const pressed = drag && props.notes.find((note) => note.id === drag.anchor);
+    const anchor = drag && "note" in drag.anchor ? drag.anchor.note : null;
+    const pressed = props.notes.find((note) => note.id === anchor);
     if (!drag || !pressed) return null;
     const shown = previewed(pressed, drag);
     return {
@@ -308,13 +313,37 @@ export function PianoRoll(props: {
         </Show>
         <For each={props.breaks}>
           {(item) => (
-            <div
-              data-singer={item.singer}
-              data-auto={item.auto ? "" : undefined}
-              class="pointer-events-none absolute inset-y-0 border-l border-dashed border-violet data-auto:opacity-45 data-[singer=2]:border-violet-text"
-              style={{ left: `${breakX(props.view, item.time)}px` }}
-              data-testid="line-break"
-            />
+            <>
+              <div
+                data-singer={item.singer}
+                data-auto={item.auto ? "" : undefined}
+                data-selected={props.selectedBreaks?.has(item.lineId) ? "true" : undefined}
+                class="pointer-events-none absolute inset-y-0 roll-break"
+                style={{ left: `${breakX(props.view, item.time)}px` }}
+                data-testid="line-break"
+              />
+              {/*
+                The line is pressed and dragged as its marker is (with Select), in a narrow strip that leaves the gap
+                to the roll; notes, drawn later, stay on top. A double-click there adds a note: only the marker
+                removes a break.
+              */}
+              <Show when={props.tool === "select" && props.onBreakDown}>
+                <div
+                  class="absolute inset-y-0 w-1 -translate-x-1/2 cursor-ew-resize"
+                  style={{ left: `${breakX(props.view, item.time) + 0.5}px` }}
+                  onPointerDown={(event) => {
+                    if (event.button !== 0) return;
+                    event.stopPropagation();
+                    props.onBreakDown?.(item, event);
+                  }}
+                  onDblClick={(event) => {
+                    event.stopPropagation();
+                    props.onEmptyDoubleClick(pointAt(event));
+                  }}
+                  data-testid="line-break-grip"
+                />
+              </Show>
+            </>
           )}
         </For>
         <Show when={props.played?.start != null && timeToX(props.view, props.played.start) > 0}>

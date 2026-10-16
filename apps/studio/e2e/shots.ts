@@ -129,6 +129,16 @@ try {
       await page.mouse.move(marker.x - 240, marker.y + marker.height / 2, { steps: 6 });
       await shot(studio, "03f-project-break-drag");
       await page.mouse.up();
+      // A selection of notes and the line break (Shift on its marker): drawn solid in the selection's colour.
+      await notes.nth(2).click();
+      await notes.nth(4).click({ modifiers: ["Shift"] });
+      await page
+        .getByTestId("break-marker")
+        .first()
+        .click({ modifiers: ["Shift"] });
+      await page.mouse.move(0, 0);
+      await shot(studio, "03o-break-selection");
+      await page.keyboard.press("Escape");
       // Toasts: one line (a split with the playhead outside notes), and with a description (auto pitch without vocals).
       await page.keyboard.press("Meta+k");
       await shot(studio, "03g-toast");

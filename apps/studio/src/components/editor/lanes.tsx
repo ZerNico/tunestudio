@@ -176,8 +176,8 @@ export function TimeRuler(props: {
 export function BreakLane(props: {
   breaks: LineBreak[];
   view: TimeView;
-  /** The selected break, by the line it ends. */
-  selected: number | null;
+  /** The selected breaks, by the line they end. */
+  selected: ReadonlySet<number>;
   drag: BreakDrag | null;
   onDown: (item: LineBreak, event: PointerEvent) => void;
   onDoubleClick: (item: LineBreak) => void;
@@ -190,13 +190,14 @@ export function BreakLane(props: {
           <span
             data-singer={item().singer}
             data-auto={item().auto ? "" : undefined}
-            data-selected={props.selected === item().lineId ? "true" : undefined}
+            data-selected={props.selected.has(item().lineId) ? "true" : undefined}
+            aria-selected={props.selected.has(item().lineId) ? "true" : "false"}
             title={
               item().auto
-                ? "Line break (default timing): drag to move, double-click to remove"
-                : "Line break: drag to move, double-click to remove"
+                ? "Line break (default timing): drag to move, Shift-click to add to the selection, double-click to remove"
+                : "Line break: drag to move, Shift-click to add to the selection, double-click to remove"
             }
-            class="absolute top-1 h-3 w-2 -translate-x-1/2 cursor-ew-resize rounded-[2px] bg-violet data-auto:opacity-45 data-[singer=2]:bg-violet-text data-selected:opacity-100 data-selected:ring-2 data-selected:ring-foreground"
+            class="absolute top-1 h-3 w-2 -translate-x-1/2 cursor-ew-resize rounded-[2px] break-marker"
             // Centred on the break's line in the roll.
             style={{ left: `${breakX(props.view, item().time) + 0.5}px` }}
             onPointerDown={(event) => {

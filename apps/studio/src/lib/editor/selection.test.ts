@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { DrawnNote } from "./chart";
-import { adjacentNote, notesInBox, rangeSelection, toggled } from "./selection";
+import { adjacentNote, breaksInBox, notesInBox, rangeSelection, toggled } from "./selection";
 
 const note = (id: number, start: number, singer = 1, pitch = 60): DrawnNote => ({
   id,
@@ -19,6 +19,20 @@ const note = (id: number, start: number, singer = 1, pitch = 60): DrawnNote => (
 const notes = [note(1, 0), note(2, 1, 1, 62), note(5, 1.5, 2), note(3, 2, 1, 64), note(4, 3)];
 
 describe("selection", () => {
+  it("takes the line breaks a box crosses, of the singers whose notes it touched (any without notes)", () => {
+    const at = (lineId: number, time: number, singer = 1) => ({
+      lineId,
+      singer,
+      time,
+      auto: false,
+      gapStart: time,
+      gapEnd: time,
+    });
+    const breaks = [at(1, 1), at(2, 2), at(3, 2.5, 2), at(4, 4)];
+    expect(breaksInBox(breaks, { from: 0.5, to: 3 }, new Set([1]))).toEqual([1, 2]);
+    expect(breaksInBox(breaks, { from: 0.5, to: 3 }, new Set())).toEqual([1, 2, 3]);
+  });
+
   it("selects a range of the clicked singer's notes, either way round", () => {
     expect(rangeSelection(notes, 1, 3)).toEqual([1, 2, 3]);
     expect(rangeSelection(notes, 3, 1)).toEqual([1, 2, 3]);

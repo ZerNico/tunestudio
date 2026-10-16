@@ -145,6 +145,41 @@ describe("PianoRoll", () => {
     expect(screen.queryByTestId("selection-box")).toBeNull();
   });
 
+  it("lets a line break's line be grabbed with Select, drawn solid when it is selected", () => {
+    const props = { ...handlers(), onBreakDown: vi.fn() };
+    const breaks = [{ lineId: 7, singer: 1, time: 11.5, auto: true, gapStart: 11.5, gapEnd: 12 }];
+    const { unmount } = render(() => (
+      <PianoRoll
+        notes={[]}
+        breaks={breaks}
+        range={range}
+        view={view}
+        width={800}
+        height={180}
+        {...props}
+        selectedBreaks={new Set([7])}
+      />
+    ));
+    rollArea();
+    expect(screen.getByTestId("line-break")).toHaveAttribute("data-selected", "true");
+    const grip = screen.getByTestId("line-break-grip");
+    fireEvent.pointerDown(grip, { button: 0, clientX: 150, clientY: 50, pointerId: 1 });
+    expect(props.onBreakDown).toHaveBeenCalledWith(breaks[0], expect.anything());
+    // Not a selection box, nor a click on empty space.
+    fireEvent.pointerUp(grip, { clientX: 150, clientY: 50, pointerId: 1 });
+    expect(props.onBox).not.toHaveBeenCalled();
+    expect(props.onEmptyClick).not.toHaveBeenCalled();
+    // A double-click there adds a note, as on empty space; removing a break is the marker's.
+    fireEvent.dblClick(grip, { clientX: 150, clientY: 50 });
+    expect(props.onEmptyDoubleClick).toHaveBeenCalled();
+    unmount();
+    // Other tools draw or cut there.
+    render(() => (
+      <PianoRoll notes={[]} breaks={breaks} range={range} view={view} width={800} height={180} {...props} tool="draw" />
+    ));
+    expect(screen.queryByTestId("line-break-grip")).toBeNull();
+  });
+
   it("drops the selection box on Esc, before anything else hears it", () => {
     const props = handlers();
     render(() => <PianoRoll notes={[]} breaks={[]} range={range} view={view} width={800} height={180} {...props} />);
@@ -207,7 +242,15 @@ describe("PianoRoll", () => {
         width={800}
         height={180}
         {...handlers()}
-        drag={{ ids: new Set([1]), part: "body", time: 0.5, pitch: 2, anchor: 1, label: "+2 steps · F♯4" }}
+        drag={{
+          ids: new Set([1]),
+          plan: null,
+          part: "body",
+          time: 0.5,
+          pitch: 2,
+          anchor: { note: 1 },
+          label: "+2 steps · F♯4",
+        }}
       />
     ));
     const moved = screen.getByTestId("roll-note");
@@ -292,7 +335,7 @@ describe("BreakLane", () => {
       <BreakLane
         breaks={breaks}
         view={view}
-        selected={7}
+        selected={new Set([7])}
         drag={{ lineId: 7, time: 11.5, label: "0:11.5 · 2 notes move" }}
         {...props}
       />

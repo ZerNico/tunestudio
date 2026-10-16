@@ -1,5 +1,32 @@
-/** The editor's chart, flattened into what is drawn: notes in time order and each line's span and text. */
+/**
+ * The editor's chart, flattened into what is drawn: notes in time order, each line's span and text, the line breaks;
+ * and its grid (a step is 15 / #BPM seconds from #GAP).
+ */
 import type { EditorChart, EditorNote } from "~/lib/native/types";
+
+/** Times closer than this are the same (seconds, against float rounding). */
+const EPSILON = 1e-6;
+
+/** One grid step in seconds. */
+export const gridStep = (chart: EditorChart) => 15 / chart.bpm;
+
+/** `seconds` on the nearest grid line. */
+export function onGrid(chart: EditorChart, seconds: number): number {
+  const step = gridStep(chart);
+  return chart.gap + Math.round((seconds - chart.gap) / step) * step;
+}
+
+/** The highest grid line at or below `seconds`. */
+export function gridFloor(chart: EditorChart, seconds: number): number {
+  const step = gridStep(chart);
+  return chart.gap + Math.floor((seconds - chart.gap) / step + EPSILON) * step;
+}
+
+/** The lowest grid line at or above `seconds`. */
+export function gridCeil(chart: EditorChart, seconds: number): number {
+  const step = gridStep(chart);
+  return chart.gap + Math.ceil((seconds - chart.gap) / step - EPSILON) * step;
+}
 
 /** A note as drawn: which singer (1 or 2) and line it belongs to. */
 export interface DrawnNote extends EditorNote {
@@ -71,13 +98,22 @@ export interface LineBreak {
   gapEnd: number;
 }
 
-/** A gap longer than this gets its default switch a little after the last note, not right at its end. */
-const LONG_GAP = 2;
-const LONG_GAP_DELAY = 1;
-
-/** When the next line appears if the chart doesn't say: right after the last note, or a second later in a long gap. */
-export function defaultSwitch(gapStart: number, gapEnd: number): number {
-  return gapEnd - gapStart > LONG_GAP ? gapStart + LONG_GAP_DELAY : gapStart;
+/**
+ * When the next line appears if the chart doesn't say, by the rule YASS, Karedi and UltraStar Deluxe's editor share
+ * (the one ultrastar-es.org expects), so a chart reads the same in all of them. In a gap of 4 s or more, 2 s after the
+ * last note; of 2 s or more, 1 s after. Shorter ones go by grid steps (`step`, the file's beats): under 2 at the last
+ * note's end, up to 8 two before the next note, up to 12 three before, up to 16 four before, else ten after the end.
+ */
+export function defaultSwitch(gapStart: number, gapEnd: number, step: number): number {
+  const seconds = gapEnd - gapStart;
+  if (seconds >= 4) return gapStart + 2;
+  if (seconds >= 2) return gapStart + 1;
+  const steps = Math.round(seconds / step);
+  if (steps < 2) return gapStart;
+  if (steps <= 8) return gapEnd - 2 * step;
+  if (steps <= 12) return gapEnd - 3 * step;
+  if (steps <= 16) return gapEnd - 4 * step;
+  return gapStart + 10 * step;
 }
 
 /** Each singer's non-empty lines, in order. */
@@ -97,7 +133,7 @@ export function lineBreaks(chart: EditorChart): LineBreak[] {
         const gapStart = last.start + last.duration;
         const gapEnd = Math.max(gapStart, lines[i + 1]!.notes[0]!.start);
         const stored = line.switchStart;
-        const time = stored ?? defaultSwitch(gapStart, gapEnd);
+        const time = stored ?? defaultSwitch(gapStart, gapEnd, gridStep(chart));
         return {
           lineId: line.id,
           singer,
@@ -116,7 +152,6 @@ export function longest(items: readonly { duration: number }[]): number {
   return items.reduce((max, item) => Math.max(max, item.duration), 0);
 }
 
-/** When the last note ends (0 without notes). */
 /** The notes `time` is inside (not at their very start or end). */
 export function notesAt<T extends { start: number; duration: number }>(notes: readonly T[], time: number): T[] {
   return notes.filter((note) => note.start < time && note.start + note.duration > time);
@@ -131,6 +166,7 @@ export function spanOf(items: readonly { start: number; duration: number }[]): {
   };
 }
 
+/** When the last note ends (0 without notes). */
 export function chartEnd(notes: readonly DrawnNote[]): number {
   return notes.reduce((end, note) => Math.max(end, note.start + note.duration), 0);
 }

@@ -7,14 +7,13 @@
  */
 import type { EditorChart } from "~/lib/native/types";
 
-import { defaultSwitch } from "./chart";
+import { defaultSwitch, gridCeil, gridFloor, gridStep, onGrid } from "./chart";
 import type { EditRecorder } from "./document";
-import { gridCeil, gridFloor, gridStep, onGrid } from "./edits";
 
 const EPSILON = 1e-6;
 
-/** A singer's lines with notes, in order, with the line `lineId` among them. */
-function linesAround(chart: EditorChart, lineId: number) {
+/** A singer's lines with notes, in order, with the line `lineId` among them (at `index`). */
+export function linesAround(chart: EditorChart, lineId: number) {
   for (const singer of chart.singers) {
     const lines = singer.lines.filter((line) => line.notes.length > 0);
     const index = lines.findIndex((line) => line.id === lineId);
@@ -96,6 +95,23 @@ export function breakLanding(chart: EditorChart, lineId: number, time: number): 
 }
 
 /**
+ * Where the break after line `lineId` (at `time`) goes a grid step one way: over notes there, to their far edge (the
+ * notes change line). Null when it can't go that way.
+ */
+export function stepBreak(chart: EditorChart, lineId: number, time: number, direction: 1 | -1): number | null {
+  const around = linesAround(chart, lineId);
+  const line = around?.lines[around.index];
+  const next = around?.lines[around.index + 1];
+  const range = breakRange(chart, lineId);
+  if (!line || !next || !range) return null;
+  let at = onGrid(chart, time) + direction * gridStep(chart);
+  const span = spanAt(occupied([...line.notes, ...next.notes]), at);
+  if (span) at = direction === 1 ? span.end : span.start;
+  if (at < gridCeil(chart, range.min) - EPSILON || at > gridFloor(chart, range.max) + EPSILON) return null;
+  return at;
+}
+
+/**
  * Moves the break after line `lineId` to `time` (on the grid, within `breakRange`): the notes of the two lines go to
  * the one they start in, and the switch is stored (after the earlier line's last note). Returns false when there is
  * no next line.
@@ -118,37 +134,46 @@ export function moveBreak(tx: EditRecorder, chart: EditorChart, lineId: number, 
 }
 
 /**
- * Adds a break at `time` in the singer's line there: the notes starting from it go to a new line after it. A time
- * inside a note moves to that note's end. Returns false when it wouldn't leave a note on either side.
+ * Adds a break at `time` in the singer's line there: the notes starting from it go to a new line after it, which
+ * takes the line's own break (the new one ends `split`, the line's old one now ends `created`). A time inside a note
+ * moves to that note's end. Returns null when it wouldn't leave a note on either side.
  */
-export function addBreak(tx: EditRecorder, chart: EditorChart, singerId: number, time: number): boolean {
+export function addBreak(
+  tx: EditRecorder,
+  chart: EditorChart,
+  singerId: number,
+  time: number,
+): { split: number; created: number } | null {
   const singer = chart.singers.find((item) => item.id === singerId);
   const lines = singer?.lines.filter((line) => line.notes.length > 0) ?? [];
   let at = onGrid(chart, time);
   // The line `at` falls in: the last one starting before it.
   const line = lines.findLast((item) => item.notes[0]!.start < at - EPSILON);
-  if (!line) return false;
+  if (!line) return null;
   // Inside notes: after them (overlapping ones count as one stretch).
   at = spanAt(occupied(line.notes), at)?.end ?? at;
   const before = line.notes.filter((note) => note.start < at - EPSILON);
   const after = line.notes.filter((note) => note.start >= at - EPSILON);
-  if (before.length === 0 || after.length === 0) return false;
+  if (before.length === 0 || after.length === 0) return null;
   const created = tx.createLine({ singerId, switchStart: line.switchStart, switchEnd: line.switchEnd });
   for (const note of after) tx.updateNote(note.id, { lineId: created, edited: note.edited });
   tx.updateLine(line.id, { switchStart: at, switchEnd: null });
-  return true;
+  return { split: line.id, created };
 }
 
-/** Removes the break after line `lineId`: the next line's notes join it, and it ends where that line did. */
-export function removeBreak(tx: EditRecorder, chart: EditorChart, lineId: number): boolean {
+/**
+ * Removes the break after line `lineId`: the next line's notes join it, and it ends where that line did (its break,
+ * which ended the next line, now ends `lineId`). Returns the next line's id (gone now), or null without one.
+ */
+export function removeBreak(tx: EditRecorder, chart: EditorChart, lineId: number): number | null {
   const around = linesAround(chart, lineId);
   const line = around?.lines[around.index];
   const next = around?.lines[around.index + 1];
-  if (!line || !next) return false;
+  if (!line || !next) return null;
   for (const note of next.notes) tx.updateNote(note.id, { lineId: line.id, edited: note.edited });
   tx.updateLine(line.id, { switchStart: next.switchStart, switchEnd: next.switchEnd });
   tx.deleteLine(next.id);
-  return true;
+  return next.id;
 }
 
 /**
@@ -165,7 +190,7 @@ export function nearestGap(chart: EditorChart, singerId: number, time: number): 
     const gapEnd = line.notes[i + 1]!.start;
     const distance = time < gapStart ? gapStart - time : time > gapEnd ? time - gapEnd : 0;
     if (!best || distance < best.distance)
-      best = { distance, at: Math.min(defaultSwitch(gapStart, Math.max(gapStart, gapEnd)), gapEnd) };
+      best = { distance, at: Math.min(defaultSwitch(gapStart, Math.max(gapStart, gapEnd), gridStep(chart)), gapEnd) };
   }
   return best?.at ?? null;
 }

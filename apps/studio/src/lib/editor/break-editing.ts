@@ -1,17 +1,28 @@
 /**
- * Editing line breaks in the lane above the roll (`breaks.ts` has the rules). A marker is pressed to select it and
- * dragged to move it: a preview (`drag`, with a label) until it is let go, then one edit; Esc cancels. A double-click
- * on a marker removes it, one on the lane adds a break there. With a marker selected, Delete removes it; B adds a break
- * at the playhead, in the nearest gap. New breaks go to the singer whose note was touched last.
+ * Editing one line break (`breaks.ts` has the rules): dragging it, or ← / → with just it selected, moves it, across
+ * notes too (they change line). A drag is a preview (`drag`, with a label) until it is let go, then one edit; Esc
+ * cancels. A double-click on a marker removes it, one on the lane adds a break there; B adds one at the playhead, in
+ * the nearest gap. New breaks go to the singer whose note was touched last. What a press selects, and moving or
+ * deleting a selection, is `note-editing.ts`'s.
  */
 
 import { createSignal } from "solid-js";
 
 import type { AutoScroll } from "./autoscroll";
-import { addBreak, breakLanding, breakRange, moveBreak, nearestGap, removeBreak } from "./breaks";
-import type { LineBreak } from "./chart";
+import {
+  addBreak,
+  breakLanding,
+  breakRange,
+  linesAround,
+  moveBreak,
+  nearestGap,
+  removeBreak,
+  stepBreak,
+} from "./breaks";
+import { type LineBreak, lineBreaks } from "./chart";
 import type { ChartDocument } from "./document";
 import { followDrag } from "./drag";
+import type { Selection } from "./selection";
 import { formatTime } from "./view";
 
 /** A break being dragged: where it would go, and what to say about it. */
@@ -22,12 +33,12 @@ export interface BreakDrag {
 }
 
 export function createBreakEditing(options: {
-  doc: () => ChartDocument<number[]>;
+  doc: () => ChartDocument<Selection>;
+  selection: () => Selection;
+  setSelection: (selection: Selection) => void;
   /** The singer (id) new breaks go to. */
   singer: () => number | null;
   playheadTime: () => number;
-  /** A break was selected: the notes aren't any more. */
-  onSelect: () => void;
   onRefused: (message: string) => void;
   /** Where pointer moves and releases are heard during a drag (the window; tests pass their own). */
   pointerTarget?: EventTarget;
@@ -36,40 +47,44 @@ export function createBreakEditing(options: {
   /** Where the view starts (seconds): a drag counts how far it scrolled. */
   viewStart?: () => number;
 }) {
-  /** The selected break, by the line it ends. */
-  const [selected, setSelected] = createSignal<number | null>(null);
   const [drag, setDrag] = createSignal<BreakDrag | null>(null);
   let cancelDrag: (() => void) | null = null;
   const chart = () => options.doc().chart();
 
-  const select = (lineId: number | null) => {
-    setSelected(lineId);
-    if (lineId !== null) options.onSelect();
+  /**
+   * The selection after the break ending `from` now ends `to` (adding and removing breaks moves them between lines),
+   * without the one ending `gone`.
+   */
+  const renamed = (from: number, to: number, gone: number | null): Selection => {
+    const { notes, breaks } = options.selection();
+    return { notes, breaks: breaks.flatMap((id) => (id === gone ? [] : id === from ? [to] : [id])) };
   };
 
   const remove = (lineId: number) => {
     const current = chart();
-    options.doc().edit("Remove line break", (tx) => void removeBreak(tx, current, lineId));
-    setSelected(null);
+    let next: number | null = null;
+    options.doc().edit("Remove line break", (tx) => void (next = removeBreak(tx, current, lineId)), {
+      selectionAfter: () => (next === null ? options.selection() : renamed(next, lineId, lineId)),
+    });
   };
 
   const add = (time: number) => {
     const singerId = options.singer();
     const current = chart();
-    let added = false;
+    let added: ReturnType<typeof addBreak> = null;
     if (singerId !== null) {
-      options.doc().edit("Add line break", (tx) => void (added = addBreak(tx, current, singerId, time)));
+      options.doc().edit("Add line break", (tx) => void (added = addBreak(tx, current, singerId, time)), {
+        selectionAfter: () => (added ? renamed(added.split, added.created, null) : options.selection()),
+      });
     }
     if (!added) options.onRefused("Put the line break between two notes of a line.");
   };
 
   /** How many notes a break at `time` moves to the other line. */
   const moved = (lineId: number, time: number) => {
-    const singer = chart().singers.find((item) => item.lines.some((line) => line.id === lineId));
-    const lines = singer?.lines.filter((line) => line.notes.length > 0) ?? [];
-    const index = lines.findIndex((line) => line.id === lineId);
-    const line = lines[index];
-    const next = lines[index + 1];
+    const around = linesAround(chart(), lineId);
+    const line = around?.lines[around.index];
+    const next = around?.lines[around.index + 1];
     if (!line || !next) return 0;
     return (
       line.notes.filter((note) => note.start >= time).length + next.notes.filter((note) => note.start < time).length
@@ -77,19 +92,15 @@ export function createBreakEditing(options: {
   };
 
   return {
-    selected,
     drag,
     /** Whether a break is being dragged (Esc stops it before anything else). */
     busy: () => cancelDrag !== null,
     /** Stops a drag without changing anything (before undo and redo, and when the editor goes away). */
     cancel: () => cancelDrag?.(),
-    /** Nothing selected (notes were). */
-    deselect: () => setSelected(null),
 
-    /** A press on a marker: selects it, then follows the pointer for a drag. */
-    breakDown(item: LineBreak, press: { clientX: number }, pxPerSecond: number) {
+    /** Follows a press on a marker (selected by `note-editing.ts`) for a drag of just that break. */
+    follow(item: LineBreak, press: { clientX: number }, pxPerSecond: number) {
       cancelDrag?.();
-      select(item.lineId);
       const current = chart();
       const range = breakRange(current, item.lineId);
       if (!range) return;
@@ -124,6 +135,17 @@ export function createBreakEditing(options: {
       });
     },
 
+    /** ← / → with just a break selected: it goes a grid step, over notes too (they change line). */
+    nudge(lineId: number, direction: 1 | -1) {
+      const current = chart();
+      const item = lineBreaks(current).find((each) => each.lineId === lineId);
+      const time = item && stepBreak(current, lineId, item.time, direction);
+      if (time === null || time === undefined) return;
+      options
+        .doc()
+        .edit("Move line break", (tx) => void moveBreak(tx, current, lineId, time), { merge: `break:${lineId}` });
+    },
+
     /** A double-click on a marker removes it. */
     breakDoubleClick(item: LineBreak) {
       remove(item.lineId);
@@ -146,16 +168,6 @@ export function createBreakEditing(options: {
         const at = singerId === null ? null : nearestGap(chart(), singerId, options.playheadTime());
         if (at === null) options.onRefused("There's no gap between notes here for a line break.");
         else add(at);
-        return true;
-      }
-      const lineId = selected();
-      if (lineId === null) return false;
-      if (event.key === "Escape") {
-        setSelected(null);
-        return true;
-      }
-      if (event.key === "Delete" || event.key === "Backspace") {
-        remove(lineId);
         return true;
       }
       return false;

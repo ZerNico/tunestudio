@@ -508,6 +508,27 @@
   @media (prefers-reduced-motion: reduce) { &[data-pending] { opacity: 0.55; } }
 }
 
+/* A line break in the piano roll: data-singer, data-auto (no switch stored: fainter), data-selected="true" (solid and
+   light, so it stands apart from the green playhead and notes). */
+@utility roll-break {
+  border-left: 1px dashed var(--violet);
+  &[data-singer="2"] { border-left-color: var(--violet-text); }
+  &[data-auto] { opacity: 0.45; }
+  &[data-selected="true"] { border-left: 2px solid var(--foreground); opacity: 1; margin-left: -0.5px; }
+}
+
+/* A line break's marker in the lane above the roll, with the same data attributes as `roll-break`. */
+@utility break-marker {
+  background-color: var(--violet);
+  &[data-singer="2"] { background-color: var(--violet-text); }
+  &[data-auto] { opacity: 0.45; }
+  &[data-selected="true"] {
+    background-color: var(--foreground);
+    opacity: 1;
+    box-shadow: 0 0 0 1px var(--note-edge);
+  }
+}
+
 @keyframes note-pending { to { opacity: 0.4; } }
 
 /* The Split tool over a note: scissors. */

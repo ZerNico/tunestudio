@@ -2,7 +2,7 @@ import type { JSX } from "@solidjs/web";
 import { Show } from "solid-js";
 
 import { BrandMark } from "~/components/brand-mark";
-import { appVersion, platform } from "~/lib/desktop";
+import { platform } from "~/lib/desktop";
 
 /**
  * The app's own title bar. The window has no native one (`titleBarStyle: "hidden"`): on macOS
@@ -20,12 +20,9 @@ export function TitleBar(props: { start?: JSX.Element; children?: JSX.Element })
       <div class="flex items-center gap-2.5">
         <BrandMark class="size-[18px]" />
         <span class="text-[13px] font-semibold tracking-[-0.2px] text-foreground">Tune Studio</span>
-        <span class="rounded-[4px] border border-gray-27 px-1.5 py-px font-mono text-[9.5px] text-faint-foreground">
-          v{appVersion}
-        </span>
       </div>
       <Show when={props.start}>
-        <div class="flex items-center gap-1 border-l border-bar-border pl-3 app-no-drag">{props.start}</div>
+        <div class="ml-3 flex items-center gap-1 app-no-drag">{props.start}</div>
       </Show>
       <div class="ml-auto flex items-center gap-1 app-no-drag">{props.children}</div>
     </header>

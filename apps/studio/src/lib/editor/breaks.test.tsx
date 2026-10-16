@@ -107,7 +107,9 @@ describe("line breaks", () => {
 
   it("adds a break that splits a line, at a note's end when it falls inside one", () => {
     const { run, lines } = setup();
-    expect(run((tx) => void addBreak(tx, chart, 1, 1.62))).toBe(true);
+    let added: ReturnType<typeof addBreak> = null;
+    run((tx) => void (added = addBreak(tx, chart, 1, 1.62)));
+    expect(added).toEqual({ split: 10, created: expect.any(Number) });
     expect(lines()).toEqual([
       { notes: [100, 101], switch: expect.closeTo(1.8, 9) },
       { notes: [102], switch: 2.5 },
@@ -117,9 +119,9 @@ describe("line breaks", () => {
 
   it("adds no break that would leave a line without notes", () => {
     const { run } = setup();
-    let added = true;
+    let added: ReturnType<typeof addBreak> = null;
     run((tx) => void (added = addBreak(tx, chart, 1, 1)));
-    expect(added).toBe(false);
+    expect(added).toBeNull();
   });
 
   it("removes a break, joining the lines", () => {
@@ -129,8 +131,9 @@ describe("line breaks", () => {
   });
 
   it("finds the gap nearest to a time for a new break, at its default switch", () => {
-    expect(nearestGap(chart, 1, 1.4)).toBeCloseTo(1.3);
-    expect(nearestGap(chart, 1, 3.1)).toBeCloseTo(3.3);
+    // Gaps of 4 steps: two steps before the next note.
+    expect(nearestGap(chart, 1, 1.4)).toBeCloseTo(1.4);
+    expect(nearestGap(chart, 1, 3.1)).toBeCloseTo(3.4);
     expect(nearestGap(chart, 2, 1)).toBeNull();
   });
 

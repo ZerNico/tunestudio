@@ -19,15 +19,9 @@ window.addEventListener("message", (event) => {
   if (port) ipcRenderer.postMessage(RPC_CONNECT_CHANNEL, null, [port]);
 });
 
-function argument(name: string): string {
-  const prefix = `--${name}=`;
-  return process.argv.find((arg) => arg.startsWith(prefix))?.slice(prefix.length) ?? "";
-}
-
 /** Values the renderer needs synchronously. Everything else goes through the RPC contract. */
 contextBridge.exposeInMainWorld("tunestudio", {
   platform: process.platform,
-  version: argument("ts-version"),
   /**
    * The path of a dropped or picked file or folder, and whether it is a folder; main then lets
    * the renderer use that path. `null` for files that aren't on disk.

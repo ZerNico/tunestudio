@@ -81,6 +81,41 @@ test("copies and pastes notes with the keys and the Edit menu, undone in one ste
   }
 });
 
+test("line breaks are selected with the notes, move with them, and are grabbed on the roll too", async () => {
+  await openSong();
+  const { page } = studio;
+  const notes = page.getByTestId("roll-note");
+  const marker = page.getByTestId("break-marker");
+  const line = page.getByTestId("line-break");
+  const undo = page.getByTestId("undo");
+
+  // Everything: the break too, drawn as selected in the lane and the roll.
+  await notes.nth(0).click();
+  await page.keyboard.press("ControlOrMeta+a");
+  await expect(marker).toHaveAttribute("data-selected", "true");
+  await expect(line).toHaveAttribute("data-selected", "true");
+  await page.keyboard.press("Escape");
+  await expect(marker).not.toHaveAttribute("data-selected", "true");
+
+  // A note of the second line and the break (Shift on its marker) move together.
+  await notes.nth(4).click();
+  await marker.click({ modifiers: ["Shift"] });
+  await expect(marker).toHaveAttribute("data-selected", "true");
+  await page.keyboard.press("ArrowRight");
+  await expect(undo).toHaveAttribute("aria-label", "Undo Move note and line break");
+
+  // The break's line in the roll is grabbed as its marker is: a drag moves just the break.
+  await page.keyboard.press("Escape");
+  const grip = (await page.getByTestId("line-break-grip").boundingBox())!;
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(grip.x + grip.width / 2 - 30, grip.y + grip.height / 2, { steps: 4 });
+  await page.mouse.up();
+  await expect(undo).toHaveAttribute("aria-label", "Undo Move line break");
+  await expect(marker).toHaveAttribute("data-selected", "true");
+  await expect(notes.nth(0)).not.toHaveAttribute("data-selected", "true");
+});
+
 test("the note menu acts on the selection, pastes on empty space, and auto pitch has a button", async () => {
   await openSong();
   const { page } = studio;

@@ -42,7 +42,7 @@ src/
 ├── lib/
 │   ├── native/           # RPC contract and output schemas, MessagePort channel name, client
 │   ├── recent-projects/  # Recent projects loader; fixtures.ts is PLACEHOLDER data
-│   ├── desktop.ts        # platform + version, provided synchronously by the preload
+│   ├── desktop.ts        # platform and desktop helpers, provided synchronously by the preload
 │   ├── import-files.ts   # Classifies picked/dropped files and folders (names only, nothing is read)
 │   ├── youtube.ts        # YouTube link parsing
 │   ├── format.ts         # Relative times, dates, file sizes

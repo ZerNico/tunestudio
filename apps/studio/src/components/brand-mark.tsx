@@ -20,7 +20,8 @@ export function BrandMark(props: { class?: string }) {
       <For each={BARS}>
         {(height, index) => (
           <rect
-            x={2.25 + index() * 4.25}
+            // A little right of the middle: the tall bars are on the left, so it looks centred.
+            x={2.45 + index() * 4.25}
             y={10 - height * 8.5}
             width="2.75"
             height={height * 17}
