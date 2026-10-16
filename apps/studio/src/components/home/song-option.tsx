@@ -17,7 +17,7 @@ export function SongOption(props: { onChoose: () => void }) {
     >
       <Button variant="secondary" size="lg" class="w-full" onClick={() => props.onChoose()} data-testid="song-choose">
         <FileMusicIcon />
-        Choose song…
+        Choose song
       </Button>
       <p class="m-0 min-h-[2lh] text-[11px] text-faint-foreground">
         A song folder or its .txt chart. Or drop it anywhere.

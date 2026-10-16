@@ -77,9 +77,7 @@ export function DropOverlay(props: { visible: boolean }) {
             <FolderOpenIcon class="size-8 text-violet" />
           </div>
           <p class="m-0 text-[20px] font-[550] tracking-[-0.4px] text-foreground">Drop to start a project</p>
-          <p class="m-0 text-[12px] text-muted-foreground">
-            An audio file becomes a new project, a song folder or chart is imported, and a project file opens.
-          </p>
+          <p class="m-0 text-[12px] text-muted-foreground">Audio files, UltraStar songs and projects.</p>
         </div>
       </div>
     </Show>

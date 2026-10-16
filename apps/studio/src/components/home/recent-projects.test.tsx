@@ -41,10 +41,10 @@ describe("RecentProjects", () => {
         onOpen={vi.fn()}
         onReveal={vi.fn()}
         onRemove={vi.fn()}
-        headerActions={<button type="button">Open project…</button>}
+        headerActions={<button type="button">Open project</button>}
       />
     ));
-    expect(screen.getByRole("button", { name: "Open project…" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open project" })).toBeInTheDocument();
   });
 
   it("lists each project as a button describing it", () => {

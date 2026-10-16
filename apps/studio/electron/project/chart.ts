@@ -80,7 +80,8 @@ const damaged = () => new ProjectDamaged({ message: "The project's song details 
 export function readSong(db: Queryable) {
   return Effect.gen(function* () {
     const [songRow] = yield* db.select().from(song).limit(1).pipe(Effect.orDie);
-    if (!songRow) return yield* new ProjectDamaged({ message: "The project has no song details; it may be damaged." });
+    if (!songRow)
+      return yield* new ProjectDamaged({ message: "The project is missing its song details. It may be damaged." });
     const language = yield* decodeLanguages(songRow.language).pipe(Effect.mapError(damaged));
     const extraHeaders = yield* decodeExtraHeaders(songRow.extraHeaders).pipe(Effect.mapError(damaged));
     return { songRow, language, extraHeaders };

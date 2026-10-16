@@ -103,7 +103,7 @@ describe("inspecting a song folder", () => {
     expect(noChart.message).toBe("“Empty” has no UltraStar chart (.txt file).");
     const unreadable = await run(Effect.flip(inspectSong(broken)));
     expect(unreadable).toBeInstanceOf(ChartUnreadable);
-    expect(unreadable.message).toMatch(/^Couldn't read “song.txt”: Line 3: Note length must be greater than zero/);
+    expect(unreadable.message).toMatch(/^Couldn't read “song.txt”: Line 3: A note has no length/);
     const unsupported = await run(Effect.flip(inspectSong(encoding)));
     expect(unsupported.message).toBe("Couldn't read “song.txt”: The chart's encoding “KLINGON” isn't supported.");
   });
@@ -289,7 +289,7 @@ describe("importing a song", () => {
     ]);
     expect(song.year).toBeNull();
     expect(song.extraHeaders).toEqual([["YEAR", "soon"]]);
-    expect(JSON.parse(meta.import_warnings!)).toEqual(["#YEAR “soon” isn't a year; it was kept as is."]);
+    expect(JSON.parse(meta.import_warnings!)).toEqual(["#YEAR “soon” isn't a year. It was kept as it is."]);
   });
 
   it("removes the half-written file when the import fails or is interrupted", async () => {

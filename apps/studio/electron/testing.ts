@@ -182,6 +182,7 @@ export function recordingDesktop(musicFolder: string) {
     chooseProjectLocation: answer,
     chooseExportFolder: answer,
     chooseTextFile: answer,
+    chooseMediaFile: answer,
     chooseImage: answer,
     country: "US",
     reveal: (target) => Effect.sync(() => void recorded.revealed.push(target)),

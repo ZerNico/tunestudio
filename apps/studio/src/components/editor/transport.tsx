@@ -169,13 +169,7 @@ export function Transport(props: {
             if (value !== null) props.playback.setSpeed(value);
           }}
         >
-          <SelectTrigger
-            variant="ghost"
-            size="sm"
-            class="w-[62px]"
-            aria-label="Speed (the pitch stays)"
-            data-testid="speed"
-          >
+          <SelectTrigger variant="ghost" size="sm" class="w-[62px]" aria-label="Speed" data-testid="speed">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 
-import { and, eq, sql } from "drizzle-orm";
-import { Effect, FileSystem } from "effect";
+import { and, eq, isNull, ne, sql } from "drizzle-orm";
+import { Effect, FileSystem, Semaphore } from "effect";
 
+import { songFileName } from "../../src/lib/file-names";
 import {
   DiskFull,
   type FileError,
@@ -13,7 +14,7 @@ import {
   quoted,
 } from "../errors";
 import { orDiskFull, type ProjectDb, type Queryable } from "./database";
-import { MEDIA_ROLES, MEDIA_SOURCES, media, mediaChunks } from "./schema";
+import { analysis, MEDIA_ROLES, MEDIA_SOURCES, media, mediaChunks, song } from "./schema";
 
 /** Media is stored in chunks of this many bytes; only a file's last chunk is shorter. */
 export const CHUNK_SIZE = 1024 * 1024;
@@ -146,6 +147,64 @@ function isFileError(error: unknown): error is FileError {
     error instanceof DiskFull ||
     error instanceof FileSystemFailure
   );
+}
+
+/** What the project's files are named after: "Artist - Title", as an export names them. */
+export function mediaBaseName(db: Queryable): Effect.Effect<string> {
+  return Effect.map(
+    db.select({ title: song.title, artist: song.artist }).from(song).limit(1).pipe(Effect.orDie),
+    ([details]) => songFileName(details?.artist ?? "", details?.title ?? ""),
+  );
+}
+
+/** Each open project's lock for replacing its media. */
+const locks = new WeakMap<object, Semaphore.Semaphore>();
+function lockFor(db: ProjectDb): Semaphore.Semaphore {
+  let lock = locks.get(db);
+  if (!lock) {
+    lock = Semaphore.makeUnsafe(1);
+    locks.set(db, lock);
+  }
+  return lock;
+}
+
+/** Runs `effect` as the project's only change to its media at the time. */
+export function withMediaLock<A, E, R>(db: ProjectDb, effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> {
+  return lockFor(db).withPermits(1)(effect);
+}
+
+/**
+ * Makes `input` the project's only file of its role, or removes the role's files (null): the new file goes in, then
+ * every other one of the role (their chunks with them, and what was worked out from them). Run it under
+ * `withMediaLock`, or use `replaceRole`.
+ */
+export function putRole(
+  db: ProjectDb,
+  role: MediaRole,
+  input: Omit<MediaInput, "role"> | null,
+): Effect.Effect<MediaRow | null, FileError, FileSystem.FileSystem> {
+  return Effect.gen(function* () {
+    const added = input ? yield* writeMedia(db, { ...input, role }) : null;
+    yield* db
+      .delete(media)
+      .where(added ? and(eq(media.role, role), ne(media.id, added.id)) : eq(media.role, role))
+      .pipe(orDiskFull);
+    // The sung pitch of vocals that are gone only takes up space (the lyrics stay, whatever song they came with).
+    yield* db
+      .delete(analysis)
+      .where(and(isNull(analysis.inputMediaId), eq(analysis.kind, "pitch")))
+      .pipe(orDiskFull);
+    return added;
+  });
+}
+
+/** `putRole` as one change at a time per project. */
+export function replaceRole(
+  db: ProjectDb,
+  role: MediaRole,
+  input: Omit<MediaInput, "role"> | null,
+): Effect.Effect<MediaRow | null, FileError, FileSystem.FileSystem> {
+  return withMediaLock(db, putRole(db, role, input));
 }
 
 /** Every media row, in the order it was added. */

@@ -8,7 +8,7 @@ import { Effect, FileSystem, Path, Schema } from "effect";
 import { COPYING_THE_SONG, summarizeAudioFile } from "../../src/lib/import-files";
 import { LONGEST_SONG_SECONDS } from "../../src/lib/native/contract";
 import type { AudioFileDetails, DownloadedDraft, ImportProgress } from "../../src/lib/native/types";
-import { AudioUnreadable, mapFileError, VideoDownloadFailed } from "../errors";
+import { MediaUnreadable, mapFileError, VideoDownloadFailed } from "../errors";
 import { separateStems } from "../separation/separation";
 import { Desktop } from "../services/desktop";
 import { Drafts } from "../services/drafts";
@@ -43,13 +43,17 @@ const decodeProbe = Schema.decodeUnknownEffect(Probe);
 /** Image files by the codec FFmpeg names for embedded artwork. */
 const ARTWORK_EXTENSIONS: Record<string, string> = { mjpeg: ".jpg", png: ".png" };
 
-const unreadable = (name: string) =>
-  new AudioUnreadable({
-    message: `Tune Studio can't read “${name}” as audio. Choose an MP3, M4A, FLAC, OGG, OPUS or WAV file.`,
-  });
+/** What each kind of file may be, for saying so when one isn't. */
+const KINDS = {
+  audio: "audio. Choose an MP3, M4A, FLAC, OGG, OPUS or WAV file",
+  video: "a video. Choose an MP4, WEBM, MKV, MOV or AVI file",
+};
+
+const unreadable = (name: string, kind: keyof typeof KINDS = "audio") =>
+  new MediaUnreadable({ message: `Tune Studio can't read “${name}” as ${KINDS[kind]}.` });
 
 /** FFmpeg and FFprobe, installed first if needed. */
-const ffmpegTools = Effect.gen(function* () {
+export const ffmpegTools = Effect.gen(function* () {
   const { ffmpeg, ffprobe } = (yield* Tools.use((tools) => tools.ensure(["ffmpeg"]))).ffmpeg;
   if (!ffmpeg || !ffprobe) {
     return yield* new VideoDownloadFailed({ message: "FFmpeg couldn't be installed. Try again." });
@@ -57,18 +61,26 @@ const ffmpegTools = Effect.gen(function* () {
   return { ffmpeg, ffprobe };
 });
 
-/** What FFprobe says about `file`: its tags, length and streams. Fails when it isn't audio. */
-function probe(ffprobe: string, file: string, name: string) {
+/**
+ * What FFprobe says about `file` (called `name`): its tags, length and streams. Fails when it has no sound, or for a
+ * video no picture (artwork doesn't count).
+ */
+export function probe(ffprobe: string, file: string, name: string, kind: keyof typeof KINDS = "audio") {
   return Effect.gen(function* () {
     const lines: string[] = [];
     const result = yield* runTool(
       ffprobe,
       ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", "--", file],
       (line) => Effect.sync(() => void lines.push(line)),
-    ).pipe(Effect.mapError(() => unreadable(name)));
-    if (result.code !== 0) return yield* unreadable(name);
-    const info = yield* decodeProbe(lines.join("\n")).pipe(Effect.mapError(() => unreadable(name)));
-    if (!info.streams?.some((stream) => stream.codec_type === "audio")) return yield* unreadable(name);
+    ).pipe(Effect.mapError(() => unreadable(name, kind)));
+    if (result.code !== 0) return yield* unreadable(name, kind);
+    const info = yield* decodeProbe(lines.join("\n")).pipe(Effect.mapError(() => unreadable(name, kind)));
+    const fits = (info.streams ?? []).some((stream) =>
+      kind === "audio"
+        ? stream.codec_type === "audio"
+        : stream.codec_type === "video" && stream.disposition?.attached_pic !== 1,
+    );
+    if (!fits) return yield* unreadable(name, kind);
     return info;
   });
 }
@@ -118,11 +130,11 @@ function extractArtwork(ffmpeg: string, file: string, info: Probe, folder: strin
 }
 
 /** The song in an audio file, too long to be a song or not. */
-function checkLength(info: Probe, name: string) {
+export function checkLength(info: Probe, name: string) {
   const duration = durationOf(info);
   return duration !== null && duration > LONGEST_SONG_SECONDS
     ? Effect.fail(
-        new AudioUnreadable({
+        new MediaUnreadable({
           message: `“${name}” is longer than ${LONGEST_SONG_SECONDS / 60} minutes, too long for a song.`,
         }),
       )

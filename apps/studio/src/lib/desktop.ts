@@ -12,6 +12,7 @@ interface DesktopGlobals {
   pathForFile?: (file: File) => Promise<FilePath | null>;
   onEditCommand?: (listener: (command: EditCommand, text?: string) => void) => () => void;
   clipboard?: (request: ClipboardRequest) => void;
+  onOpenRequest?: (listener: () => void) => () => void;
 }
 
 declare global {
@@ -37,6 +38,11 @@ export const platform: Platform =
 /** "Reveal in Finder" on macOS, "Show in Explorer" on Windows, "Show in folder" elsewhere. */
 export const revealLabel =
   platform === "macos" ? "Reveal in Finder" : platform === "windows" ? "Show in Explorer" : "Show in folder";
+
+/** Calls `listener` when main has a project file for this window to open (`windows.takeOpenRequest`). */
+export function onOpenRequest(listener: () => void): () => void {
+  return globals.onOpenRequest?.(listener) ?? (() => {});
+}
 
 /**
  * Where a dropped or picked `File` is on disk; main then lets the renderer use that path.

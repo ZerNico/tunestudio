@@ -97,6 +97,17 @@ export const UsdbExportInput = Schema.Struct({
   path: Schema.String,
 });
 
+/** The files replaced by one of the user's: the song, vocals, music and video. */
+export const SongMediaRole = Schema.Literals(["audio", "vocals", "instrumental", "video"]);
+export type SongMediaRole = typeof SongMediaRole.Type;
+
+export const ReplaceMediaInput = Schema.Struct({
+  id: Schema.String,
+  role: SongMediaRole,
+  /** The file to copy in as it is, from `dialogs.chooseMediaFile`. */
+  path: Schema.String,
+});
+
 export const RecentEntryInput = Schema.Struct({
   path: Schema.String,
   title: Schema.String,
@@ -312,6 +323,12 @@ export class NativeRpcs extends RpcGroup.make(
   query("dialogs.chooseCoverImage", nullable(ChosenImage)),
   /** Picks the folder an UltraStar export goes into. */
   query("dialogs.chooseExportFolder", nullable(Schema.String)),
+  /** Picks an audio or video file, e.g. to replace the song's. `null` when cancelled. */
+  call(
+    "dialogs.chooseMediaFile",
+    Schema.Struct({ kind: Schema.Literals(["audio", "video"]) }),
+    nullable(Schema.String),
+  ),
   /** Asks where to save a chart's text for USDB, suggesting `<name>.txt` in the Music folder. */
   call("dialogs.chooseUsdbFile", SaveLocationInput, nullable(Schema.String)),
 
@@ -343,6 +360,12 @@ export class NativeRpcs extends RpcGroup.make(
   call("project.exportUsdb", UsdbExportInput, Schema.Struct({ warnings: Schema.Array(Schema.String) })),
   /** Replaces (or removes) the cover or background; returns the project's overview with its media as they are now. */
   call("project.setArtwork", ArtworkInput, ProjectOverview),
+  /** Replaces the song, vocals, music or video with a file (checked to be one); returns the overview as it is now. */
+  call("project.replaceMedia", ReplaceMediaInput, ProjectOverview),
+  /** Removes the video (the song, vocals and music are only replaced); returns the overview as it is now. */
+  call("project.removeVideo", ProjectInput, ProjectOverview),
+  /** Separates the vocals and music from the song again, reporting progress; returns the overview as it is now. */
+  withProgress("project.separate", ProjectInput, ImportProgress, ProjectOverview),
 
   /** The recent projects, newest first; files that no longer exist are dropped. */
   query("recents.list", Schema.Array(RecentProjectEntry)),
@@ -376,6 +399,10 @@ export class NativeRpcs extends RpcGroup.make(
   withProgress("drafts.makeChart", DraftChartInput, ImportProgress, MadeChart),
   /** Saves the draft as a new project with the user's choices, reporting progress, and opens it. */
   withProgress("drafts.create", DraftProjectInput, ImportProgress, OpenedProject),
+  /** The project file the OS asked this window to open (`windows.ts`), once; null for none. */
+  query("windows.takeOpenRequest", nullable(Schema.String)),
+  /** Opens another window, on the start screen. */
+  query("windows.add", Schema.Void),
   /** Throws a new project's draft away (the user cancelled). */
   command("drafts.discard", DraftInput),
 

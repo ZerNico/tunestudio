@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import type { ProjectChart } from "./chart-mapping";
-import { formatMetaTags, parseMetaTags, usdbText, youtubeIdOf } from "./usdb";
+import { formatMetaTags, parseMetaTags, readMetaTags, usdbText, youtubeIdOf } from "./usdb";
+
+const NONE = { audio: null, cover: null, background: null };
 
 const note = (start: number, lyric: string) => ({ start, duration: 0.25, pitch: 62, lyric, type: "normal" as const });
 
@@ -63,14 +65,31 @@ describe("meta tags", () => {
   });
 });
 
+describe("readMetaTags", () => {
+  it("takes what USDB keeps in the meta tags as the song's own, where its headers don't say", () => {
+    const chart = song({ youtubeId: null, previewStart: 7 });
+    readMetaTags(chart, parseMetaTags("v=rl0IjlamWPI,preview=50.73,medley=0-1532,p1=Mia,tags=live%2C80s")!);
+    // 300 BPM: a beat is 50 ms, from GAP at 1 s.
+    expect(chart.song).toMatchObject({ youtubeId: "rl0IjlamWPI", previewStart: 7, medleyStart: 1 });
+    expect(chart.song.medleyEnd).toBeCloseTo(77.6, 9);
+    expect(chart.singers[0]!.name).toBe("Mia");
+    expect(chart.song.extraHeaders).toContainEqual(["TAGS", "live, 80s"]);
+  });
+});
+
 describe("usdbText", () => {
   it("writes usdb_syncer's headers in its order, without #VERSION, with CRLF line ends", () => {
-    const { text, warnings } = usdbText(song(), "RAUM27 - Sommerregen.m4a");
-    expect(text.split("\r\n").slice(0, 10)).toEqual([
+    const { text, warnings } = usdbText(song(), {
+      ...NONE,
+      audio: "RAUM27 - Sommerregen.m4a",
+      cover: "RAUM27 - Sommerregen [CO].jpg",
+    });
+    expect(text.split("\r\n").slice(0, 11)).toEqual([
       "#ARTIST:RAUM27",
       "#TITLE:Sommerregen",
       "#MP3:RAUM27 - Sommerregen.m4a",
       "#CREATOR:Nico",
+      "#COVER:RAUM27 - Sommerregen [CO].jpg",
       "#GENRE:Pop",
       "#YEAR:2019",
       "#LANGUAGE:German",
@@ -78,16 +97,15 @@ describe("usdbText", () => {
       "#GAP:1000",
       "#VIDEO:v=kPBzTxZQG5Q",
     ]);
-    expect(text).toContain(": 0 5 2 Fens\r\n: 5 5 2 ter\r\n- 17\r\n: 20 5 2 auf\r\nE\r\n");
+    expect(text).toMatch(/: 0 5 2 Fens\r\n: 5 5 2 ter\r\n- 17\r\n: 20 5 2 auf\r\nE$/);
     expect(text).not.toMatch(/(?<!\r)\n/);
     expect(warnings).toEqual([]);
   });
 
-  it("rounds BPM to two decimals and GAP to whole milliseconds, and says so", () => {
-    const { text, warnings } = usdbText(song({ bpm: 300.123, gap: 1.0004 }), null);
+  it("rounds BPM to two decimals and GAP to whole milliseconds", () => {
+    const { text } = usdbText(song({ bpm: 300.123, gap: 1.0004 }), NONE);
     expect(text).toContain("#BPM:300.12\r\n#GAP:1000\r\n");
     expect(text).not.toContain("#MP3");
-    expect(warnings[0]).toMatch(/two decimals/);
   });
 
   it("puts preview, medley and tags in the meta tags, keeping a USDB chart's cover there", () => {
@@ -101,7 +119,7 @@ describe("usdbText", () => {
           ["TAGS", "live, acoustic"],
         ],
       }),
-      null,
+      NONE,
     );
     expect(text).toContain(
       "#VIDEO:v=kPBzTxZQG5Q,co=here-without-you-5ce7555adf766.jpg,preview=12.5,medley=0-25,tags=live%2Cacoustic\r\n",
@@ -116,7 +134,7 @@ describe("usdbText", () => {
       { ...chart.singers[0]!, name: "Mia" },
       { index: 2, name: "Kai", lines: [{ switchStart: null, switchEnd: null, notes: [note(3, "la")] }] },
     ];
-    const { text } = usdbText(chart, null);
+    const { text } = usdbText(chart, NONE);
     expect(text).toContain("#TITLE:Sommerregen [DUET]\r\n");
     expect(text).toContain("#VIDEO:v=kPBzTxZQG5Q,p1=Mia,p2=Kai\r\n");
     expect(text).toContain("\r\nP1\r\n");
@@ -124,7 +142,7 @@ describe("usdbText", () => {
   });
 
   it("warns when usdb_syncer can't know where the audio is", () => {
-    const { text, warnings } = usdbText(song({ youtubeId: null }), null);
+    const { text, warnings } = usdbText(song({ youtubeId: null }), NONE);
     expect(text).not.toContain("#VIDEO");
     expect(warnings).toContainEqual(expect.stringContaining("no YouTube video"));
   });

@@ -194,8 +194,8 @@ export function BreakLane(props: {
             aria-selected={props.selected.has(item().lineId) ? "true" : "false"}
             title={
               item().auto
-                ? "Line break (default timing): drag to move, Shift-click to add to the selection, double-click to remove"
-                : "Line break: drag to move, Shift-click to add to the selection, double-click to remove"
+                ? "Line break (default timing). Drag to move, double-click to remove."
+                : "Line break. Drag to move, double-click to remove."
             }
             class="absolute top-1 h-3 w-2 -translate-x-1/2 cursor-ew-resize rounded-[2px] break-marker"
             // Centred on the break's line in the roll.

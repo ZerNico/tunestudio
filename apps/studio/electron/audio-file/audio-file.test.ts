@@ -128,9 +128,9 @@ describe("inspectAudioFile", () => {
     const long = setup({ format: { duration: "3600" }, streams: [AUDIO] });
     return Effect.gen(function* () {
       const noSound = yield* Effect.flip(inspectAudioFile(silent.song).pipe(Effect.provide(silent.layer)));
-      expect(noSound).toMatchObject({ _tag: "AudioUnreadable", message: expect.stringContaining("can't read") });
+      expect(noSound).toMatchObject({ _tag: "MediaUnreadable", message: expect.stringContaining("can't read") });
       const tooLong = yield* Effect.flip(inspectAudioFile(long.song).pipe(Effect.provide(long.layer)));
-      expect(tooLong).toMatchObject({ _tag: "AudioUnreadable", message: expect.stringContaining("longer than 20") });
+      expect(tooLong).toMatchObject({ _tag: "MediaUnreadable", message: expect.stringContaining("longer than 20") });
     });
   });
 });
@@ -160,7 +160,7 @@ describe("audioFileIntoDraft", () => {
     const { layer, song } = setup({ format: { duration: "3600" }, streams: [AUDIO] });
     return Effect.gen(function* () {
       const error = yield* Effect.flip(audioFileIntoDraft(song));
-      expect(error._tag).toBe("AudioUnreadable");
+      expect(error._tag).toBe("MediaUnreadable");
     }).pipe(Effect.provide(layer));
   });
 });

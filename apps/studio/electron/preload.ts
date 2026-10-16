@@ -6,6 +6,7 @@ import {
   EDIT_COMMAND_CHANNEL,
   type EditCommand,
   GRANT_PATH_CHANNEL,
+  OPEN_REQUEST_CHANNEL,
   RPC_CONNECT_CHANNEL,
 } from "../src/lib/native/channel";
 
@@ -35,6 +36,12 @@ contextBridge.exposeInMainWorld("tunestudio", {
     const forward = (_event: unknown, command: EditCommand, text?: string) => listener(command, text);
     ipcRenderer.on(EDIT_COMMAND_CHANNEL, forward);
     return () => ipcRenderer.removeListener(EDIT_COMMAND_CHANNEL, forward);
+  },
+  /** Calls `listener` when main has a project file for this window to open; returns a function that stops it. */
+  onOpenRequest: (listener: () => void): (() => void) => {
+    const forward = () => listener();
+    ipcRenderer.on(OPEN_REQUEST_CHANNEL, forward);
+    return () => ipcRenderer.removeListener(OPEN_REQUEST_CHANNEL, forward);
   },
   /** Answers Cut, Copy or Paste from the Edit menu: text for the system clipboard, or "do it natively". */
   clipboard: (request: ClipboardRequest) => ipcRenderer.send(CLIPBOARD_CHANNEL, request),

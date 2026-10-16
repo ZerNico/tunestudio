@@ -9,6 +9,7 @@ import { onDevReload } from "./dev-reload";
 import { BACKGROUND_COLOR, PRODUCT_NAME } from "./identity";
 import { createLogger } from "./logger";
 import { attachContextMenu, sendEditCommand, setApplicationMenu } from "./menu";
+import { Projects } from "./project/projects";
 import { mediaResponse } from "./protocols/media";
 import { MEDIA_SCHEME } from "./protocols/media-url";
 import { handleRendererProtocol } from "./protocols/renderer";
@@ -19,6 +20,7 @@ import { startRpcServer } from "./rpc/server";
 import { makeRuntime } from "./runtime";
 import { PathGrants } from "./services/path-grants";
 import { loadWindowState, saveWindowState } from "./window-state";
+import { createWindows, projectFilesIn, type Windows } from "./windows";
 
 /** Set by the dev script; packaged and preview builds load the bundled frontend instead. */
 const devServerUrl = process.env.TUNESTUDIO_DEV_SERVER_URL;
@@ -121,13 +123,17 @@ function applyDevelopmentCsp(origin: string) {
 function createWindow(): BrowserWindow {
   const saved = loadWindowState(dataDir);
   const mac = process.platform === "darwin";
+  // Another window opens a little below and to the right of the one in front.
+  const front = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows().at(-1);
+  const bounds = front ? { ...front.getContentBounds() } : saved.bounds;
+  if (front && bounds) Object.assign(bounds, { x: bounds.x + 28, y: bounds.y + 28 });
 
   const window = new BrowserWindow({
     title: PRODUCT_NAME,
     // First launch; afterwards the saved state replaces these.
     width: 1280,
     height: 820,
-    ...saved.bounds,
+    ...bounds,
     minWidth: 960,
     minHeight: 640,
     useContentSize: true,
@@ -150,8 +156,8 @@ function createWindow(): BrowserWindow {
     },
   });
 
-  if (saved.maximized) window.maximize();
-  if (saved.fullscreen) window.setFullScreen(true);
+  if (!front && saved.maximized) window.maximize();
+  if (!front && saved.fullscreen) window.setFullScreen(true);
   if (!background) window.once("ready-to-show", () => window.show());
   window.on("close", () => saveWindowState(dataDir, window));
 
@@ -178,7 +184,7 @@ function createWindow(): BrowserWindow {
 function start() {
   // No Dock icon and no activation: a background run never steals focus on macOS.
   if (background && process.platform === "darwin") app.setActivationPolicy("accessory");
-  setApplicationMenu();
+  setApplicationMenu(() => windows?.add());
 
   // Packaged apps get their icon from the bundle; in development the Dock would show Electron's.
   if (!app.isPackaged && process.platform === "darwin") {
@@ -208,7 +214,14 @@ function start() {
   handleGrantedPaths();
   handleClipboard();
 
-  listenForRpc(startRpcServer(runtime, nativeHandlers), appOrigin, (id) => {
+  windows = createWindows({
+    create: createWindow,
+    grant: (file) => runtime.runPromise(PathGrants.use((grants) => grants.grant(file))),
+    // A project's window closed without closing it first: its session ends with it.
+    onClosed: (project) => void runtime.runPromise(Projects.use((projects) => projects.close(project.id))),
+  });
+  const opened = windows;
+  listenForRpc(startRpcServer(runtime, nativeHandlers, opened), appOrigin, (id) => {
     const contents = webContents.fromId(id);
     return contents ? BrowserWindow.fromWebContents(contents) : null;
   });
@@ -228,22 +241,40 @@ function start() {
       .finally(() => logger.flush().finally(() => app.quit()));
   });
 
-  let window = createWindow();
-  app.on("second-instance", () => {
-    if (window.isDestroyed()) window = createWindow();
-    if (window.isMinimized()) window.restore();
-    window.focus();
+  // Project files the OS handed over before the app was ready open now; without any, the start screen.
+  const files = pendingFiles.splice(0);
+  if (files.length === 0) opened.add();
+  for (const file of files) void opened.open(file);
+  // Starting Tune Studio again (or opening a project file on Windows and Linux) comes to this one.
+  app.on("second-instance", (_event, argv) => {
+    const asked = projectFilesIn(argv.slice(1));
+    for (const file of asked) void opened.open(file);
+    if (asked.length > 0) return;
+    const front = BrowserWindow.getFocusedWindow() ?? opened.all().at(-1);
+    if (front) opened.focus(front);
+    else opened.add();
   });
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) window = createWindow();
+    if (opened.all().length === 0) opened.add();
   });
 }
+
+/** Which window shows which project, once the app is ready. */
+let windows: Windows | null = null;
+/** Project files to open once the app is ready: from the command line, or from the OS before it was. */
+const pendingFiles = projectFilesIn(process.argv.slice(1));
 
 process.on("uncaughtException", (error) => logger.write("ERROR", "main", error.stack ?? String(error)));
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
+  // macOS hands over project files (double-clicked, dropped on the Dock icon) as events, also before the app is ready.
+  app.on("open-file", (event, file) => {
+    event.preventDefault();
+    if (windows) void windows.open(file);
+    else pendingFiles.push(file);
+  });
   app.on("window-all-closed", () => {
     if (process.platform !== "darwin") app.quit();
   });

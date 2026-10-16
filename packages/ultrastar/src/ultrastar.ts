@@ -61,35 +61,34 @@ export function parseUltraStar(text: string): ParseResult {
     const lineNumber = index + 1;
     const raw = source[index]!;
     if (raw.includes("\u0000"))
-      throw new UltraStarError("NUL character in input; decode the file as text (UTF-8 or its original encoding).", {
+      throw new UltraStarError("This isn't a text file.", {
         line: lineNumber,
       });
     const line = raw.trimStart();
     if (!line.trim()) continue;
     if (ended)
-      throw new UltraStarError(
-        "Unexpected content after E; multiple charts or per-track end markers are unsupported.",
-        { line: lineNumber },
-      );
+      throw new UltraStarError("There is more after the end marker (E). Only one chart per file is supported.", {
+        line: lineNumber,
+      });
     if (line.startsWith("#")) {
       if (inBody) throw new UltraStarError("Headers must precede notes and player records.", { line: lineNumber });
       const match = /^#([^:]+):(.*)$/s.exec(line);
-      if (!match) throw new UltraStarError("Malformed header; expected #NAME:value.", { line: lineNumber });
+      if (!match) throw new UltraStarError("A header isn't written as #NAME:value.", { line: lineNumber });
       const key = match[1]!.trim().toUpperCase();
       if (!/^[A-Z0-9_][A-Z0-9_-]*$/.test(key)) throw new UltraStarError("Invalid header name.", { line: lineNumber });
       if (Object.prototype.hasOwnProperty.call(metadata, key)) {
         if (metadata[key] !== match[2])
-          throw new UltraStarError(`Conflicting duplicate #${key} header; choose one value before importing.`, {
+          throw new UltraStarError(`#${key} is there twice, with different values. Keep one.`, {
             line: lineNumber,
           });
         warnings.push(`Line ${lineNumber}: duplicate #${key} header retained once.`);
       }
       metadata[key] = match[2]!;
       if (key === "RELATIVE" && isRelativeModeUnsupported(metadata)) {
-        throw new UltraStarError(
-          "Relative timing (#RELATIVE) is unsupported; convert the chart to absolute timing first.",
-          { line: lineNumber, code: "UNSUPPORTED_RELATIVE" },
-        );
+        throw new UltraStarError("Charts with relative timing (#RELATIVE) aren't supported.", {
+          line: lineNumber,
+          code: "UNSUPPORTED_RELATIVE",
+        });
       }
       continue;
     }
@@ -111,10 +110,10 @@ export function parseUltraStar(text: string): ParseResult {
     if (line.startsWith("P")) {
       const match = /^P[ \t]*([12])[ \t]*$/.exec(line);
       if (!match)
-        throw new UltraStarError(
-          "Only P1 and P2 tracks are supported. P3/both-player and other duet constructs must be expanded into separate tracks first.",
-          { line: lineNumber, code: "UNSUPPORTED_PLAYER" },
-        );
+        throw new UltraStarError("Only two singers (P1 and P2) are supported.", {
+          line: lineNumber,
+          code: "UNSUPPORTED_PLAYER",
+        });
       if (!explicitPlayers && notes.length) {
         warnings.push(`Line ${lineNumber}: notes preceding the first player marker were assigned to player 1.`);
         for (const note of notes) note.player = 1;
@@ -127,18 +126,15 @@ export function parseUltraStar(text: string): ParseResult {
     if (line.startsWith("-")) {
       const match = /^-[ \t]+([+-]?\d+)(?:[ \t]+([+-]?\d+))?[ \t]*$/.exec(line);
       if (!match)
-        throw new UltraStarError("Malformed line break; expected - <tick> or - <tick> <end-tick>.", {
+        throw new UltraStarError("A line break isn't written as - <beat> or - <beat> <beat>.", {
           line: lineNumber,
         });
       const start = integer(match[1]!, "Line break tick", lineNumber);
       const end = match[2] === undefined ? undefined : integer(match[2]!, "Line break end tick", lineNumber);
       if (end !== undefined && end < start)
-        throw new UltraStarError("Line break end precedes its start.", { line: lineNumber });
+        throw new UltraStarError("A line break ends before it starts.", { line: lineNumber });
       const state = track();
-      if (!state.hasNotes)
-        warnings.push(
-          `Line ${lineNumber}: display break after an empty line omitted; the document model has no empty lyric lines.`,
-        );
+      if (!state.hasNotes) warnings.push(`Line ${lineNumber}: a line break after an empty line was left out.`);
       else {
         lineBreaks.push({
           lineId: state.lineId,
@@ -159,14 +155,12 @@ export function parseUltraStar(text: string): ParseResult {
     const start = integer(match[2]!, "Note start", lineNumber);
     const length = integer(match[3]!, "Note length", lineNumber);
     const pitch = integer(match[4]!, "Note pitch", lineNumber) + 60;
-    if (length <= 0) throw new UltraStarError("Note length must be greater than zero.", { line: lineNumber });
+    if (length <= 0) throw new UltraStarError("A note has no length.", { line: lineNumber });
     if (!Number.isSafeInteger(pitch) || !Number.isSafeInteger(start + length))
       throw new UltraStarError("Note pitch or end exceeds the safe integer range.", { line: lineNumber });
     const state = track();
     if (state.lastStart !== undefined && start < state.lastStart)
-      warnings.push(
-        `Line ${lineNumber}: player ${player} notes are out of chronological order; export sorts them within their track.`,
-      );
+      warnings.push(`Line ${lineNumber}: notes of singer ${player} are out of order. They are put in order.`);
     const startSeconds = ticksToSeconds(start, grid);
     // Convert shared tick boundaries identically instead of accumulating a rounded duration.
     const endSeconds = ticksToSeconds(start + length, grid);
@@ -192,16 +186,13 @@ export function parseUltraStar(text: string): ParseResult {
   };
   const diagnostics = validateDocument(document);
   if (diagnostics.some((item) => item.severity === "error")) throw new DocumentValidationError(diagnostics);
-  if (!ended) warnings.push("Missing E end marker; one will be added on export.");
-  if (metadata.GAP === undefined) warnings.push("Missing GAP header; using 0 milliseconds.");
+  if (!ended) warnings.push("The end marker (E) is missing.");
+  if (metadata.GAP === undefined) warnings.push("There is no #GAP, so it is 0.");
   if (text.includes("�"))
-    warnings.push(
-      "Input contains Unicode replacement characters (�). Check the original file encoding; damaged text cannot be recovered by the parser.",
-    );
+    warnings.push("Some characters are damaged (�). The file may have been saved in another encoding.");
   if (explicitPlayers) {
     for (const number of tracks.keys()) {
-      if (!notes.some((note) => note.player === number))
-        warnings.push(`Player ${number} has no notes; its empty track marker will be omitted on export.`);
+      if (!notes.some((note) => note.player === number)) warnings.push(`Singer ${number} has no notes.`);
     }
   }
   warnings.push(...diagnostics.filter((item) => item.severity === "warning").map((item) => item.message));
@@ -227,7 +218,7 @@ export function serializeUltraStarWithDiagnostics(document: ChartDocument): Seri
   const explicitPlayers = document.notes.some((note) => note.player !== undefined);
   const breakTick = (seconds: number) => {
     const tick = Math.round(secondsToTicks(seconds, grid));
-    if (!Number.isSafeInteger(tick)) throw new UltraStarError("Line break exceeds the safe integer tick range.");
+    if (!Number.isSafeInteger(tick)) throw new UltraStarError("A line break is too far into the song.");
     return tick;
   };
   for (const player of players) {

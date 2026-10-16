@@ -45,9 +45,9 @@ export function ChartChoice(props: {
   const describe = () => {
     const reason = unavailable();
     if (reason) return reason;
-    if (!making()) return "The project starts with an empty chart. You can make it any time in the project.";
+    if (!making()) return "The project starts with an empty chart.";
     if (props.made) {
-      return `The chart is made: ${props.made.notes} notes in ${props.made.lines} lines. It is a first draft, so check it against the song in the project.`;
+      return `Chart made: ${props.made.notes} notes in ${props.made.lines} lines.`;
     }
     const download = props.modelsMissing ? " The chart models (about 1.6 GB) are downloaded first, once." : "";
     return `Next makes the notes and timing from the vocals and the lyrics. Takes a minute or two.${download}`;
@@ -90,7 +90,7 @@ export function ChartChoice(props: {
       >
         <Checklist
           title="Making the chart"
-          hint="This takes a minute or two. Back stops it."
+          hint="This takes a minute or two."
           label="Chart"
           testid="chart-progress"
           tasks={chartTasks(props.modelsMissing === true)}

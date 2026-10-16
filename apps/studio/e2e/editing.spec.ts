@@ -225,7 +225,7 @@ test("song details are edited in a dialog from the title bar, exported, and undo
   await expect(cover.locator("img")).toBeVisible();
   await cover.getByTestId("remove-cover").click();
   await expect(cover).toContainText("None");
-  await cover.getByRole("button", { name: "Add…" }).click();
+  await cover.getByRole("button", { name: "Add" }).click();
   const coverDialog = page.getByTestId("cover-dialog");
   await expect(coverDialog).toBeVisible();
   await answerDialogs(app, path.join(song.folder, "cover.png"));
@@ -243,7 +243,7 @@ test("song details are edited in a dialog from the title bar, exported, and undo
   await answerDialogs(app, exports);
   await page.getByTestId("export-song").click();
   await page.getByTestId("export-folder").click();
-  await expect(page.getByText("Exported the UltraStar song")).toBeVisible();
+  await expect(page.getByText("Exported for games")).toBeVisible();
   const chart = fs.readFileSync(
     path.join(exports, "Test Artist - Day Signals", "Test Artist - Day Signals.txt"),
     "utf8",
@@ -292,7 +292,7 @@ test("start, end, preview and medley are set from the dialog and the timeline, a
   await answerDialogs(app, exports);
   await page.getByTestId("export-song").click();
   await page.getByTestId("export-folder").click();
-  await expect(page.getByText("Exported the UltraStar song")).toBeVisible();
+  await expect(page.getByText("Exported for games")).toBeVisible();
   const chart = fs.readFileSync(
     path.join(exports, "Test Artist - Night Signals", "Test Artist - Night Signals.txt"),
     "utf8",

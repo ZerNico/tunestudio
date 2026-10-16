@@ -3,7 +3,10 @@
  * only. Nothing is read here; that is the import step's job.
  */
 
-const AUDIO_EXTENSIONS = new Set(["mp3", "m4a", "aac", "flac", "ogg", "oga", "opus", "wav", "weba", "webm"]);
+export const AUDIO_EXTENSIONS = new Set(["mp3", "m4a", "aac", "flac", "ogg", "oga", "opus", "wav", "weba", "webm"]);
+
+/** Video files UltraStar games play. */
+export const VIDEO_EXTENSIONS = new Set(["mp4", "m4v", "webm", "mkv", "mov", "avi"]);
 
 /** Importing an audio file's first step, as main reports it. */
 export const COPYING_THE_SONG = "Copying the song";

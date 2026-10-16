@@ -120,7 +120,7 @@ export function FlowDialog(props: {
                       kind="youtube"
                       icon={<YoutubeIcon />}
                       title="New project from YouTube"
-                      description="Check the song and its lyrics, and let Tune Studio download it and make the chart."
+                      description="Check the song and its lyrics, then make the chart."
                       current={step}
                     />
                   )}
@@ -142,7 +142,7 @@ export function FlowDialog(props: {
                       kind="audio"
                       icon={<AudioLinesIcon />}
                       title="New project from audio"
-                      description="Check the song and its lyrics, and let Tune Studio separate the voice and make the chart."
+                      description="Check the song and its lyrics, then make the chart."
                       current={step}
                     />
                   )}

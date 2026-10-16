@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Dialog, DialogContent } from "~/components/ui/dialog";
-import { AudioUnreadable } from "~/lib/errors";
+import { MediaUnreadable } from "~/lib/errors";
 import { summarizeAudioFile } from "~/lib/import-files";
 import type { AudioFileDetails, DownloadedDraft, ImportProgress, ToolProgress, ToolStatus } from "~/lib/native/types";
 import { DEFAULT_SETTINGS } from "~/lib/settings";
@@ -107,7 +107,7 @@ describe("AudioFlow", () => {
 
   it("says why the file can't be used, and tries again", async () => {
     native.audio.inspect.mockRejectedValueOnce(
-      new AudioUnreadable({ message: "Tune Studio can't read “x.mp3” as audio." }),
+      new MediaUnreadable({ message: "Tune Studio can't read “x.mp3” as audio." }),
     );
     const user = setup();
     expect(await screen.findByTestId("audio-error")).toHaveTextContent("can't read");

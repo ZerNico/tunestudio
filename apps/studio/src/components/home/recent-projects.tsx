@@ -343,7 +343,7 @@ function EmptyRecents() {
       <div class="flex max-w-sm flex-col gap-1.5">
         <p class="m-0 text-[13px] font-semibold text-foreground">No recent projects yet</p>
         <p class="m-0 text-[11.5px] leading-[1.6] text-muted-foreground">
-          Projects you start, import or open show up here, so you can jump back into a chart where you left off.
+          Projects you start, import or open show up here.
         </p>
       </div>
     </div>

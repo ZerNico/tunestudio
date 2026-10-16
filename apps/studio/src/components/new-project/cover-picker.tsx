@@ -197,12 +197,12 @@ export function CoverPicker(props: {
           type="button"
           disabled={props.disabled}
           class={`${tileClass} flex-col gap-1 border border-dashed border-popover-line bg-transparent text-[9.5px] text-popover-muted outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-60`}
-          aria-label="Choose an image…"
+          aria-label="Choose an image"
           onClick={() => props.onChooseFile()}
           data-testid="cover-choose"
         >
           <ImagePlusIcon class="size-4" />
-          Choose…
+          Choose
         </button>
       </div>
     </div>

@@ -15,13 +15,7 @@ import {
   menuShortcutClass,
 } from "./menu-classes";
 
-/**
- * shadcn/ui DropdownMenu (Base UI variant, on Menu) on base-ui-solid.
- *
- * Unused for now: in base-ui-solid 0.2.0, opening a Menu through `Menu.Trigger` throws
- * PRIMITIVE_IN_EFFECT_CALLBACK in development and halts Solid's reactivity. See "Known
- * base-ui-solid issues" in apps/studio/AGENTS.md before using it.
- */
+/** shadcn/ui DropdownMenu (Base UI variant, on Menu) on base-ui-solid. */
 export function DropdownMenu(props: MenuPrimitive.Root.Props) {
   return <MenuPrimitive.Root data-slot="dropdown-menu" {...props} />;
 }

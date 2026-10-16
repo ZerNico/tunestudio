@@ -76,7 +76,7 @@ export default function SettingsScreen() {
   const bitrateHint = () => {
     const { audio } = settings();
     if (encodesAudio(audio)) return "The quality the audio is converted at.";
-    return `${AUDIO_FORMAT_LABELS[audio.format]} is saved as YouTube serves it; this applies only when it is normalized.`;
+    return `Only used when ${AUDIO_FORMAT_LABELS[audio.format]} audio is normalized.`;
   };
 
   return (
@@ -307,7 +307,7 @@ function ToolsSection(props: { initial: readonly ToolStatus[] }) {
     <Section
       id="tools"
       title="Download tools"
-      description="Tune Studio keeps these up to date by itself: yt-dlp is checked daily, the others monthly. Removing one frees the space; it is installed again when needed."
+      description="Kept up to date automatically. A removed tool is installed again when it's needed."
     >
       <div class="flex flex-col divide-y divide-border rounded-[10px] border border-border bg-card">
         <For each={TOOLS}>
@@ -434,7 +434,7 @@ function ModelsSection(props: { initial: readonly ModelFeatureStatus[] }) {
     <Section
       id="models"
       title="Models"
-      description="Downloaded the first time a feature needs them, from Hugging Face and GitHub. Each version of Tune Studio uses fixed versions of them; an update brings newer ones, downloaded when next needed. Removing them frees the space."
+      description="Downloaded from Hugging Face and GitHub the first time a feature needs them. Remove them to free the space."
     >
       <div class="flex flex-col divide-y divide-border rounded-[10px] border border-border bg-card">
         <For each={status()}>

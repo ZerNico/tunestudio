@@ -151,6 +151,8 @@ export const OpenedProject = Schema.Struct({
   /** The session's ID: valid until the project is closed or the app quits. */
   id: Schema.String,
   path: Schema.String,
+  /** It is open in another window, which came to the front: nothing opens here (and `id` is empty). */
+  elsewhere: Schema.optional(Schema.Boolean),
 });
 export type OpenedProject = typeof OpenedProject.Type;
 

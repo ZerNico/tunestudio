@@ -111,8 +111,8 @@ export class VideoDownloadFailed extends Schema.TaggedError<VideoDownloadFailed>
   message: Schema.String,
 }) {}
 
-/** A picked or dropped audio file can't be read, has no sound, or is too long for a song. */
-export class AudioUnreadable extends Schema.TaggedError<AudioUnreadable>()("AudioUnreadable", {
+/** A picked or dropped audio or video file can't be read, has no sound (or picture), or is too long for a song. */
+export class MediaUnreadable extends Schema.TaggedError<MediaUnreadable>()("MediaUnreadable", {
   message: Schema.String,
 }) {}
 

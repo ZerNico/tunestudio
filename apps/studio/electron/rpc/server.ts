@@ -8,6 +8,7 @@ import type { BrowserWindow } from "electron";
 
 import { NativeRpcs } from "../../src/lib/native/contract";
 import { AppLog } from "../services/app-log";
+import type { Windows } from "../windows";
 import { makePortProtocol, type RpcPort } from "./port-protocol";
 import { Callers, type nativeHandlers } from "./procedures";
 
@@ -29,6 +30,7 @@ const defectLogger = (write: (message: string) => void): ErrorReporter.ErrorRepo
 export function startRpcServer<R>(
   runtime: ManagedRuntime.ManagedRuntime<R | AppLog, never>,
   handlers: Layer.Layer<Layer.Success<typeof nativeHandlers>, never, R | Callers>,
+  windows: Windows | null = null,
 ) {
   return new Promise<(port: RpcPort, window: BrowserWindow | null) => void>((resolve) => {
     runtime.runFork(
@@ -37,7 +39,10 @@ export function startRpcServer<R>(
           const log = yield* AppLog;
           const { protocol, accept, metaOf } = yield* makePortProtocol<{ window: BrowserWindow | null }>();
           resolve((port, window) => accept(port, { window }));
-          const callers = Layer.succeed(Callers, { windowOf: (clientId) => metaOf(clientId)?.window ?? null });
+          const callers = Layer.succeed(Callers, {
+            windowOf: (clientId) => metaOf(clientId)?.window ?? null,
+            windows,
+          });
           const reporters = new Set([
             defectLogger((message) => void Effect.runFork(log.write("ERROR", "rpc", message))),
           ]);

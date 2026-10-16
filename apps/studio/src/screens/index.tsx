@@ -12,7 +12,7 @@ import { YoutubeOption } from "~/components/home/youtube-option";
 import { TitleBar } from "~/components/title-bar";
 import { Button } from "~/components/ui/button";
 import { toast } from "~/components/ui/toast";
-import { pathForFile } from "~/lib/desktop";
+import { onOpenRequest, pathForFile } from "~/lib/desktop";
 import { AUDIO_ACCEPT, dropKind, isAudioFile, summarizeAudioFile } from "~/lib/import-files";
 import { native } from "~/lib/native/client";
 import { errorMessage } from "~/lib/native/errors";
@@ -46,6 +46,8 @@ export default function HomeScreen() {
 
   const showProject = (project: OpenedProject) => {
     setFlow(null);
+    // Open in another window, which came to the front instead.
+    if (project.elsewhere) return;
     void navigate({ to: "/project/$id", params: { id: project.id } });
   };
 
@@ -169,6 +171,16 @@ export default function HomeScreen() {
     updateRail();
   };
 
+  // A project file the OS handed this window (double-clicked in Finder or Explorer) opens here.
+  const takeOpenRequest = async () => {
+    const path = await native.windows.takeOpenRequest().catch(() => null);
+    if (path) await openProject(path);
+  };
+  onSettled(() => {
+    void takeOpenRequest();
+    return onOpenRequest(() => void takeOpenRequest());
+  });
+
   // Recent in the rail of another screen comes here with #recent.
   onSettled(() => {
     if (router.state.location.hash !== "recent") return;
@@ -228,7 +240,6 @@ export default function HomeScreen() {
         >
           <div class="mx-auto flex max-w-[1200px] flex-col gap-9 px-10 pt-9 pb-16">
             <header class="flex flex-col gap-2">
-              <p class="m-0 eyebrow text-sage-65">TunePerfect Studio</p>
               <h1 id="home-title" class="m-0 text-[27px] leading-tight font-[550] tracking-[-0.8px] text-foreground">
                 Welcome to Tune Studio
               </h1>
@@ -258,7 +269,7 @@ export default function HomeScreen() {
               headerActions={
                 <Button variant="outline" size="sm" onClick={() => void chooseProject()} data-testid="open-project">
                   <FolderOpenIcon />
-                  Open project…
+                  Open project
                 </Button>
               }
             />

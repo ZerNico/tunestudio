@@ -75,7 +75,7 @@ describe("SongImportFlow", () => {
     );
     setup();
     expect(await screen.findByRole("alert")).toHaveTextContent("The audio file “song.mp3” is missing");
-    expect(screen.getByRole("button", { name: "Create project…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Create project" })).toBeDisabled();
   });
 
   it("shows why a folder can't be read, and tries again", async () => {
@@ -94,7 +94,7 @@ describe("SongImportFlow", () => {
     const { onOpened, user } = setup();
 
     await user.click(await screen.findByRole("switch", { name: "Include video" }));
-    await user.click(screen.getByRole("button", { name: "Create project…" }));
+    await user.click(screen.getByRole("button", { name: "Create project" }));
     await vi.waitFor(() => expect(onOpened).toHaveBeenCalledExactlyOnceWith(opened));
     expect(native.dialogs.chooseProjectLocation).toHaveBeenCalledExactlyOnceWith({
       name: "Test Artist - Night Signals",
@@ -135,7 +135,7 @@ describe("SongImportFlow", () => {
       </Dialog>
     ));
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: "Create project…" }));
+    await user.click(await screen.findByRole("button", { name: "Create project" }));
     await vi.waitFor(() => expect(onOpened).toHaveBeenCalledExactlyOnceWith(opened));
     expect(busy).toContain(true);
   });
@@ -144,8 +144,8 @@ describe("SongImportFlow", () => {
     native.song.inspect.mockResolvedValue(inspection());
     native.dialogs.chooseProjectLocation.mockResolvedValue(null);
     const { user } = setup();
-    await user.click(await screen.findByRole("button", { name: "Create project…" }));
-    await vi.waitFor(() => expect(screen.getByRole("button", { name: "Create project…" })).toBeEnabled());
+    await user.click(await screen.findByRole("button", { name: "Create project" }));
+    await vi.waitFor(() => expect(screen.getByRole("button", { name: "Create project" })).toBeEnabled());
     expect(native.song.import).not.toHaveBeenCalled();
   });
 });

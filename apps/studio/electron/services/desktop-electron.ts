@@ -1,6 +1,7 @@
 import { Effect, Layer } from "effect";
 import { app, type BrowserWindow, dialog, nativeImage, type OpenDialogOptions, shell } from "electron";
 
+import { AUDIO_EXTENSIONS, VIDEO_EXTENSIONS } from "../../src/lib/import-files";
 import { Desktop } from "./desktop";
 
 /** Runs a dialog attached to `window` (a sheet on macOS) when there is one. */
@@ -47,6 +48,17 @@ export const desktopLayer = Layer.sync(Desktop, () => ({
       buttonLabel: "Use as cover",
       properties: ["openFile"],
       filters: [{ name: "Image", extensions: ["jpg", "jpeg", "png"] }],
+    }),
+  chooseMediaFile: (window, kind) =>
+    openDialog(window, {
+      title: kind === "audio" ? "Choose an audio file" : "Choose a video",
+      buttonLabel: "Use this file",
+      properties: ["openFile"],
+      filters: [
+        kind === "audio"
+          ? { name: "Audio", extensions: [...AUDIO_EXTENSIONS] }
+          : { name: "Video", extensions: [...VIDEO_EXTENSIONS] },
+      ],
     }),
   chooseTextFile: (window, defaultPath) =>
     Effect.promise(async () => {

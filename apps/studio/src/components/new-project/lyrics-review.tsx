@@ -130,7 +130,7 @@ export function describeSource(
   }
   if (found.versionMismatch) {
     return {
-      text: `${lineCount(found.lines.length)} from LRCLIB for another version. Words and timing may differ; check them.`,
+      text: `${lineCount(found.lines.length)} from LRCLIB for another version. Check the words and timing.`,
       tone: "warning",
     };
   }

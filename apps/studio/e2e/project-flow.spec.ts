@@ -75,7 +75,7 @@ test("imports a song folder, exports it, and reopens the project from recents", 
   await answerDialogs(app, exports);
   await page.getByTestId("export-song").click();
   await page.getByTestId("export-folder").click();
-  await expect(page.getByText("Exported the UltraStar song")).toBeVisible();
+  await expect(page.getByText("Exported for games")).toBeVisible();
   const exported = path.join(exports, "Test Artist - Night Signals");
   expect(fs.readdirSync(exported).toSorted()).toEqual([
     "Test Artist - Night Signals [CO].png",
@@ -94,7 +94,7 @@ test("imports a song folder, exports it, and reopens the project from recents", 
   await expect(replace).toBeVisible();
   await replace.getByTestId("confirm-replace").click();
   await expect(replace).toBeHidden();
-  await expect(page.getByText("Exported the UltraStar song")).toHaveCount(2);
+  await expect(page.getByText("Exported for games")).toHaveCount(2);
 
   // The song's YouTube video goes in Song details; the text for USDB names it for usdb_syncer.
   await page.getByTestId("open-song-details").click();
@@ -106,7 +106,7 @@ test("imports a song folder, exports it, and reopens the project from recents", 
   await answerDialogs(app, usdb);
   await page.getByTestId("export-song").click();
   await page.getByTestId("export-usdb").click();
-  await expect(page.getByText("Exported the text for USDB")).toBeVisible();
+  await expect(page.getByText("Exported for USDB")).toBeVisible();
   const text = fs.readFileSync(usdb, "utf8");
   expect(text).toContain("#ARTIST:Test Artist\r\n#TITLE:Night Signals\r\n#MP3:Test Artist - Night Signals.mp3\r\n");
   expect(text).toContain("#VIDEO:v=dQw4w9WgXcQ\r\n");
@@ -134,7 +134,7 @@ test("imports a song folder, exports it, and reopens the project from recents", 
   expect(studio.problems).toEqual([]);
 });
 
-test("opens a project with Open project…, and drops a missing one from recents", async () => {
+test("opens a project with Open project, and drops a missing one from recents", async () => {
   const { app, page } = studio;
   const projectFile = path.join(song.dir, "Night Signals.tunestudio");
   await answerDialogs(app, song.folder, projectFile);

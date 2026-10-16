@@ -180,7 +180,7 @@ export function SongImportFlow(props: {
               <Show when={state().step === "importing" || state().step === "saving"}>
                 <LoaderCircleIcon class="animate-spin" />
               </Show>
-              Create project…
+              Create project
             </Button>
           }
         >

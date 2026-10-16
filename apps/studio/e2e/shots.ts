@@ -171,7 +171,7 @@ try {
       await page.getByTestId("open-song-details").click();
       await page.getByTestId("song-details").waitFor();
       await shot(studio, "03k-song-details");
-      await page.getByTestId("file-cover").getByRole("button", { name: "Change…" }).click();
+      await page.getByTestId("file-cover").getByRole("button", { name: "Change" }).click();
       await page.getByTestId("cover-dialog").waitFor();
       await shot(studio, "03m-cover-dialog");
       await page.keyboard.press("Escape");

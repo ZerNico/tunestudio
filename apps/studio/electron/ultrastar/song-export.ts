@@ -110,7 +110,8 @@ export function exportSong(
 }
 
 /**
- * Writes the chart's text for USDB to `file` (`usdb.ts`), naming the audio as the song folder export would. Returns
+ * Writes the chart's text for USDB to `file` (`usdb.ts`), naming the audio, cover and background as an export for
+ * games would. Returns
  * what changed on the way (BPM rounded, no YouTube video).
  */
 export function exportUsdb(
@@ -121,9 +122,14 @@ export function exportUsdb(
     const fs = yield* FileSystem.FileSystem;
     const chart = yield* readChart(session.db);
     const base = songFileName(chart.song.artist, chart.song.title);
-    const audio = (yield* listMedia(session.db)).find((row) => row.role === "audio");
+    const media = yield* listMedia(session.db);
+    const names = exportFileNames(base, media);
+    const nameOf = (role: MediaRole) => {
+      const row = media.find((item) => item.role === role);
+      return row ? (names.get(row.id) ?? null) : null;
+    };
     const { text, warnings } = yield* Effect.try({
-      try: () => usdbText(chart, audio ? `${base}${extensionOf(audio.fileName)}` : null),
+      try: () => usdbText(chart, { audio: nameOf("audio"), cover: nameOf("cover"), background: nameOf("background") }),
       catch: (error) =>
         new ChartUnreadable({
           message: `The chart can't be exported: ${

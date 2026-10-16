@@ -32,7 +32,7 @@
     "@solidjs/web": "2.0.0-rc.15",
     "@tanstack/solid-router": "2.0.0-rc.8",
     "@tunestudio/ultrastar": "workspace:*",
-    "base-ui-solid": "0.2.0",
+    "base-ui-solid": "0.3.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "drizzle-orm": "1.0.0-rc.5-5935859",

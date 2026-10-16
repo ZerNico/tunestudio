@@ -13,11 +13,11 @@ export function AudioOption(props: { onChoose: () => void }) {
       tone="lime"
       icon={<AudioLinesIcon />}
       title="Import an audio file"
-      description="Use a song you already have. Tune Studio charts it for you."
+      description="Chart a song file you already have."
     >
       <Button variant="secondary" size="lg" class="w-full" onClick={() => props.onChoose()} data-testid="audio-choose">
         <FileAudioIcon />
-        Choose audio file…
+        Choose audio file
       </Button>
       <p class="m-0 min-h-[2lh] text-[11px] text-faint-foreground">
         Or drop it anywhere. MP3, M4A, FLAC, OGG, OPUS, WAV.

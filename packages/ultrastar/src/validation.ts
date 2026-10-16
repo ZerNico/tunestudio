@@ -21,7 +21,7 @@ export function validateDocument(document: ChartDocument): Diagnostic[] {
   if (!document || typeof document !== "object" || Array.isArray(document)) {
     return [{ severity: "error", message: "Document must be an object." }];
   }
-  if (document.version !== 1) add("error", "Unsupported document version; expected version 1.");
+  if (document.version !== 1) add("error", "This chart version isn't supported.");
   if (typeof document.id !== "string" || !document.id.trim()) add("error", "Document ID must be a non-empty string.");
   let grid: ChartGrid | undefined;
   if (!document.metadata || typeof document.metadata !== "object" || Array.isArray(document.metadata)) {
@@ -29,21 +29,15 @@ export function validateDocument(document: ChartDocument): Diagnostic[] {
   } else {
     for (const [key, value] of Object.entries(document.metadata)) {
       if (!/^[A-Z0-9_][A-Z0-9_-]*$/.test(key))
-        add("error", `Invalid header name ${JSON.stringify(key)}; use uppercase names.`);
+        add("error", `Header names are written in capitals: ${JSON.stringify(key)}.`);
       if (typeof value !== "string" || breaksLine(value))
         add("error", `Header ${key} must be a single-line string without NUL characters.`);
     }
     if (Object.values(document.metadata).every((value) => typeof value === "string")) {
       if (isRelativeModeUnsupported(document.metadata))
-        add(
-          "error",
-          "Relative timing (#RELATIVE) is unsupported; convert the chart to absolute timing before importing.",
-        );
+        add("error", "Charts with relative timing (#RELATIVE) aren't supported.");
       if (document.metadata.ENCODING !== undefined && document.metadata.ENCODING !== "UTF8")
-        add(
-          "warning",
-          "ENCODING will be normalized to UTF8 on export. Save exported text as UTF-8; input must already be decoded correctly.",
-        );
+        add("warning", "The chart is exported as UTF-8.");
       try {
         grid = gridFromMetadata(document.metadata);
       } catch (error) {
@@ -87,18 +81,14 @@ export function validateDocument(document: ChartDocument): Diagnostic[] {
       Number.isFinite(note.start + note.duration) &&
       note.start + note.duration !== note.start;
     if (!validStart) add("error", `${label}: start must be finite seconds.`, noteIds);
-    else if (note.start < 0) add("warning", `${label}: starts before audio zero; playback may truncate it.`, noteIds);
+    else if (note.start < 0) add("warning", `${label}: starts before the song does.`, noteIds);
     if (!validDuration || (validStart && !validTiming)) {
       add("error", `${label}: duration must be positive, finite, and representable at this start time.`, noteIds);
     }
     if (!Number.isSafeInteger(note.pitch) || !Number.isSafeInteger(note.pitch - 60))
       add("error", `${label}: pitch must be a safe integer in MIDI semitones.`, noteIds);
     else if (note.pitch < 0 || note.pitch > 127)
-      add(
-        "warning",
-        `${label}: pitch is outside the usual MIDI range 0–127; it will be retained, not clamped.`,
-        noteIds,
-      );
+      add("warning", `${label}: the pitch is unusually high or low.`, noteIds);
     if (typeof note.lyric !== "string" || breaksLine(note.lyric))
       add("error", `${label}: lyric must be a single-line string without NUL characters.`, noteIds);
     if (typeof note.type !== "string" || !Object.prototype.hasOwnProperty.call(NOTE_TYPE_SYMBOLS, note.type)) {
@@ -110,10 +100,9 @@ export function validateDocument(document: ChartDocument): Diagnostic[] {
             : note.type === null
               ? "null"
               : typeof note.type;
-      add("error", `${label}: unsupported note type ${description}; expected a supported string.`, noteIds);
+      add("error", `${label}: unknown note type ${description}.`, noteIds);
     }
-    if (!validPlayer)
-      add("error", `${label}: only player tracks 1 and 2 are supported; P3/both-player mode is ambiguous.`, noteIds);
+    if (!validPlayer) add("error", `${label}: only two singers (P1 and P2) are supported.`, noteIds);
     if (note.player === undefined) implicit = true;
     else explicit = true;
     const player = note.player ?? 1;
@@ -143,12 +132,11 @@ export function validateDocument(document: ChartDocument): Diagnostic[] {
       }
     }
   }
-  if (implicit && explicit)
-    add("warning", "Notes without a player are treated as player 1 when exported alongside explicit tracks.");
+  if (implicit && explicit) add("warning", "Notes without a singer are exported for singer 1.");
   if (quantizedIds.length)
     add(
       "warning",
-      `${quantizedIds.length} note(s) will be rounded to the BPM tick grid on export (minimum duration: one tick). Internal seconds remain unchanged.`,
+      `${quantizedIds.length} ${quantizedIds.length === 1 ? "note is" : "notes are"} put on the beat grid on export.`,
       quantizedIds,
     );
   const lineEnds = new Map<string, number>();
@@ -194,12 +182,12 @@ export function validateDocument(document: ChartDocument): Diagnostic[] {
         if (seen.has(lineBreak.lineId)) add("error", `Duplicate display break for line ${lineBreak.lineId}.`);
         seen.add(lineBreak.lineId);
         if (!lines.has(lineBreak.lineId))
-          add("warning", `Display break for removed/empty line ${lineBreak.lineId} will be omitted.`);
+          add("warning", `The line break after line ${lineBreak.lineId} has no line and is left out.`);
         if (
           !Number.isFinite(lineBreak.start) ||
           (lineBreak.end !== undefined && (!Number.isFinite(lineBreak.end) || lineBreak.end < lineBreak.start))
         ) {
-          add("error", `Display break for line ${lineBreak.lineId} must have finite, ordered times.`);
+          add("error", `The line break after line ${lineBreak.lineId} has invalid times.`);
           continue;
         }
         const lineEnd = lineEnds.get(lineBreak.lineId);
@@ -209,22 +197,16 @@ export function validateDocument(document: ChartDocument): Diagnostic[] {
           (lineBreak.start < lineEnd - 1e-8 ||
             (nextStart !== undefined && (lineBreak.end ?? lineBreak.start) > nextStart + 1e-8))
         ) {
-          add(
-            "warning",
-            `Display break for line ${lineBreak.lineId} is outside the gap between lyric lines; imported timing retained. Remove or adjust its lineBreaks entry if notes moved.`,
-          );
+          add("warning", `The line break after line ${lineBreak.lineId} is inside a line. Its time is kept.`);
         }
         if (grid) {
           try {
             const times = [lineBreak.start, ...(lineBreak.end === undefined ? [] : [lineBreak.end])];
             const ticks = times.map((time) => secondsToTicks(time, grid));
             if (ticks.some((tick) => !Number.isSafeInteger(Math.round(tick))))
-              add("error", `Display break for line ${lineBreak.lineId} exceeds the safe integer tick range.`);
+              add("error", `The line break after line ${lineBreak.lineId} is too far into the song.`);
             else if (ticks.some((tick) => Math.abs(tick - Math.round(tick)) > 1e-7))
-              add(
-                "warning",
-                `Display break for line ${lineBreak.lineId} will be rounded to the BPM tick grid on export.`,
-              );
+              add("warning", `The line break after line ${lineBreak.lineId} is put on the beat grid on export.`);
           } catch (error) {
             add("error", `Display break: ${error instanceof Error ? error.message : "invalid timing."}`);
           }

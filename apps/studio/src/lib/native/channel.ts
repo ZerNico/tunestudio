@@ -27,3 +27,9 @@ export type EditCommand = "undo" | "redo" | "cut" | "copy" | "paste";
 export const CLIPBOARD_CHANNEL = "tunestudio:clipboard";
 
 export type ClipboardRequest = { write: string } | { native: "cut" | "copy" | "paste" } | { send: "paste" };
+
+/**
+ * IPC channel main nudges a window's start screen on when it has a project file to open (one the OS handed over); the
+ * page then asks for it (`windows.takeOpenRequest`).
+ */
+export const OPEN_REQUEST_CHANNEL = "tunestudio:open-request";

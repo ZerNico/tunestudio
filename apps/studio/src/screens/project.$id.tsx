@@ -1,5 +1,5 @@
 import { getRouteApi, useNavigate, useRouter } from "@tanstack/solid-router";
-import { createEffect, createMemo, createSignal, flush, onSettled, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, flush, onSettled, Show, untrack } from "solid-js";
 import LoaderCircleIcon from "~icons/lucide/loader-circle";
 import Redo2Icon from "~icons/lucide/redo-2";
 import Undo2Icon from "~icons/lucide/undo-2";
@@ -12,6 +12,7 @@ import { GUTTER_PX, PianoRoll } from "~/components/editor/piano-roll";
 import { Playhead } from "~/components/editor/playhead";
 import type { ArtworkActions } from "~/components/editor/song-artwork";
 import { SongDetails } from "~/components/editor/song-details";
+import type { MediaActions } from "~/components/editor/song-files";
 import { Transport } from "~/components/editor/transport";
 import { follow as followProgress, percentOf, progressBarClass } from "~/components/new-project/progress";
 import { ExportMenu } from "~/components/project/export-menu";
@@ -80,7 +81,7 @@ function undoKey(event: KeyboardEvent): EditCommand | null {
 
 function reveal(path: string) {
   native.files.reveal({ path }).catch((error: unknown) => {
-    toast.add({ type: "error", title: "Couldn't show it", description: errorMessage(error) });
+    toast.add({ type: "error", title: "Couldn't show the file", description: errorMessage(error) });
   });
 }
 
@@ -91,8 +92,8 @@ const LINE_LEAD = 0.1;
 const NOTE_LEAD = 0.25;
 /** A line that would fill more than this share of the screen is fitted to it instead. */
 const FIT_SHARE = 0.9;
-/** How long a click on empty space waits for a second one (ms): a double-click adds a note there. */
-const DOUBLE_CLICK_MS = 300;
+/** Two clicks this close (ms) are a double-click, which adds a note and leaves the playhead where it was. */
+const DOUBLE_CLICK_MS = 500;
 
 /**
  * An open project: the chart editor. The editing area shows the song at a glance (overview), the notes against time
@@ -199,8 +200,11 @@ export default function ProjectScreen() {
     onSeek: (seconds) => seek(seconds),
   });
 
+  /** The sources playback plays: the song, vocals and music, as they are now. */
+  const playbackUrls = () => ({ audio: media("audio"), vocals: media("vocals"), instrumental: media("instrumental") });
   const playback = createPlayback(
-    { audio: media("audio"), vocals: media("vocals"), instrumental: media("instrumental") },
+    // Replaced files reach it through `setUrls`.
+    untrack(playbackUrls),
     {
       onFrame: (time) => {
         const back = loop.back(time);
@@ -287,13 +291,22 @@ export default function ProjectScreen() {
     playback.seek(Math.min(length(), Math.max(0, seconds)));
   };
   /**
-   * A click on empty space in the roll moves the playhead once it can't be the start of a double-click (which adds a
-   * note there and leaves the playhead be).
+   * A click on empty space in the roll moves the playhead at once; a double-click (which adds a note there) puts it back
+   * where it was before, as playing has moved it on since.
    */
-  let clickSeek: ReturnType<typeof setTimeout> | undefined;
-  const seekSoon = (seconds: number) => {
-    clearTimeout(clickSeek);
-    clickSeek = setTimeout(() => seek(seconds), DOUBLE_CLICK_MS);
+  let beforeClick: { time: number; at: number } | null = null;
+  const clickSeek = (seconds: number) => {
+    const now = performance.now();
+    // The second click of a double-click keeps where the first one started.
+    if (!beforeClick || now - beforeClick.at > DOUBLE_CLICK_MS) beforeClick = { time: playback.time(), at: now };
+    seek(seconds);
+  };
+  const undoClickSeek = () => {
+    const before = beforeClick;
+    beforeClick = null;
+    if (!before || performance.now() - before.at > DOUBLE_CLICK_MS) return;
+    const played = playback.playing() ? ((performance.now() - before.at) / 1000) * playback.speed() : 0;
+    seek(before.time + played);
   };
   const changeView = (next: TimeView) => {
     if (playback.playing()) scrolledAway = true;
@@ -442,10 +455,73 @@ export default function ProjectScreen() {
     }
   };
 
+  /** Follows the vocals' pitch again (new vocals), stopping the last one. */
+  let pitchController = new AbortController();
+  const followVocals = () => {
+    pitchController.abort();
+    pitchController = new AbortController();
+    void preparePitch(pitchController.signal);
+  };
+  // A replaced song, vocals or music plays from where it was; new vocals have their pitch followed.
+  createEffect(playbackUrls, (urls, previous) => {
+    if (!previous) return;
+    playback.setUrls(urls);
+    if (urls.vocals !== previous.vocals) {
+      setPitch(null);
+      followVocals();
+    }
+  });
+
+  /** Separating the voice from the song again, while it runs. */
+  const [separating, setSeparating] = createSignal<ImportProgress | null | undefined>(undefined);
+  let separation: AbortController | undefined;
+  const songMediaActions: MediaActions = {
+    chooseFile: (kind) => native.dialogs.chooseMediaFile({ kind }),
+    replace: async (role, path) => {
+      const updated = await native.project.replaceMedia({ id: overview().id, role, path });
+      setChangedMedia(updated.media);
+    },
+    removeVideo: async () => {
+      const updated = await native.project.removeVideo({ id: overview().id });
+      setChangedMedia(updated.media);
+    },
+    separating,
+    separate: () => {
+      if (separating() !== undefined) return;
+      const controller = new AbortController();
+      separation = controller;
+      setSeparating(null);
+      followProgress(
+        () => native.project.separate({ id: overview().id }, { signal: controller.signal }),
+        controller.signal,
+        setSeparating,
+        // Stopped just as it finished: the new files are in, so the editor plays them.
+        (late) => setChangedMedia(late.media),
+      )
+        .then((updated) => {
+          if (!updated) return;
+          setChangedMedia(updated.media);
+          toast.add({ type: "success", title: "Separated the voice from the song" });
+        })
+        .catch((error: unknown) =>
+          toast.add({ type: "error", title: "Couldn't separate the voice", description: errorMessage(error) }),
+        )
+        .finally(() => {
+          if (separation === controller) setSeparating(undefined);
+        });
+    },
+    stopSeparating: () => {
+      separation?.abort();
+      setSeparating(undefined);
+    },
+    onError: (title, error) => {
+      if (!isAbort(error)) toast.add({ type: "error", title, description: errorMessage(error) });
+    },
+  };
+
   onSettled(() => {
     playback.load();
-    const pitchController = new AbortController();
-    void preparePitch(pitchController.signal);
+    followVocals();
     const observer = new ResizeObserver(() => {
       if (!rollArea) return;
       const next = { width: Math.max(0, rollArea.clientWidth - GUTTER_PX), height: rollArea.clientHeight };
@@ -550,12 +626,12 @@ export default function ProjectScreen() {
       },
     });
     return () => {
-      clearTimeout(clickSeek);
       stopEditing();
       cancelGestures();
       autoScroll.end();
       autoPitch.stop();
       pitchController.abort();
+      separation?.abort();
       observer.disconnect();
       editArea?.removeEventListener("wheel", onWheel);
       window.removeEventListener("keydown", onKey);
@@ -569,6 +645,9 @@ export default function ProjectScreen() {
   });
 
   const close = async () => {
+    // What still reads or writes the project stops before it closes.
+    separation?.abort();
+    pitchController.abort();
     await native.project.close({ id: overview().id }).catch((error: unknown) => console.error(error));
     void navigate({ to: "/" });
   };
@@ -583,11 +662,8 @@ export default function ProjectScreen() {
       }
       toast.add({
         type: "success",
-        title: "Exported the UltraStar song",
-        description: [
-          `${result.files.length} files in ${result.folder}.`,
-          result.warnings.length > 0 ? result.warnings[0] : "",
-        ].join(" "),
+        title: "Exported for games",
+        description: result.folder,
         actionProps: { children: revealLabel, onClick: () => reveal(result.folder) },
       });
     } catch (error) {
@@ -616,8 +692,8 @@ export default function ProjectScreen() {
       const { warnings } = await native.project.exportUsdb({ id: overview().id, path });
       toast.add({
         type: "success",
-        title: "Exported the text for USDB",
-        description: [`Paste it into USDB's form. ${path}`, ...warnings.slice(0, 1)].join(" "),
+        title: "Exported for USDB",
+        description: [path, ...warnings].join(" "),
         actionProps: { children: revealLabel, onClick: () => reveal(path) },
       });
     } catch (error) {
@@ -661,12 +737,7 @@ export default function ProjectScreen() {
           <span class="truncate text-muted-foreground">· {chart().song.artist || "Unknown artist"}</span>
         </button>
 
-        <ExportMenu
-          busy={exporting()}
-          onSongFolder={() => void chooseExport()}
-          onUsdb={() => void exportUsdb()}
-          noVideoLink={chart().song.youtubeId === null}
-        />
+        <ExportMenu busy={exporting()} onSongFolder={() => void chooseExport()} onUsdb={() => void exportUsdb()} />
         <Button variant="ghost" size="sm" onClick={() => void close()} data-testid="close-project">
           <XIcon />
           Close
@@ -727,14 +798,14 @@ export default function ProjectScreen() {
                   drag={editing.drag()}
                   onEmptyClick={(seconds) => {
                     editing.emptyClick();
-                    seekSoon(seconds);
+                    clickSeek(seconds);
                   }}
                   onBox={(area, add) => editing.box(area, add)}
                   tool={tools.tool()}
                   onDrawDown={(at, event, scale) => editing.drawDown(event, at, scale)}
                   drawing={editing.drawing()}
                   onEmptyDoubleClick={(at) => {
-                    clearTimeout(clickSeek);
+                    undoClickSeek();
                     editing.emptyDoubleClick(at);
                   }}
                   cut={editing.cut()}
@@ -794,6 +865,7 @@ export default function ProjectScreen() {
         chart={chart()}
         media={projectMedia()}
         artwork={artworkActions}
+        songMedia={songMediaActions}
         markers={songMarkers}
         selectedLines={() => {
           const chosen = new Set(selectedNotes().map((note) => note.lineId));

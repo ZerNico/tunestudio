@@ -109,7 +109,7 @@ function audioSongStage(project: NewProject, path: () => string, reading: () => 
         <Match when={importing() !== undefined}>
           <Checklist
             title="Preparing the song"
-            hint="This takes a minute or two. The lyrics come next; Back stops it."
+            hint="This takes a minute or two."
             label="Preparing"
             testid="audio-progress"
             tasks={importTasks(project.models())}
@@ -140,9 +140,6 @@ function audioSongStage(project: NewProject, path: () => string, reading: () => 
               <div class="flex items-center gap-3">
                 <span class="text-[11.5px] text-popover-foreground">Sung in</span>
                 <LanguageSelect value={project.chosenLanguage()} onChange={project.setLanguage} />
-                <span class="text-[10.5px] text-popover-muted">
-                  The lyrics are looked for, heard and charted in it.
-                </span>
               </div>
               <CoverPicker
                 covers={project.covers()}
@@ -178,7 +175,7 @@ function audioSongStage(project: NewProject, path: () => string, reading: () => 
 
 /**
  * A new project from an audio file the user has, stage by stage: the song (its details, cover and language; Next
- * copies the file as it is and separates the voice), the lyrics, the chart, and a summary whose "Create project…" asks
+ * copies the file as it is and separates the voice), the lyrics, the chart, and a summary whose "Create project" asks
  * where to save and writes the project. Until then everything lives in a draft that is thrown away when the dialog
  * closes.
  */

@@ -121,7 +121,7 @@ function setup() {
   return { onOpened, view, user: userEvent.setup() };
 }
 
-/** From the lyrics stage through the chart stage to the summary, then "Create project…". */
+/** From the lyrics stage through the chart stage to the summary, then "Create project". */
 async function createProject(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await screen.findByTestId("flow-next"));
   await screen.findByTestId("chart-choice");
@@ -404,7 +404,7 @@ describe("lyrics stage and saving", () => {
     native.youtube.findLyrics.mockResolvedValue({ ...LYRICS, versionMismatch: true });
     const { user, onOpened } = setup();
     await toLyrics(user);
-    expect(await screen.findByText(/Words and timing may differ/)).toBeInTheDocument();
+    expect(await screen.findByText(/Check the words and timing/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Found online" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("textbox", { name: "Lyrics" })).toHaveValue(
       "We're out walking by the sea\nYou hold the light and so do I",
@@ -736,7 +736,7 @@ describe("covers", () => {
     });
     const { user } = setup();
     await screen.findByTestId("cover-option");
-    await user.click(screen.getByRole("button", { name: "Choose an image…" }));
+    await user.click(screen.getByRole("button", { name: "Choose an image" }));
     expect(await screen.findByRole("radio", { name: "Your image" })).toBeChecked();
     // Its file name shows in the tile's tooltip.
     await user.hover(screen.getByTestId("cover-file"));
@@ -861,11 +861,11 @@ describe("chart and finish stages", () => {
     expect(screen.getByTestId("finish-song")).toHaveTextContent("Rick Astley – Never Gonna Give You Up · English");
     expect(screen.getByTestId("finish-lyrics")).toHaveTextContent("2 lines from LRCLIB");
     expect(screen.getByTestId("finish-cover")).toHaveTextContent("The video's thumbnail");
-    expect(screen.getByTestId("flow-next")).toHaveTextContent("Create project…");
+    expect(screen.getByTestId("flow-next")).toHaveTextContent("Create project");
 
     // Back and on again: the chart is still the one for these lyrics.
     await user.click(screen.getByTestId("flow-back"));
-    expect(await screen.findByTestId("chart-choice-hint")).toHaveTextContent("The chart is made: 12 notes in 2 lines.");
+    expect(await screen.findByTestId("chart-choice-hint")).toHaveTextContent("Chart made: 12 notes in 2 lines.");
     await user.click(screen.getByTestId("flow-next"));
     await screen.findByTestId("finish-summary");
     expect(native.drafts.makeChart).toHaveBeenCalledOnce();
@@ -1056,7 +1056,7 @@ describe("wording", () => {
         213,
       ),
     ).toEqual({
-      text: "2 lines from LRCLIB for another version. Words and timing may differ; check them.",
+      text: "2 lines from LRCLIB for another version. Check the words and timing.",
       tone: "warning",
     });
   });

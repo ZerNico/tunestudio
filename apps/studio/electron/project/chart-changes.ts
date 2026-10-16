@@ -17,8 +17,9 @@ import { tagsOf, withTags } from "./tags";
 const encodeLanguages = Schema.encodeSync(Languages);
 const encodeExtraHeaders = Schema.encodeSync(ExtraHeaders);
 
-const outOfStep = (what: string) =>
-  new ChartOutOfStep({ message: `The editor and the project disagree about ${what}, so the edit wasn't saved.` });
+/** The file isn't as the editor thinks: the edit isn't written. */
+const outOfStep = () =>
+  new ChartOutOfStep({ message: "The edit couldn't be saved. The project file was changed meanwhile." });
 
 /** Whether every field of `expected` has that value in `row`. */
 function matches(row: Record<string, unknown>, expected: Record<string, unknown>): boolean {
@@ -28,7 +29,7 @@ function matches(row: Record<string, unknown>, expected: Record<string, unknown>
 function noteChange(db: Queryable, id: number, before: NoteFields | null, after: NoteFields | null) {
   return Effect.gen(function* () {
     const [row] = yield* db.select().from(notes).where(eq(notes.id, id)).limit(1).pipe(Effect.orDie);
-    if (before ? !row || !matches(row, before) : row) return yield* outOfStep(`note ${id}`);
+    if (before ? !row || !matches(row, before) : row) return yield* outOfStep();
     if (!after) {
       yield* db.delete(notes).where(eq(notes.id, id)).pipe(orDiskFull);
     } else if (!before) {
@@ -46,7 +47,7 @@ function noteChange(db: Queryable, id: number, before: NoteFields | null, after:
 function lineChange(db: Queryable, id: number, before: LineFields | null, after: LineFields | null) {
   return Effect.gen(function* () {
     const [row] = yield* db.select().from(lines).where(eq(lines.id, id)).limit(1).pipe(Effect.orDie);
-    if (before ? !row || !matches(row, before) : row) return yield* outOfStep(`line ${id}`);
+    if (before ? !row || !matches(row, before) : row) return yield* outOfStep();
     if (!after) {
       // A line is deleted after its notes (or they were moved): deleting it would take them along unseen.
       const [left] = yield* db
@@ -55,7 +56,7 @@ function lineChange(db: Queryable, id: number, before: LineFields | null, after:
         .where(eq(notes.lineId, id))
         .limit(1)
         .pipe(Effect.orDie);
-      if (left) return yield* outOfStep(`line ${id}, which still has notes`);
+      if (left) return yield* outOfStep();
       yield* db.delete(lines).where(eq(lines.id, id)).pipe(orDiskFull);
     } else if (!before) {
       yield* db
@@ -72,7 +73,7 @@ function songChange(db: Queryable, before: SongFields, after: SongFields) {
   return Effect.gen(function* () {
     const { songRow, language: stored, extraHeaders: headers } = yield* readSong(db);
     const current = { ...songRow, language: stored, tags: tagsOf(headers) };
-    if (!matches(current, before)) return yield* outOfStep("the song details");
+    if (!matches(current, before)) return yield* outOfStep();
     const { language, tags, ...rest } = after;
     yield* db
       .update(song)
@@ -88,7 +89,7 @@ function songChange(db: Queryable, before: SongFields, after: SongFields) {
 function singerChange(db: Queryable, id: number, before: SingerFields, after: SingerFields) {
   return Effect.gen(function* () {
     const [row] = yield* db.select().from(singers).where(eq(singers.id, id)).limit(1).pipe(Effect.orDie);
-    if (!row || row.name !== before.name) return yield* outOfStep(`singer ${id}`);
+    if (!row || row.name !== before.name) return yield* outOfStep();
     yield* db.update(singers).set({ name: after.name }).where(eq(singers.id, id)).pipe(orDiskFull);
   });
 }

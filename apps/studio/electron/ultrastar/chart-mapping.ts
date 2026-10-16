@@ -141,7 +141,7 @@ export function chartToProject(document: ChartDocument): { chart: ProjectChart; 
       if (/^\d{1,4}$/.test(trimmed)) song.year = Number(trimmed);
       else {
         keep(key, value);
-        warnings.push(`#YEAR “${trimmed}” isn't a year; it was kept as is.`);
+        warnings.push(`#YEAR “${trimmed}” isn't a year. It was kept as it is.`);
       }
     } else if (key in TEXT_HEADERS) song[TEXT_HEADERS[key as keyof typeof TEXT_HEADERS]] = trimmed || null;
     else if (key in SINGER_HEADERS) {

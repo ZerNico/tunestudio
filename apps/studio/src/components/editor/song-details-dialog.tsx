@@ -183,7 +183,7 @@ export function SongDetailsDialog(props: {
               <Field
                 label="YouTube video"
                 value={props.song.youtubeId ? watchUrl(props.song.youtubeId) : ""}
-                placeholder="The song's video on YouTube, for USDB and usdb_syncer"
+                placeholder="A link to the song's video on YouTube"
                 testid="song-youtube"
                 save={(text) => {
                   // A link that isn't a video leaves the field as it was.

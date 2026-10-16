@@ -21,6 +21,7 @@ import { readImage } from "../project/images";
 import { projectOverview, recentEntry } from "../project/overview";
 import { sungPitch } from "../project/pitch";
 import { Projects, type ProjectSession } from "../project/projects";
+import { removeVideo, replaceSongMedia, separateSong } from "../project/song-media";
 import { AppLog } from "../services/app-log";
 import { Desktop } from "../services/desktop";
 import { Drafts } from "../services/drafts";
@@ -30,6 +31,7 @@ import { AppSettings } from "../services/settings";
 import { Tools } from "../tools/tools";
 import { exportSong, exportUsdb } from "../ultrastar/song-export";
 import { describeSong, importSong, inspectSong } from "../ultrastar/song-import";
+import type { Windows } from "../windows";
 import { findCovers } from "../youtube/covers";
 import { findLyrics } from "../youtube/lyrics";
 import { inspectVideo } from "../youtube/youtube";
@@ -38,10 +40,13 @@ import { downloadIntoDraft } from "../youtube/youtube-draft";
 /** The default folder for new projects, under the user's Music folder. */
 export const PROJECTS_FOLDER = "Tune Studio";
 
-/** The windows calls come from, by their connection's client id (`port-protocol.ts`), for dialogs to belong to. */
+/**
+ * The windows calls come from, by their connection's client id (`port-protocol.ts`), for dialogs to belong to; and
+ * which window shows which project (`windows.ts`; none in tests).
+ */
 export class Callers extends Context.Service<
   Callers,
-  { readonly windowOf: (clientId: number) => BrowserWindow | null }
+  { readonly windowOf: (clientId: number) => BrowserWindow | null; readonly windows: Windows | null }
 >()("studio/RpcCallers") {}
 
 const windowOf = (client: { readonly id: number }) => Callers.useSync((callers) => callers.windowOf(client.id));
@@ -65,6 +70,16 @@ const grant = (path: string | null) =>
       );
 
 /** Puts an opened project at the top of the recents; failing to save the list doesn't stop the open. */
+/** A project opened for the window `client` is in: remembered in recents, and that window shows it. */
+const openedIn = (client: { readonly id: number }, session: ProjectSession) =>
+  Effect.gen(function* () {
+    const opened = yield* remember(session);
+    const window = yield* windowOf(client);
+    const { windows } = yield* Callers;
+    if (window) windows?.show(window, { id: opened.id, path: session.path });
+    return opened;
+  });
+
 export const remember = (session: ProjectSession) =>
   Effect.gen(function* () {
     const desktop = yield* Desktop;
@@ -148,6 +163,11 @@ export const nativeHandlers = NativeRpcs.toLayer({
       if (!chosen) return null;
       return yield* grant(chosen.toLowerCase().endsWith(".tunestudio") ? chosen : `${chosen}.tunestudio`);
     }),
+  "dialogs.chooseMediaFile": (input, { client }) =>
+    Effect.gen(function* () {
+      const desktop = yield* Desktop;
+      return yield* grant(yield* desktop.chooseMediaFile(yield* windowOf(client), input.kind));
+    }),
   "dialogs.chooseUsdbFile": (input, { client }) =>
     Effect.gen(function* () {
       const desktop = yield* Desktop;
@@ -167,27 +187,66 @@ export const nativeHandlers = NativeRpcs.toLayer({
 
   "song.inspect": (input) =>
     Effect.flatMap(allowedPath(input.path), (path) => Effect.map(inspectSong(path, input.chart), describeSong)),
-  "song.import": (input) =>
+  "song.import": (input, { client }) =>
     progressStream((onProgress) =>
       Effect.gen(function* () {
         const path = yield* allowedPath(input.path);
         const target = yield* allowedPath(input.target);
         const source = yield* inspectSong(path, input.chart);
         const session = yield* importSong(source, { includeVideo: input.includeVideo, target }, onProgress);
-        return yield* remember(session);
+        return yield* openedIn(client, session);
       }),
     ),
 
-  "project.open": (input) =>
+  "project.open": (input, { client }) =>
     Effect.gen(function* () {
       const path = yield* allowedPath(input.path);
+      const window = yield* windowOf(client);
+      const { windows } = yield* Callers;
+      // Open in another window already: that one comes to the front, and this one stays as it is.
+      const showing = windows?.showing(path, window);
+      if (showing) {
+        windows!.focus(showing);
+        return { id: "", path, elsewhere: true };
+      }
       const session = yield* Projects.use((projects) => projects.open(path));
-      return yield* remember(session);
+      return yield* openedIn(client, session);
     }),
   "project.overview": (input) => Effect.flatMap(project(input.id), projectOverview),
-  "project.close": (input) => Projects.use((projects) => projects.close(input.id)),
+  "project.close": (input, { client }) =>
+    Effect.gen(function* () {
+      const window = yield* windowOf(client);
+      const { windows } = yield* Callers;
+      if (window) windows?.show(window, null);
+      yield* Projects.use((projects) => projects.close(input.id));
+    }),
+  "windows.takeOpenRequest": (_, { client }) =>
+    Effect.gen(function* () {
+      const { windows } = yield* Callers;
+      return windows?.takeOpenRequest(yield* windowOf(client)) ?? null;
+    }),
+  "windows.add": () =>
+    Effect.gen(function* () {
+      const { windows } = yield* Callers;
+      windows?.add();
+    }),
   "project.pitch": (input) =>
     progressStream((onProgress) => Effect.flatMap(project(input.id), (session) => sungPitch(session, onProgress))),
+  "project.replaceMedia": (input) =>
+    Effect.gen(function* () {
+      const path = yield* allowedPath(input.path);
+      const session = yield* project(input.id);
+      yield* replaceSongMedia(session, input.role, path);
+      return yield* projectOverview(session);
+    }),
+  "project.removeVideo": (input) =>
+    Effect.flatMap(project(input.id), (session) => Effect.andThen(removeVideo(session), projectOverview(session))),
+  "project.separate": (input) =>
+    progressStream((onProgress) =>
+      Effect.flatMap(project(input.id), (session) =>
+        Effect.andThen(separateSong(session, onProgress), projectOverview(session)),
+      ),
+    ),
   "project.setArtwork": (input) =>
     Effect.flatMap(project(input.id), (session) =>
       Effect.gen(function* () {
@@ -261,7 +320,7 @@ export const nativeHandlers = NativeRpcs.toLayer({
       listenToDraft(input.draftId, { language: input.language, mixed: input.mixed }, onProgress),
     ),
   "drafts.makeChart": (input) => progressStream((onProgress) => makeDraftChart(input, onProgress)),
-  "drafts.create": (input) =>
+  "drafts.create": (input, { client }) =>
     progressStream((onProgress) =>
       Effect.gen(function* () {
         const target = yield* allowedPath(input.target);
@@ -270,7 +329,7 @@ export const nativeHandlers = NativeRpcs.toLayer({
             ? { kind: "file" as const, path: yield* allowedPath(input.cover.path) }
             : input.cover;
         const session = yield* createDraftProject({ ...input, cover, target }, onProgress);
-        return yield* remember(session);
+        return yield* openedIn(client, session);
       }),
     ),
   "drafts.discard": (input) => Drafts.use((drafts) => drafts.discard(input.draftId)),

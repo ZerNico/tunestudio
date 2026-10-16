@@ -1,5 +1,5 @@
 /**
- * Changing the song's cover, in a dialog of its own (from "Change…" in the song's files): tiles like setup's cover
+ * Changing the song's cover, in a dialog of its own (from "Change" in the song's files): tiles like setup's cover
  * picker (`CoverOption`): the cover the song has now, covers found online (looked for when this opens), none, and
  * choosing an image file. Picking a tile changes it at once (not part of undo) and closes the dialog.
  */
@@ -136,12 +136,12 @@ function CoverTiles(props: { url: string | undefined; actions: ArtworkActions; o
         type="button"
         disabled={busy()}
         class={`${tileClass} flex-col gap-1 border border-dashed border-popover-line bg-transparent text-[9.5px] text-popover-muted outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-60`}
-        aria-label="Choose an image…"
+        aria-label="Choose an image"
         onClick={() => void apply("file")}
         data-testid="cover-choose"
       >
         <ImagePlusIcon class="size-4" />
-        Choose…
+        Choose
       </button>
     </div>
   );

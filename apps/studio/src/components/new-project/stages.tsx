@@ -143,7 +143,7 @@ function describeMedia(project: NewProject): string {
 }
 
 /**
- * The last stage: what the project will be made of (Back leads to where each was chosen), and "Create project…",
+ * The last stage: what the project will be made of (Back leads to where each was chosen), and "Create project",
  * which asks where to save and writes the project.
  */
 export function finishStage(
@@ -159,7 +159,7 @@ export function finishStage(
   return {
     id: "finish",
     tag: "Finish",
-    primary: "Create project…",
+    primary: "Create project",
     // Once saving starts, the draft goes into the project: stopping halfway would leave neither.
     stoppable: false,
     enter: () => setError(null),

@@ -29,11 +29,11 @@ export async function sendEditCommand(command: EditCommand, window?: BaseWindow)
 }
 
 /**
- * On macOS a minimal menu: the app menu, Edit (which makes copy and paste work in text
- * fields), View with full screen, and Window. Windows and Linux get no menu bar. Reload
- * and the developer tools are only there in development.
+ * On macOS a minimal menu: the app menu, File with New Window (`onNewWindow`, also in the Dock's menu), Edit (which
+ * makes copy and paste work in text fields), View with full screen, and Window. Windows and Linux get no menu bar
+ * (the page takes Ctrl+Shift+N for a new window). Reload and the developer tools are only there in development.
  */
-export function setApplicationMenu() {
+export function setApplicationMenu(onNewWindow: () => void) {
   const development = !app.isPackaged;
   const developmentItems: MenuItemConstructorOptions[] = development
     ? [{ type: "separator" }, { role: "reload" }, { role: "toggleDevTools" }]
@@ -69,6 +69,14 @@ export function setApplicationMenu() {
         ],
       },
       {
+        label: "File",
+        submenu: [
+          { label: "New Window", accelerator: "Shift+CmdOrCtrl+N", click: () => onNewWindow() },
+          { type: "separator" },
+          { role: "close" },
+        ],
+      },
+      {
         label: "Edit",
         submenu: [
           // Not the undo/redo roles: those only reach text fields, and Cmd+Z never gets to the page. The page decides.
@@ -95,6 +103,7 @@ export function setApplicationMenu() {
       { role: "windowMenu" },
     ]),
   );
+  app.dock?.setMenu(Menu.buildFromTemplate([{ label: "New Window", click: () => onNewWindow() }]));
 }
 
 /**

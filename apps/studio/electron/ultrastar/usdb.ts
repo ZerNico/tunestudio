@@ -5,7 +5,12 @@
  * are, and what USDB would drop (preview, medley, duet singers, tags), go in usdb_syncer's meta tags in `#VIDEO`
  * (`v=<YouTube id>,co=<cover>,preview=…`). See usdb_syncer's `meta_tags.py` and `song_txt/headers.py`.
  */
-import { type ChartDocument, secondsToTicks, serializeUltraStarWithDiagnostics } from "@tunestudio/ultrastar";
+import {
+  type ChartDocument,
+  secondsToTicks,
+  serializeUltraStarWithDiagnostics,
+  ticksToSeconds,
+} from "@tunestudio/ultrastar";
 
 import { parseYoutubeVideoId } from "../../src/lib/youtube";
 import { headerNumber, type ProjectChart, projectToChart } from "./chart-mapping";
@@ -47,6 +52,36 @@ export function youtubeIdOf(tags: MetaTags): string | null {
   return null;
 }
 
+/**
+ * What a USDB chart keeps in its meta tags (USDB drops these headers) as the song's own: its YouTube video, preview,
+ * medley, duet singers' names and tags, where the chart's headers don't say. Changes `chart` in place.
+ */
+export function readMetaTags(chart: ProjectChart, tags: MetaTags): void {
+  const { song } = chart;
+  const value = (key: string) => tags.find(([name]) => name === key)?.[1];
+  song.youtubeId ??= youtubeIdOf(tags);
+  const preview = Number(value("preview"));
+  if (song.previewStart === null && value("preview") && Number.isFinite(preview)) song.previewStart = preview;
+  const medley = /^(\d+)-(\d+)$/.exec(value("medley") ?? "");
+  if (medley && song.medleyStart === null && song.medleyEnd === null) {
+    const grid = { bpm: song.bpm, gap: song.gap * 1000 };
+    song.medleyStart = ticksToSeconds(Number(medley[1]), grid);
+    song.medleyEnd = ticksToSeconds(Number(medley[2]), grid);
+  }
+  for (const singer of chart.singers) singer.name ??= value(`p${singer.index}`) ?? null;
+  const songTags = value("tags");
+  if (songTags && !song.extraHeaders.some(([key]) => key === "TAGS")) {
+    song.extraHeaders.push([
+      "TAGS",
+      songTags
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter(Boolean)
+        .join(", "),
+    ]);
+  }
+}
+
 /** The order usdb_syncer writes meta tags in; others it doesn't know go after them. */
 const META_ORDER = ["a", "v", "v-trim", "v-crop", "co", "co-rotate", "co-crop", "co-resize", "co-contrast", "bg"];
 const META_LAST = ["bg-crop", "bg-resize", "p1", "p2", "preview", "medley", "tags"];
@@ -68,21 +103,23 @@ export function usdbBpm(bpm: number): number {
   return Math.round(bpm * 100) / 100;
 }
 
+/** The media file names a chart for USDB names (as an export for games names them), null where there is none. */
+export interface UsdbFiles {
+  audio: string | null;
+  cover: string | null;
+  background: string | null;
+}
+
 /**
- * The chart's text for USDB, with `audioFile` as `#MP3` (null: none). The song's own meta tags (kept from a USDB
+ * The chart's text for USDB, with `files` as `#MP3`, `#COVER` and `#BACKGROUND`. The song's own meta tags (kept from a USDB
  * import) stay, with its YouTube video, preview, medley, duet singers and tags set from the song. `warnings` says what
- * changed on the way.
+ * USDB will miss.
  */
-export function usdbText(chart: ProjectChart, audioFile: string | null): { text: string; warnings: string[] } {
+export function usdbText(chart: ProjectChart, files: UsdbFiles): { text: string; warnings: string[] } {
   const { song } = chart;
   const warnings: string[] = [];
   const bpm = usdbBpm(song.bpm);
   const gap = Math.round(song.gap * 1000);
-  if (bpm !== song.bpm || gap !== song.gap * 1000) {
-    warnings.push(
-      `USDB takes BPM with two decimals and GAP in whole milliseconds (${headerNumber(bpm)} BPM, ${gap} ms), so notes may move by a few milliseconds.`,
-    );
-  }
   const grid = { bpm, gap };
   const duet = chart.singers.length > 1;
 
@@ -95,7 +132,7 @@ export function usdbText(chart: ProjectChart, audioFile: string | null): { text:
   const audioOnly = imported.find(([key]) => key === "a")?.[1];
   if (song.youtubeId) tags.push(["v", song.youtubeId]);
   else if (audioOnly) tags.push(["a", audioOnly]);
-  else warnings.push("The song has no YouTube video, so usdb_syncer can't download its audio. Add it in Song details.");
+  else warnings.push("The song has no YouTube video.");
   for (const singer of chart.singers) if (duet && singer.name) tags.push([`p${singer.index}`, singer.name]);
   if (song.previewStart !== null) tags.push(["preview", headerNumber(Math.round(song.previewStart * 1000) / 1000)]);
   if (song.medleyStart !== null && song.medleyEnd !== null) {
@@ -122,9 +159,11 @@ export function usdbText(chart: ProjectChart, audioFile: string | null): { text:
   };
   set("ARTIST", song.artist);
   set("TITLE", title);
-  set("MP3", audioFile);
+  set("MP3", files.audio);
   set("CREATOR", song.creator);
   set("EDITION", song.edition);
+  set("COVER", files.cover);
+  set("BACKGROUND", files.background);
   set("GENRE", song.genre);
   set("YEAR", song.year);
   set("LANGUAGE", song.language.join(", "));
@@ -138,5 +177,6 @@ export function usdbText(chart: ProjectChart, audioFile: string | null): { text:
   // The notes in seconds, put on the USDB grid as they are written.
   const document: ChartDocument = { ...projectToChart(chart, {}), metadata };
   const result = serializeUltraStarWithDiagnostics(document);
-  return { text: result.text.replaceAll("\n", "\r\n"), warnings: [...warnings, ...result.warnings] };
+  // As USDB hands charts out: CRLF, and nothing after the E.
+  return { text: result.text.trimEnd().replaceAll("\n", "\r\n"), warnings };
 }

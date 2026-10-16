@@ -29,9 +29,11 @@ export interface PlaybackOptions {
 }
 
 export function createPlayback(
-  urls: Partial<Record<PlaybackSource, string>>,
+  initialUrls: Partial<Record<PlaybackSource, string>>,
   { onFrame = () => {}, startAt = (seconds) => seconds, onEnd = () => null }: PlaybackOptions = {},
 ) {
+  /** Each source's file; a replaced one gets a new URL (`setUrls`). */
+  const urls = { ...initialUrls };
   const available = PLAYBACK_SOURCES.filter((source) => urls[source]);
   const [source, setSource] = createSignal<PlaybackSource | null>(available[0] ?? null);
   const [time, setTime] = createSignal(0);
@@ -151,6 +153,35 @@ export function createPlayback(
       setSource(next);
       element(next).currentTime = at;
       if (resume) play();
+    },
+    /**
+     * New files for the sources (a replaced song, new vocals): those that changed load again, the one playing from
+     * the same position, playing on if it was. The length is learnt again.
+     */
+    setUrls: (next: Partial<Record<PlaybackSource, string>>) => {
+      const at = current && elements.has(current) ? element(current).currentTime : time();
+      const resume = playing();
+      let reloaded = false;
+      for (const source of available) {
+        if (!next[source] || next[source] === urls[source]) continue;
+        urls[source] = next[source];
+        const old = elements.get(source);
+        if (!old) continue;
+        old.pause();
+        old.removeAttribute("src");
+        old.load();
+        elements.delete(source);
+        if (source === current) reloaded = true;
+      }
+      // The length is the longest of the files still loaded; a replaced one adds its own when it loads.
+      const known = [...elements.values()].map((audio) => audio.duration).filter(Number.isFinite);
+      setDuration(Math.max(0, ...known));
+      if (!reloaded || !current) return;
+      cancelAnimationFrame(frame);
+      element(current).currentTime = at;
+      setTime(at);
+      if (resume) play();
+      else setPlaying(false);
     },
     /** Loads the first source so its length is known. */
     load: () => {

@@ -11,6 +11,8 @@ interface DesktopShape {
   readonly chooseProjectLocation: (window: BrowserWindow | null, defaultPath: string) => Effect.Effect<string | null>;
   /** A JPEG or PNG image, e.g. for a cover. */
   readonly chooseImage: (window: BrowserWindow | null) => Effect.Effect<string | null>;
+  /** An audio or video file, e.g. to replace the song's. */
+  readonly chooseMediaFile: (window: BrowserWindow | null, kind: "audio" | "video") => Effect.Effect<string | null>;
   /** Where to save a chart's text (`.txt`); `defaultPath` is the suggested file. */
   readonly chooseTextFile: (window: BrowserWindow | null, defaultPath: string) => Effect.Effect<string | null>;
   /** The folder an export goes into. */

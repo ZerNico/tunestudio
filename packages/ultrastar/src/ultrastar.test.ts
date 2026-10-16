@@ -125,7 +125,7 @@ describe("UltraStar parsing", () => {
   });
 
   it.each(["YES", "yes", "1", "TRUE", "maybe", ""])("rejects relative mode %j", (mode) => {
-    expect(() => parseUltraStar(headers + `#RELATIVE:${mode}\n: 0 4 0 a\nE`)).toThrow(/Relative timing/);
+    expect(() => parseUltraStar(headers + `#RELATIVE:${mode}\n: 0 4 0 a\nE`)).toThrow(/relative timing/);
   });
 
   it.each(["NO", "false", "0"])("retains explicit absolute mode %s", (mode) => {
@@ -134,20 +134,20 @@ describe("UltraStar parsing", () => {
   });
 
   it.each([
-    [": 0 0 0 zero", /length.*greater/],
-    [": 0 -2 0 negative", /length.*greater/],
+    [": 0 0 0 zero", /has no length/],
+    [": 0 -2 0 negative", /has no length/],
     [": 0 1.5 0 fraction", /malformed/],
     [": 0 1 0.5 fractional pitch", /malformed/],
     [": 0 1 NaN bad", /malformed/],
     [": 0 1 0missing", /malformed/],
     [": 9007199254740992 1 0 huge", /safe integer/],
-    ["- 5 4", /end precedes/],
-    ["- 1 2 3", /Malformed line break/],
+    ["- 5 4", /ends before it starts/],
+    ["- 1 2 3", /line break isn't written/],
     ["B 0 120", /Unsupported/],
     ["S 0 4 0 sleep", /Unsupported/],
-    ["#BPM", /Malformed header/],
+    ["#BPM", /header isn't written/],
     ["#BAD KEY:x", /Invalid header/],
-    [": 0 4 0 bad\u0000", /NUL/],
+    [": 0 4 0 bad\u0000", /isn't a text file/],
   ])("rejects invalid input %j with a useful error", (body, message) => {
     expect(() => parse(`${body}\nE`)).toThrow(message);
   });
@@ -171,14 +171,14 @@ describe("UltraStar parsing", () => {
     const exported = serializeUltraStarWithDiagnostics(result.document);
     expect(exported.text).toContain("#ENCODING:UTF8");
     expect(exported.text).toContain("éclair");
-    expect(exported.warnings.join(" ")).toContain("UTF8");
+    expect(exported.warnings.join(" ")).toContain("UTF-8");
     expect(result.document.metadata.ENCODING).toBe("CP1252");
   });
 
   it("warns about likely decoding damage and omitted empty tracks", () => {
     const result = parseUltraStar(headers + "P1\nP2\n: 0 4 0 caf�\nE");
-    expect(result.warnings.join(" ")).toContain("replacement characters");
-    expect(result.warnings.join(" ")).toContain("Player 1 has no notes");
+    expect(result.warnings.join(" ")).toContain("characters are damaged");
+    expect(result.warnings.join(" ")).toContain("Singer 1 has no notes");
   });
 
   it("retains duet singer names and arbitrary header punctuation in values", () => {
@@ -191,23 +191,23 @@ describe("UltraStar parsing", () => {
     expect(() => parseUltraStar("#TITLE:No grid\nE")).toThrow(/BPM/);
     const result = parseUltraStar("#BPM:120\n: 0 4 0 a\nE");
     expect(result.document.notes[0]!.start).toBe(0);
-    expect(result.warnings.join(" ")).toContain("Missing GAP");
+    expect(result.warnings.join(" ")).toContain("no #GAP");
   });
 
   it("rejects conflicting duplicates, warns for exact duplicate headers", () => {
-    expect(() => parseUltraStar(headers + "#BPM:121\nE")).toThrow(/Conflicting duplicate/);
+    expect(() => parseUltraStar(headers + "#BPM:121\nE")).toThrow(/there twice/);
     expect(parseUltraStar(headers + "#BPM:120\nE").warnings.join(" ")).toContain("duplicate #BPM");
   });
 
   it("rejects headers in the body and nonempty content after E", () => {
     expect(() => parse(": 0 4 0 a\n#TITLE:new\nE")).toThrow(/Headers must precede/);
-    expect(() => parse("E\nP2\n: 0 4 0 a")).toThrow(/after E/);
+    expect(() => parse("E\nP2\n: 0 4 0 a")).toThrow(/after the end marker/);
   });
 
   it("warns for missing E and chronological sorting", () => {
     const result = parseUltraStar(headers + ": 8 2 0 late\n: 0 2 0 early");
-    expect(result.warnings.join(" ")).toContain("Missing E");
-    expect(result.warnings.join(" ")).toContain("out of chronological order");
+    expect(result.warnings.join(" ")).toContain("end marker (E) is missing");
+    expect(result.warnings.join(" ")).toContain("out of order");
     expect(parseUltraStar(serializeUltraStar(result.document)).document.notes[0]!.lyric).toBe("early");
   });
 });
@@ -227,7 +227,7 @@ describe("serialization and validation", () => {
     document.notes[0] = { ...document.notes[0]!, start: 1.03, duration: 0.01 };
     const result = serializeUltraStarWithDiagnostics(document);
     expect(result.text).toContain(": 0 1 0 a");
-    expect(result.warnings.join(" ")).toContain("rounded");
+    expect(result.warnings.join(" ")).toContain("beat grid");
     expect(document.notes[0]!.start).toBe(1.03);
     expect(document.notes[0]!.duration).toBe(0.01);
   });
@@ -249,7 +249,7 @@ describe("serialization and validation", () => {
     const document = parse(": 0 4 0 one\n- 4\n: 8 4 0 two\nE");
     document.notes[0]!.duration = 0.75;
     const result = serializeUltraStarWithDiagnostics(document);
-    expect(result.warnings.join(" ")).toContain("imported timing retained");
+    expect(result.warnings.join(" ")).toContain("inside a line");
     expect(result.text).toContain("- 4\n");
   });
 
@@ -262,7 +262,7 @@ describe("serialization and validation", () => {
   it("retains extreme but integer pitches without clamping", () => {
     const document = parse(": 0 4 -70 unusual\nE");
     expect(document.notes[0]!.pitch).toBe(-10);
-    expect(validateDocument(document).some((item) => item.message.includes("MIDI range"))).toBe(true);
+    expect(validateDocument(document).some((item) => item.message.includes("unusually high or low"))).toBe(true);
     expect(serializeUltraStar(document)).toContain(": 0 4 -70 unusual");
   });
 
@@ -317,23 +317,23 @@ describe("serialization and validation", () => {
   it("validates stale, orphaned, invalid and duplicate line-break entries", () => {
     const document = parse(": 0 4 0 a\n- 4\n: 8 4 0 b\nE");
     document.lineBreaks![0]!.start = 0;
-    expect(validateDocument(document).some((item) => item.message.includes("imported timing retained"))).toBe(true);
+    expect(validateDocument(document).some((item) => item.message.includes("inside a line"))).toBe(true);
     document.lineBreaks!.push({ lineId: "deleted", start: 4 });
-    expect(serializeUltraStarWithDiagnostics(document).warnings.join(" ")).toContain("removed/empty");
+    expect(serializeUltraStarWithDiagnostics(document).warnings.join(" ")).toContain("has no line");
     document.lineBreaks!.push({ ...document.lineBreaks![0]! });
     expect(() => serializeUltraStar(document)).toThrow(/Duplicate display break/);
     document.lineBreaks = [{ lineId: document.notes[0]!.lineId, start: 2, end: 1 }];
-    expect(() => serializeUltraStar(document)).toThrow(/finite, ordered/);
+    expect(() => serializeUltraStar(document)).toThrow(/invalid times/);
     document.lineBreaks = [{ lineId: document.notes[0]!.lineId, start: 1e30 }];
-    expect(() => serializeUltraStar(document)).toThrow(/safe integer/);
+    expect(() => serializeUltraStar(document)).toThrow(/too far into the song/);
   });
 
   it("diagnoses display-break rounding independently of note rounding", () => {
     const document = parse(": 0 4 0 a\n- 4\n: 8 4 0 b\nE");
     document.lineBreaks![0]!.start = 1.51;
     const result = serializeUltraStarWithDiagnostics(document);
-    expect(result.warnings.join(" ")).toContain("Display break");
-    expect(result.warnings.join(" ")).toContain("rounded");
+    expect(result.warnings.join(" ")).toContain("line break after line");
+    expect(result.warnings.join(" ")).toContain("beat grid");
     expect(result.text).toContain("- 4");
   });
 

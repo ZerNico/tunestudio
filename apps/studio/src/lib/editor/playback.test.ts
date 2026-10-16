@@ -92,6 +92,29 @@ describe("playback", () => {
     expect(playback.time()).toBe(10);
   });
 
+  it("plays a replaced file from the same position, playing on, and leaves the others be", () => {
+    const playback = createPlayback(urls);
+    playback.play();
+    const song = FakeAudio.made[0]!;
+    song.currentTime = 42;
+    playback.setUrls({ audio: "media://p/7", vocals: urls.vocals });
+    const replaced = FakeAudio.made.at(-1)!;
+    expect(replaced).not.toBe(song);
+    expect([replaced.src, replaced.currentTime, replaced.paused, song.paused]).toEqual([
+      "media://p/7",
+      42,
+      false,
+      true,
+    ]);
+    expect(playback.playing()).toBe(true);
+    const made = FakeAudio.made.length;
+    playback.setUrls({ audio: "media://p/7", vocals: "media://p/8" });
+    // The vocals weren't loaded yet: they load from the new file when played.
+    expect(FakeAudio.made.length).toBe(made);
+    playback.setSource("vocals");
+    expect(FakeAudio.made.at(-1)!.src).toBe("media://p/8");
+  });
+
   it("switches source at the same position, still playing", () => {
     const playback = createPlayback(urls);
     playback.play();

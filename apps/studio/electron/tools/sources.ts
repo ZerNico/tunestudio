@@ -164,7 +164,7 @@ const githubDownload = (
     const sha256 = githubSha256(asset?.digest);
     if (!asset || !sha256) {
       return yield* new ToolDownloadFailed({
-        message: `The current ${TOOL_LABELS[tool]} release has no verifiable download for this computer yet. Try again later.`,
+        message: `${TOOL_LABELS[tool]} has no download for this computer yet. Try again later.`,
       });
     }
     return {

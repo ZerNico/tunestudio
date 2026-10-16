@@ -93,6 +93,17 @@ const config: Configuration = {
       filter: ["index.cjs", "*.node", "*.dylib", "*.so", "*.dll"],
     },
   ],
+  // Double-clicking a project opens it in Tune Studio (macOS and the Windows installer; an AppImage registers none).
+  fileAssociations: [
+    {
+      ext: "tunestudio",
+      name: "Tune Studio project",
+      description: "Tune Studio project",
+      role: "Editor",
+      mimeType: "application/x-tunestudio",
+      icon: path.join(root, "resources/icons/icon.png"),
+    },
+  ],
   npmRebuild: false,
   nodeGypRebuild: false,
   mac: {

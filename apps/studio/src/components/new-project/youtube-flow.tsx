@@ -131,7 +131,7 @@ function youtubeSongStage(
         <Match when={downloading() !== undefined}>
           <Checklist
             title="Downloading the song"
-            hint="This takes a minute or two. The lyrics come next; Back stops it."
+            hint="This takes a minute or two."
             label="Download"
             testid="youtube-progress"
             tasks={downloadTasks(project.settings(), project.models())}
@@ -160,7 +160,6 @@ function youtubeSongStage(
           <div class="flex items-center gap-3">
             <span class="text-[11.5px] text-popover-foreground">Sung in</span>
             <LanguageSelect value={project.chosenLanguage()} onChange={project.setLanguage} />
-            <span class="text-[10.5px] text-popover-muted">The lyrics are looked for, heard and charted in it.</span>
           </div>
           <CoverPicker
             covers={project.covers()}
@@ -207,7 +206,7 @@ function youtubeSongStage(
 
 /**
  * A new project from a YouTube video, stage by stage: the song (its details, cover and language; Next downloads it),
- * the lyrics, the chart, and a summary whose "Create project…" asks where to save and writes the project. Until then
+ * the lyrics, the chart, and a summary whose "Create project" asks where to save and writes the project. Until then
  * everything lives in a draft that is thrown away when the dialog closes.
  */
 export function YoutubeFlow(props: {

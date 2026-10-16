@@ -142,7 +142,7 @@ export function SongTiming(props: {
         testid="timing-medley"
       />
       <Show when={props.hasVideo}>
-        <Label class="mt-1" title="How much later the video starts than the song (negative: earlier)">
+        <Label class="mt-1" title="How much later the video starts than the song, in seconds">
           Video offset (s)
           <Input
             class="w-[120px]"

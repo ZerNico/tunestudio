@@ -12,7 +12,7 @@ import type { EditorChart, LyricsLine, ProjectMedia } from "~/lib/native/types";
 
 import { type ArtworkActions, CoverDialog } from "./song-artwork";
 import { SongDetailsDialog } from "./song-details-dialog";
-import { SongFiles } from "./song-files";
+import { type MediaActions, SongFiles } from "./song-files";
 import { SongTiming } from "./song-timing";
 
 export function SongDetails(props: {
@@ -22,6 +22,7 @@ export function SongDetails(props: {
   chart: EditorChart;
   media: readonly ProjectMedia[];
   artwork: ArtworkActions;
+  songMedia: MediaActions;
   markers: SongMarkers;
   /** The lines of the selected notes (the medley is set from them). */
   selectedLines: () => readonly LineSpan[];
@@ -43,7 +44,14 @@ export function SongDetails(props: {
       otherHeaders={props.chart.song.otherHeaders}
       onChange={(label, patch) => edit(label, (tx) => tx.updateSong(patch))}
       onSingerName={(id, name) => edit("Change singer's name", (tx) => tx.updateSinger(id, name))}
-      files={<SongFiles media={props.media} actions={props.artwork} onChangeCover={() => setCoverOpen(true)} />}
+      files={
+        <SongFiles
+          media={props.media}
+          actions={props.artwork}
+          songMedia={props.songMedia}
+          onChangeCover={() => setCoverOpen(true)}
+        />
+      }
       nested={
         <CoverDialog
           open={coverOpen()}
