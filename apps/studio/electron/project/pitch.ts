@@ -6,6 +6,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import { Effect, FileSystem, Path } from "effect";
 
+import { CHART_STEPS } from "../../src/lib/chart-steps";
 import type { ImportProgress, SungPitch } from "../../src/lib/native/types";
 import { decodeMono } from "../charting/audio";
 import { type FullPitchTrack, HOP_SECONDS, PITCH_SAMPLE_RATE, pitchTrack } from "../charting/pitch-track";
@@ -24,7 +25,7 @@ const PRODUCER_VERSION = "1";
 /** Quieter frames than this (dB) are left out: breaths and what the separation left of the band. */
 const QUIET_DB = -45;
 
-export const FOLLOWING_THE_MELODY = "Following the melody";
+export const FOLLOWING_THE_MELODY = CHART_STEPS.melody;
 
 /** What is drawn of a pitch track: its MIDI per frame, NaN where nothing (loud enough) is sung. */
 export function sungMidi(track: FullPitchTrack): Float32Array {

@@ -1,7 +1,8 @@
 import { fireEvent, render, screen } from "@solidjs/testing-library";
+import { createSignal } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
 
-import { testSong } from "~/lib/editor/test-song";
+import { testSong } from "~/lib/editor/test-chart";
 
 import { listFrom, SongDetailsDialog, type SongDetailsSinger, yearFrom } from "./song-details-dialog";
 
@@ -72,5 +73,33 @@ describe("song details", () => {
     expect(await screen.findByTestId("singer-name-2")).toHaveValue("Kai");
     enter("singer-name-1", "Mia");
     expect(onSingerName).toHaveBeenCalledWith(1, "Mia");
+  });
+
+  it("keeps the singers' fields (and their focus) when their names change", async () => {
+    const [singers, setSingers] = createSignal<SongDetailsSinger[]>([
+      { id: 1, index: 1, name: null },
+      { id: 2, index: 2, name: "Kai" },
+    ]);
+    render(() => (
+      <SongDetailsDialog
+        open
+        onOpenChange={() => {}}
+        song={testSong}
+        bpm={300}
+        gap={1}
+        singers={singers()}
+        otherHeaders={[]}
+        onChange={() => {}}
+        onSingerName={(id, name) =>
+          setSingers(singers().map((item) => (item.id === id ? { ...item, name } : { ...item })))
+        }
+      />
+    ));
+    const second = await screen.findByTestId("singer-name-2");
+    const first = screen.getByTestId("singer-name-1") as HTMLInputElement;
+    first.value = "Mia";
+    fireEvent.change(first);
+    expect(screen.getByTestId("singer-name-2")).toBe(second);
+    expect(screen.getByTestId("singer-name-1")).toHaveValue("Mia");
   });
 });

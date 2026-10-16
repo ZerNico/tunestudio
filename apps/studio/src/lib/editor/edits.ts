@@ -1,8 +1,9 @@
 /**
  * Editing notes: what the selection can do and how far it can go, without Solid or the document. Notes keep to the
  * grid (a step is 15 / #BPM seconds from #GAP) and the song, and stay in their line's room: up to its stored break,
- * or without one, up to the next line's first note (lines never interleave; they change by moving the breaks). They may overlap while editing (pasting a section over others is easier that way);
- * `overlapping` finds them, to show as a problem. The edits record through an `EditRecorder`.
+ * or without one, up to the next line's first note (lines never interleave; they change by moving the breaks). They
+ * may overlap while editing (pasting a section over others is easier that way); `overlapping` finds them, to show as a
+ * problem. The edits record through an `EditRecorder`.
  */
 import type { EditorChart, EditorNote, NoteType } from "~/lib/native/types";
 
@@ -260,6 +261,13 @@ function typeOf(flags: { golden: boolean; rap: boolean; freestyle: boolean }): N
 
 /** The kinds a key toggles: golden (G), rap (R), freestyle (F). */
 export type NoteFlag = "golden" | "rap" | "freestyle";
+
+/** The note types a note can be toggled to, with their names and keys (the keys and the note menu use these). */
+export const NOTE_FLAGS: readonly { flag: NoteFlag; label: string; key: string }[] = [
+  { flag: "golden", label: "Golden", key: "G" },
+  { flag: "rap", label: "Rap", key: "R" },
+  { flag: "freestyle", label: "Freestyle", key: "F" },
+];
 
 /**
  * Turns `flag` on for the notes, or off when all of them have it already. Golden and rap combine (golden rap);

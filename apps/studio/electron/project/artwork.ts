@@ -2,22 +2,34 @@
  * A project's cover and background: replaced by a cover found online or an image file the user picked, or removed. The media go into the project like any other (named for export as `[CO]` and `[BG]`);
  * this isn't part of undo.
  */
-import { eq } from "drizzle-orm";
-import { Effect, FileSystem, Path } from "effect";
+import { and, eq, ne } from "drizzle-orm";
+import { Effect, FileSystem, Path, Semaphore } from "effect";
 
+import { songFileName } from "../../src/lib/file-names";
 import type { ArtworkChoice } from "../../src/lib/native/contract";
 import { ImageUnreadable, mapFileError } from "../errors";
 import { COVER_HOSTS, Downloads, hostAllowed } from "../tools/downloads";
 import { MOST_IMAGE_BYTES } from "../youtube/covers";
 import { orDiskFull } from "./database";
 import { imageExtension, readImage } from "./images";
-import { listMedia, writeMedia } from "./media";
+import { writeMedia } from "./media";
 import type { ProjectSession } from "./projects";
 import { media, song } from "./schema";
 
 export type ArtworkRole = "cover" | "background";
 
 const SUFFIX: Record<ArtworkRole, string> = { cover: " [CO]", background: " [BG]" };
+
+/** Each open project's lock for changing its artwork. */
+const locks = new WeakMap<object, Semaphore.Semaphore>();
+function lockFor(session: ProjectSession): Semaphore.Semaphore {
+  let lock = locks.get(session.db);
+  if (!lock) {
+    lock = Semaphore.makeUnsafe(1);
+    locks.set(session.db, lock);
+  }
+  return lock;
+}
 
 /** Downloads a chosen cover into `folder`, named for what it is (JPEG or PNG), or null if that fails. */
 export function downloadCover(url: string, folder: string) {
@@ -62,17 +74,23 @@ export function setArtwork(session: ProjectSession, role: ArtworkRole, choice: A
       .from(song)
       .limit(1)
       .pipe(Effect.orDie);
-    const name = details ? `${details.artist} - ${details.title}` : role;
-    const old = (yield* listMedia(session.db)).filter((row) => row.role === role);
-    if (file) {
-      yield* writeMedia(session.db, {
-        path: file,
-        role,
-        fileName: `${name}${SUFFIX[role]}${paths.extname(file)}`,
-        source: "chosen",
-      });
-    }
-    // The old one goes once the new one is in (its chunks go with it).
-    for (const row of old) yield* session.db.delete(media).where(eq(media.id, row.id)).pipe(orDiskFull);
+    const name = songFileName(details?.artist ?? "", details?.title ?? "");
+    // One change at a time per project: the new one goes in, then every other one of the role (their chunks with them).
+    yield* lockFor(session).withPermits(1)(
+      Effect.gen(function* () {
+        const added = file
+          ? yield* writeMedia(session.db, {
+              path: file,
+              role,
+              fileName: `${name}${SUFFIX[role]}${paths.extname(file)}`,
+              source: "chosen",
+            })
+          : null;
+        yield* session.db
+          .delete(media)
+          .where(added ? and(eq(media.role, role), ne(media.id, added.id)) : eq(media.role, role))
+          .pipe(orDiskFull);
+      }),
+    );
   }).pipe(Effect.scoped);
 }

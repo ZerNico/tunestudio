@@ -4,7 +4,7 @@
  * back); a title or artist left empty, or a year that isn't one, goes back to what it was.
  */
 import type { JSX } from "@solidjs/web";
-import { For, Show } from "solid-js";
+import { flush, For, Show } from "solid-js";
 import ChevronRightIcon from "~icons/lucide/chevron-right";
 
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "~/components/ui/collapsible";
@@ -48,12 +48,15 @@ export function yearFrom(text: string): number | null | undefined {
 /** Optional text as typed: null when empty. */
 const optional = (text: string) => text.trim() || null;
 
-/** A text field saved when it is left (or Enter is pressed); `save` returns false to put the old text back. */
+/**
+ * A text field saved when it is left (or Enter is pressed). Afterwards it shows the value as saved: tidied, or as it
+ * was when `save` refused the text or nothing changed.
+ */
 function Field(props: {
   label: string;
   value: string;
   placeholder?: string;
-  save: (text: string) => boolean | void;
+  save: (text: string) => void;
   testid: string;
   inputmode?: "numeric" | "text";
 }) {
@@ -66,7 +69,10 @@ function Field(props: {
         inputmode={props.inputmode}
         onChange={(event) => {
           const input = event.currentTarget;
-          if (props.save(input.value) === false) input.value = props.value;
+          props.save(input.value);
+          // The edit applies first, then the field shows it.
+          flush();
+          input.value = props.value;
         }}
         onKeyDown={(event) => {
           if (event.key === "Enter") event.currentTarget.blur();
@@ -115,13 +121,17 @@ export function SongDetailsDialog(props: {
               label="Title"
               value={props.song.title}
               testid="song-title"
-              save={(text) => (text.trim() ? change("Change title", { title: text.trim() }) : false)}
+              save={(text) => {
+                if (text.trim()) change("Change title", { title: text.trim() });
+              }}
             />
             <Field
               label="Artist"
               value={props.song.artist}
               testid="song-artist"
-              save={(text) => (text.trim() ? change("Change artist", { artist: text.trim() }) : false)}
+              save={(text) => {
+                if (text.trim()) change("Change artist", { artist: text.trim() });
+              }}
             />
             <Field
               label="Languages"
@@ -137,8 +147,7 @@ export function SongDetailsDialog(props: {
               testid="song-year"
               save={(text) => {
                 const year = yearFrom(text);
-                if (year === undefined) return false;
-                change("Change year", { year });
+                if (year !== undefined) change("Change year", { year });
               }}
             />
             <Field
@@ -170,14 +179,15 @@ export function SongDetailsDialog(props: {
               save={(text) => change("Change tags", { tags: listFrom(text) })}
             />
             <Show when={props.singers.length > 1}>
-              <For each={props.singers}>
+              {/* Keyed by id: every edit makes new singer objects, and the fields (with their focus) must stay. */}
+              <For each={props.singers} keyed={(singer) => singer.id}>
                 {(singer) => (
                   <Field
-                    label={`Singer ${singer.index}`}
-                    value={singer.name ?? ""}
-                    placeholder={`P${singer.index}`}
-                    testid={`singer-name-${singer.index}`}
-                    save={(text) => props.onSingerName(singer.id, optional(text))}
+                    label={`Singer ${singer().index}`}
+                    value={singer().name ?? ""}
+                    placeholder={`P${singer().index}`}
+                    testid={`singer-name-${singer().index}`}
+                    save={(text) => props.onSingerName(singer().id, optional(text))}
                   />
                 )}
               </For>

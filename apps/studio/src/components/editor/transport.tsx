@@ -12,58 +12,17 @@ import ZoomInIcon from "~icons/lucide/zoom-in";
 import ZoomOutIcon from "~icons/lucide/zoom-out";
 
 import { Button } from "~/components/ui/button";
-import { Kbd } from "~/components/ui/kbd";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import { Slider } from "~/components/ui/slider";
 import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import { type Playback, SOURCE_LABELS, type Speed, SPEEDS } from "~/lib/editor/playback";
-
-/** How loud the song (whichever source plays) and the tones are, 0-1. */
-export interface Volumes {
-  song: number;
-  tones: number;
-}
+import type { Volumes } from "~/lib/editor/prefs";
 import { formatTime } from "~/lib/editor/view";
 
-const speedLabel = (speed: number) => `${speed}×`;
+import { IconButton } from "./icon-button";
 
-/** An on/off button with its name (and key) in a tooltip. */
-function ToggleButton(props: {
-  label: string;
-  shortcut?: string;
-  pressed: boolean;
-  onClick: () => void;
-  testid: string;
-  children: JSX.Element;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={(triggerProps: JSX.HTMLAttributes<HTMLButtonElement>) => (
-          <Button
-            {...triggerProps}
-            variant={props.pressed ? "secondary" : "ghost"}
-            size="icon-sm"
-            aria-label={props.label}
-            aria-pressed={props.pressed ? "true" : "false"}
-            onClick={() => props.onClick()}
-            data-testid={props.testid}
-          >
-            {props.children}
-          </Button>
-        )}
-      />
-      <TooltipContent>
-        {props.label}
-        <Show when={props.shortcut}>
-          {" "}
-          <Kbd>{props.shortcut}</Kbd>
-        </Show>
-      </TooltipContent>
-    </Tooltip>
-  );
-}
+const speedLabel = (speed: number) => `${speed}×`;
 
 /** A volume slider in the bar (its percentage in its tooltip). */
 function InlineVolume(props: {
@@ -198,9 +157,9 @@ export function Transport(props: {
             </For>
           </ToggleGroup>
         </Show>
-        <ToggleButton label="Loop" shortcut="L" pressed={props.looping} onClick={() => props.onLoop()} testid="loop">
+        <IconButton label="Loop" shortcut="L" pressed={props.looping} onClick={() => props.onLoop()} testid="loop">
           <RepeatIcon />
-        </ToggleButton>
+        </IconButton>
         <Select
           items={SPEEDS.map((speed) => ({ value: speed, label: speedLabel(speed) }))}
           value={props.playback.speed()}
@@ -221,16 +180,11 @@ export function Transport(props: {
             <For each={SPEEDS}>{(speed) => <SelectItem value={speed}>{speedLabel(speed)}</SelectItem>}</For>
           </SelectContent>
         </Select>
-        <ToggleButton
-          label={props.volumes.song === 0 ? "Unmute" : "Mute"}
-          pressed={false}
-          onClick={toggleMute}
-          testid="mute"
-        >
+        <IconButton label={props.volumes.song === 0 ? "Unmute" : "Mute"} onClick={toggleMute} testid="mute">
           <Show when={props.volumes.song === 0} fallback={<Volume2Icon />}>
             <VolumeXIcon />
           </Show>
-        </ToggleButton>
+        </IconButton>
         <InlineVolume
           label="Song volume"
           value={props.volumes.song}
@@ -238,12 +192,7 @@ export function Transport(props: {
           onChange={(value) => props.onVolume("song", value)}
           testid="volume-song"
         />
-        <ToggleButton
-          label={props.tones ? "Tones: on (click to turn off)" : "Tones: off (click to turn on)"}
-          pressed={false}
-          onClick={toggleTones}
-          testid="tones"
-        >
+        <IconButton label={props.tones ? "Turn tones off" : "Turn tones on"} onClick={toggleTones} testid="tones">
           <span class="relative flex">
             <MusicIcon />
             {/* Off: struck through, like a muted speaker. */}
@@ -251,7 +200,7 @@ export function Transport(props: {
               <span class="absolute top-1/2 left-1/2 h-[1.5px] w-[20px] -translate-1/2 -rotate-45 rounded-full bg-current" />
             </Show>
           </span>
-        </ToggleButton>
+        </IconButton>
         <InlineVolume
           label="Tones volume"
           value={props.volumes.tones}
@@ -262,23 +211,23 @@ export function Transport(props: {
       </div>
       <div class="ml-auto flex items-center gap-1">
         <Show when={props.showPitch !== undefined}>
-          <ToggleButton
+          <IconButton
             label="Sung pitch"
             pressed={props.showPitch === true}
             onClick={() => props.onShowPitch(!props.showPitch)}
             testid="show-pitch"
           >
             <ActivityIcon />
-          </ToggleButton>
+          </IconButton>
         </Show>
-        <ToggleButton
+        <IconButton
           label="Follow playhead"
           pressed={props.following}
           onClick={() => props.onFollow(!props.following)}
           testid="follow"
         >
           <LocateFixedIcon />
-        </ToggleButton>
+        </IconButton>
         <Button variant="ghost" size="icon-sm" aria-label="Zoom out" onClick={() => props.onZoom(1 / 1.5)}>
           <ZoomOutIcon />
         </Button>

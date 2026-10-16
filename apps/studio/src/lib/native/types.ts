@@ -56,6 +56,8 @@ export const EditorSong = Schema.Struct({
   edition: Schema.NullOr(Schema.String),
   creator: Schema.NullOr(Schema.String),
   tags: Schema.Array(Schema.String),
+  /** The headers the song came with that aren't edited here (besides `#TAGS`), kept for export. */
+  otherHeaders: Schema.Array(Schema.Tuple([Schema.String, Schema.String])),
   videoGap: Schema.NullOr(Schema.Number),
   /** Where the game starts playing (skipping an intro). */
   start: Schema.NullOr(Schema.Number),

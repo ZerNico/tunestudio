@@ -26,3 +26,8 @@ export function withTags(headers: readonly (readonly [string, string])[], tags: 
   kept[at] = [kept[at]![0], value];
   return kept;
 }
+
+/** The headers besides `#TAGS` (which is edited as the tags). */
+export function withoutTags(headers: readonly (readonly [string, string])[]): [string, string][] {
+  return headers.filter(([name]) => name.toUpperCase() !== TAGS).map(([name, text]) => [name, text]);
+}

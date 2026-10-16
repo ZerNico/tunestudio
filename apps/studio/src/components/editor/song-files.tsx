@@ -137,7 +137,11 @@ export function SongFiles(props: {
   const artworkActions = (role: ArtworkRole, present: boolean) => (
     <Show
       when={busy() !== role}
-      fallback={<LoaderCircleIcon class="m-1.5 size-4 animate-spin text-primary" aria-label="Changing" />}
+      fallback={
+        <output aria-label="Changing" class="flex">
+          <LoaderCircleIcon class="m-1.5 size-4 animate-spin text-primary" aria-hidden="true" />
+        </output>
+      }
     >
       <Button variant="outline" size="xs" disabled={busy() !== null} onClick={() => change(role)}>
         {present ? "Change…" : "Add…"}

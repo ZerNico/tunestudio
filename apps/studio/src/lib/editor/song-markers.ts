@@ -2,15 +2,16 @@
  * The song's times as markers on the timeline: where the game starts and stops playing (`#START`, `#END`; handles at
  * the ruler's ends, the rest dimmed), where the song list's preview plays from (a flag on the ruler), and the medley
  * excerpt (a band in the overview bar, from a line's start to a line's end, as UltraStar counts it). A marker is
- * dragged (shown where it would go) and written as one edit when let go; start and end stay in order and inside the
- * song, and so do the medley's.
+ * dragged (shown where it would go) and written as one edit when let go; a press that doesn't move is a click, which
+ * moves the playhead. Start and end stay in order and inside the song, and so do the medley's.
  */
 import { createSignal } from "solid-js";
 
 import type { SongFields } from "~/lib/native/contract";
 import type { EditorSong } from "~/lib/native/types";
 
-import type { LineSpan } from "./chart";
+import { type LineSpan, spanOf } from "./chart";
+import { DRAG_PX } from "./drag";
 
 export type SongMarker = "start" | "end" | "preview" | "medleyStart" | "medleyEnd";
 
@@ -55,11 +56,7 @@ export function nearestLineEdge(lines: readonly LineSpan[], time: number, edge: 
 
 /** The medley over the lines with selected notes: from the first one's start to the last one's end. */
 export function medleyOver(lines: readonly LineSpan[]): { start: number; end: number } | null {
-  if (lines.length === 0) return null;
-  return {
-    start: Math.min(...lines.map((line) => line.start)),
-    end: Math.max(...lines.map((line) => line.start + line.duration)),
-  };
+  return spanOf(lines);
 }
 
 export function createSongMarkers(options: {
@@ -68,14 +65,19 @@ export function createSongMarkers(options: {
   length: () => number;
   /** Puts a time on the grid. */
   snap: (seconds: number) => number;
-  /** The lines the medley snaps to (the first singer's). */
+  /** The lines the medley snaps to (every singer's). */
   lines: () => readonly LineSpan[];
   /** Writes a change as an edit called `label`. */
   onChange: (label: string, patch: SongFields) => void;
+  /** A click on a marker (a press that didn't move): the playhead goes there. */
+  onSeek?: (seconds: number) => void;
 }) {
   const [draft, setDraft] = createSignal<{ marker: SongMarker; time: number } | null>(null);
-  /** The marker being dragged, and where it is now (kept here too: a release can come before the signal is written). */
-  let dragging: { marker: SongMarker; time: number } | null = null;
+  /**
+   * The marker being dragged, and where it is now (kept here too: a release can come before the signal is written);
+   * where the press was, and whether it has moved enough to be a drag.
+   */
+  let dragging: { marker: SongMarker; time: number; pressed: number; x: number; moved: boolean } | null = null;
 
   /** Where `marker` may go for `time`, given the others. */
   const place = (marker: SongMarker, time: number): number => {
@@ -108,6 +110,12 @@ export function createSongMarkers(options: {
     return time;
   };
 
+  /** Writes a marker at `time` (placed already) as an edit, unless it is there already. */
+  const write = (marker: SongMarker, time: number) => {
+    const value = stored(marker, time);
+    if (value !== options.song()[FIELDS[marker]]) options.onChange(LABELS[marker], { [FIELDS[marker]]: value });
+  };
+
   return {
     /** Where a marker is (as a drag has it), or null when it isn't set. */
     at(marker: SongMarker): number | null {
@@ -116,22 +124,27 @@ export function createSongMarkers(options: {
     },
     /** A marker is being dragged. */
     busy: () => dragging !== null,
-    down(marker: SongMarker) {
-      dragging = { marker, time: options.song()[FIELDS[marker]] ?? (marker === "end" ? options.length() : 0) };
+    /** A press on a marker at `time` (`x` px; for an edge in the overview bar, leave `x` out: it drags at once). */
+    down(marker: SongMarker, time?: number, x?: number) {
+      const at = options.song()[FIELDS[marker]] ?? (marker === "end" ? options.length() : 0);
+      dragging = { marker, time: at, pressed: time ?? at, x: x ?? 0, moved: x === undefined };
     },
-    move(time: number) {
+    move(time: number, x?: number) {
       if (!dragging) return;
-      dragging = { marker: dragging.marker, time: place(dragging.marker, time) };
-      setDraft(dragging);
+      if (!dragging.moved && x !== undefined && Math.abs(x - dragging.x) < DRAG_PX) return;
+      dragging = { ...dragging, time: place(dragging.marker, time), moved: true };
+      setDraft({ marker: dragging.marker, time: dragging.time });
     },
     up() {
       const done = dragging;
       dragging = null;
       setDraft(null);
       if (!done) return;
-      const value = stored(done.marker, done.time);
-      if (value !== options.song()[FIELDS[done.marker]])
-        options.onChange(LABELS[done.marker], { [FIELDS[done.marker]]: value });
+      if (!done.moved) {
+        options.onSeek?.(done.pressed);
+        return;
+      }
+      write(done.marker, done.time);
     },
     cancel() {
       dragging = null;
@@ -140,8 +153,7 @@ export function createSongMarkers(options: {
 
     /** Puts a marker at `time` (or as near as it may go), as an edit. */
     set(marker: SongMarker, time: number) {
-      const value = stored(marker, place(marker, time));
-      if (value !== options.song()[FIELDS[marker]]) options.onChange(LABELS[marker], { [FIELDS[marker]]: value });
+      write(marker, place(marker, time));
     },
     /** The medley over these lines (the selected notes'), as one edit. */
     setMedley(lines: readonly LineSpan[]) {

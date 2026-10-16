@@ -4,7 +4,7 @@
  */
 import { Effect, FileSystem, Path } from "effect";
 
-import { GETTING_CHART_MODELS, READING_SONG } from "../../src/lib/chart-steps";
+import { FINDING_THE_PITCH, GETTING_CHART_MODELS, READING_SONG } from "../../src/lib/chart-steps";
 import type { ImportProgress } from "../../src/lib/native/types";
 import { ChartFailed, mapFileError } from "../errors";
 import { Models } from "../models/models";
@@ -20,8 +20,6 @@ import { autoPitch, type PitchNote } from "./auto-pitch";
 import { chartLanguage } from "./generate";
 import { GAME_SAMPLE_RATE } from "./pipeline";
 import { PITCH_SAMPLE_RATE } from "./pitch-track";
-
-export const FINDING_THE_PITCH = "Finding the pitch";
 
 /** The models auto pitch runs: FCPE, GAME and the pitch corrector. */
 const MODELS = ["chartPitch", "chartNotes", "chartPitchFix"] as const;

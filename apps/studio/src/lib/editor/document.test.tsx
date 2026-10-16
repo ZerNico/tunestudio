@@ -5,17 +5,7 @@ import type { ChartChange } from "~/lib/native/contract";
 import type { EditorChart } from "~/lib/native/types";
 
 import { chartFromRows, createChartDocument, rowsFromChart } from "./document";
-import { testSong } from "./test-song";
-
-const note = (id: number, start: number, lyric: string) => ({
-  id,
-  start,
-  duration: 0.3,
-  pitch: 64,
-  lyric,
-  type: "normal" as const,
-  edited: false,
-});
+import { testNote as note, testSong } from "./test-chart";
 
 const chart: EditorChart = {
   bpm: 300,

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { EditorChart, EditorNote } from "~/lib/native/types";
 
 import { chartEnd, defaultSwitch, drawnNotes, lineBreaks, lineIndexAt, lineSpans, lineText, stepLine } from "./chart";
-import { testSong } from "./test-song";
+import { testSong } from "./test-chart";
 
 let nextId = 1;
 const note = (start: number, lyric: string, duration = 0.3): EditorNote => ({

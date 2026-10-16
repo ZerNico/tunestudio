@@ -117,6 +117,20 @@ export function longest(items: readonly { duration: number }[]): number {
 }
 
 /** When the last note ends (0 without notes). */
+/** The notes `time` is inside (not at their very start or end). */
+export function notesAt<T extends { start: number; duration: number }>(notes: readonly T[], time: number): T[] {
+  return notes.filter((note) => note.start < time && note.start + note.duration > time);
+}
+
+/** From the first item's start to the last one's end, or null without items. */
+export function spanOf(items: readonly { start: number; duration: number }[]): { start: number; end: number } | null {
+  if (items.length === 0) return null;
+  return {
+    start: Math.min(...items.map((item) => item.start)),
+    end: Math.max(...items.map((item) => item.start + item.duration)),
+  };
+}
+
 export function chartEnd(notes: readonly DrawnNote[]): number {
   return notes.reduce((end, note) => Math.max(end, note.start + note.duration), 0);
 }

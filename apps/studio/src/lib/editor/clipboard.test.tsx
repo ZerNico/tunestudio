@@ -8,17 +8,7 @@ import { lineBreaks } from "./chart";
 import { type Clip, copyNotes, pasteNotes } from "./clipboard";
 import { createChartDocument } from "./document";
 import { invert } from "./history";
-import { testSong } from "./test-song";
-
-const note = (id: number, start: number, lyric: string, duration = 0.3) => ({
-  id,
-  start,
-  duration,
-  pitch: 64,
-  lyric,
-  type: "normal" as const,
-  edited: false,
-});
+import { testNote as note, testSong } from "./test-chart";
 
 /** Grid: 0.05 s steps from 1 s. Line 10's break is stored at 2.5 s; line 11 starts at 3 s. */
 const chart: EditorChart = {

@@ -6,17 +6,7 @@ import type { EditorChart } from "~/lib/native/types";
 import { drawnNotes } from "./chart";
 import { createChartDocument } from "./document";
 import { createNoteEditing, type NotePart } from "./note-editing";
-import { testSong } from "./test-song";
-
-const note = (id: number, start: number, lyric: string) => ({
-  id,
-  start,
-  duration: 0.3,
-  pitch: 64,
-  lyric,
-  type: "normal" as const,
-  edited: false,
-});
+import { testNote as note, testSong } from "./test-chart";
 
 /** Grid: 0.05 s steps from 1 s. */
 const chart: EditorChart = {

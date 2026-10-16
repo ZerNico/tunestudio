@@ -5,7 +5,7 @@ import type { EditorSong } from "~/lib/native/types";
 
 import type { LineSpan } from "./chart";
 import { createSongMarkers, medleyOver, nearestLineEdge } from "./song-markers";
-import { testSong } from "./test-song";
+import { testSong } from "./test-chart";
 
 const line = (start: number, duration: number): LineSpan => ({ id: start, singer: 1, start, duration, text: "" });
 /** Lines at 10-14 s, 20-25 s and 30-33 s. */
@@ -17,12 +17,14 @@ function setup(song: Partial<EditorSong> = {}) {
     const onChange = vi.fn((_label: string, patch: Partial<EditorSong>) =>
       setCurrent((previous) => ({ ...previous, ...patch })),
     );
+    const onSeek = vi.fn();
     const markers = createSongMarkers({
       song: current,
       length: () => 60,
       snap: (seconds) => Math.round(seconds * 10) / 10,
       lines: () => lines,
       onChange,
+      onSeek,
     });
     const drag = (marker: Parameters<typeof markers.down>[0], time: number) => {
       markers.down(marker);
@@ -33,7 +35,7 @@ function setup(song: Partial<EditorSong> = {}) {
       flush();
       return shown;
     };
-    return { markers, onChange, drag, current };
+    return { markers, onChange, onSeek, drag, current };
   });
 }
 
@@ -97,5 +99,18 @@ describe("song markers", () => {
     expect(current().end).toBeNull();
     // Shown at the song's ends meanwhile.
     expect([markers.at("start"), markers.at("end")]).toEqual([null, null]);
+  });
+
+  it("takes a press on a marker that doesn't move for a click, which moves the playhead", () => {
+    const { markers, onChange, onSeek } = setup({ start: 5 });
+    markers.down("start", 5.02, 100);
+    markers.move(5.04, 102);
+    markers.up();
+    expect(onChange).not.toHaveBeenCalled();
+    expect(onSeek).toHaveBeenCalledWith(5.02);
+    markers.down("start", 5, 100);
+    markers.move(8, 140);
+    markers.up();
+    expect(onChange).toHaveBeenLastCalledWith("Move start", { start: 8 });
   });
 });

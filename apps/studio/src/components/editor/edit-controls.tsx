@@ -1,4 +1,4 @@
-/** The editor's controls in the title bar: Undo and Redo, the tools, and auto pitch. */
+/** The editor's controls in the title bar: Undo and Redo, the tools, auto pitch and merge. */
 import type { JSX } from "@solidjs/web";
 import { For, Show } from "solid-js";
 import FoldHorizontalIcon from "~icons/lucide/fold-horizontal";
@@ -13,7 +13,10 @@ import { Button } from "~/components/ui/button";
 import { Kbd } from "~/components/ui/kbd";
 import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
+import { FINDING_THE_PITCH } from "~/lib/chart-steps";
 import { type Tool, TOOLS } from "~/lib/editor/tools";
+
+import { IconButton } from "./icon-button";
 
 /** Undo or Redo: says what it would do ("Undo Move note"), disabled when there is nothing. */
 export function HistoryButton(props: {
@@ -23,27 +26,15 @@ export function HistoryButton(props: {
   testid: string;
   children: JSX.Element;
 }) {
-  const text = () => (props.label ? `${props.action} ${props.label}` : props.action);
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={(triggerProps: JSX.HTMLAttributes<HTMLButtonElement>) => (
-          // The trigger's props go first: its own click handler would replace the button's.
-          <Button
-            {...triggerProps}
-            variant="ghost"
-            size="icon-sm"
-            aria-label={text()}
-            disabled={!props.label}
-            onClick={() => props.onClick()}
-            data-testid={props.testid}
-          >
-            {props.children}
-          </Button>
-        )}
-      />
-      <TooltipContent>{text()}</TooltipContent>
-    </Tooltip>
+    <IconButton
+      label={props.label ? `${props.action} ${props.label}` : props.action}
+      disabled={!props.label}
+      onClick={() => props.onClick()}
+      testid={props.testid}
+    >
+      {props.children}
+    </IconButton>
   );
 }
 
@@ -76,10 +67,10 @@ export function ToolSwitch(props: { tool: Tool; onTool: (tool: Tool) => void }) 
               <TooltipTrigger
                 render={(triggerProps: JSX.HTMLAttributes<HTMLButtonElement>) => (
                   <ToggleGroupItem
+                    {...triggerProps}
                     value={entry.tool}
                     aria-label={entry.label}
                     data-testid={`tool-${entry.tool}`}
-                    {...triggerProps}
                   >
                     <Icon />
                   </ToggleGroupItem>
@@ -112,26 +103,16 @@ export function AutoPitchButton(props: {
     <Show
       when={props.status !== undefined}
       fallback={
-        <Tooltip>
-          <TooltipTrigger
-            render={(triggerProps: JSX.HTMLAttributes<HTMLButtonElement>) => (
-              <Button
-                {...triggerProps}
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Auto pitch"
-                disabled={!props.canStart}
-                onClick={() => props.onStart()}
-                data-testid="auto-pitch"
-              >
-                <WandSparklesIcon />
-              </Button>
-            )}
-          />
-          <TooltipContent>
-            Auto pitch the selected notes <Kbd>A</Kbd>
-          </TooltipContent>
-        </Tooltip>
+        <IconButton
+          label="Auto pitch"
+          tooltip="Auto pitch the selected notes"
+          shortcut="A"
+          disabled={!props.canStart}
+          onClick={() => props.onStart()}
+          testid="auto-pitch"
+        >
+          <WandSparklesIcon />
+        </IconButton>
       }
     >
       <Tooltip>
@@ -149,7 +130,7 @@ export function AutoPitchButton(props: {
               <LoaderCircleIcon class="animate-spin text-primary group-hover:hidden" />
               <SquareIcon class="hidden fill-current group-hover:block" />
               {/* Only the step is announced, not every percent. */}
-              <span aria-live="polite">{props.status ?? "Finding the pitch"}</span>
+              <span aria-live="polite">{props.status ?? FINDING_THE_PITCH}</span>
               <Show when={props.percent !== null}>
                 <span class="tabular-nums">{Math.round(props.percent!)}%</span>
               </Show>
@@ -165,25 +146,15 @@ export function AutoPitchButton(props: {
 /** Merge the selected notes (also M and the note menu): disabled unless they are next to each other in one line. */
 export function MergeButton(props: { canMerge: boolean; onMerge: () => void }) {
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={(triggerProps: JSX.HTMLAttributes<HTMLButtonElement>) => (
-          <Button
-            {...triggerProps}
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Merge"
-            disabled={!props.canMerge}
-            onClick={() => props.onMerge()}
-            data-testid="merge"
-          >
-            <FoldHorizontalIcon />
-          </Button>
-        )}
-      />
-      <TooltipContent>
-        Merge notes <Kbd>M</Kbd>
-      </TooltipContent>
-    </Tooltip>
+    <IconButton
+      label="Merge"
+      tooltip="Merge notes"
+      shortcut="M"
+      disabled={!props.canMerge}
+      onClick={() => props.onMerge()}
+      testid="merge"
+    >
+      <FoldHorizontalIcon />
+    </IconButton>
   );
 }

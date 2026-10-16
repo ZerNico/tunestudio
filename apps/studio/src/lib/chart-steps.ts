@@ -3,6 +3,8 @@
  * are only downloaded the first time.
  */
 export const GETTING_CHART_MODELS = "Getting the chart models";
+/** Auto pitch's step (the editor's, not the chart's). */
+export const FINDING_THE_PITCH = "Finding the pitch";
 export const READING_SONG = "Reading the song";
 export const CHART_STEPS = {
   melody: "Following the melody",

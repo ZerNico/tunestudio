@@ -60,6 +60,22 @@ export function fitRange(from: number, to: number, width: number, length: number
   return clampView({ pxPerSecond, start: from - span * margin }, width, length);
 }
 
+/**
+ * The view with `start`..`end` on screen: as it is when it is already, else scrolled so the span starts `lead` (a share
+ * of the screen) from the left.
+ */
+export function revealSpan(
+  view: TimeView,
+  span: { start: number; end: number },
+  width: number,
+  length: number,
+  lead: number,
+): TimeView {
+  const seconds = visibleSeconds(view, width);
+  if (span.start >= view.start && span.end <= view.start + seconds) return view;
+  return clampView({ ...view, start: span.start - seconds * lead }, width, length);
+}
+
 /** Whether `time` is on the page following leaves alone: on screen, short of the right edge where it turns the page. */
 export function onPage(view: TimeView, time: number, width: number): boolean {
   return time >= view.start && time < view.start + visibleSeconds(view, width) * 0.92;
@@ -90,7 +106,7 @@ export function rulerTicks(view: TimeView, width: number, minPx?: number): numbe
   return ticks;
 }
 
-/** "1:07.4", with tenths when the ruler step is finer than a second. */
+/** "1:07.4" (tenths, cut off, not rounded), or "1:07" without them. */
 export function formatTime(seconds: number, tenths = true): string {
   const sign = seconds < 0 ? "-" : "";
   const total = Math.abs(seconds);

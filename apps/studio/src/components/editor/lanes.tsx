@@ -18,34 +18,14 @@ function Lane(props: {
   class?: string;
   testid: string;
   children: JSX.Element;
-  onSeek?: (x: number) => void;
   /** A double-click on the lane itself (not on what is in it), at `x`. */
   onDoubleClick?: (x: number) => void;
-  /** Scrolls the view while scrubbing at the roll's edge. */
-  autoScroll?: AutoScroll;
 }) {
   return (
     <div class={`flex shrink-0 border-b border-border ${props.class ?? ""}`} data-testid={props.testid}>
       <div class="shrink-0 border-r border-border bg-background" style={{ width: `${GUTTER_PX}px` }} />
       <div
         class="relative min-w-0 flex-1 overflow-hidden"
-        onPointerDown={(event) => {
-          if (event.button !== 0 || !props.onSeek) return;
-          // Pressing seeks, and dragging on scrubs.
-          event.currentTarget.setPointerCapture(event.pointerId);
-          props.onSeek(event.clientX - event.currentTarget.getBoundingClientRect().left);
-        }}
-        onPointerMove={(event) => {
-          if (!props.onSeek || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
-          const lane = event.currentTarget;
-          // Past the lane's ends it scrubs to them (and the view scrolls on).
-          const seek = () =>
-            props.onSeek?.(Math.min(lane.clientWidth, Math.max(0, event.clientX - lane.getBoundingClientRect().left)));
-          seek();
-          props.autoScroll?.track(event.clientX, seek);
-        }}
-        onPointerUp={() => props.autoScroll?.end()}
-        onLostPointerCapture={() => props.autoScroll?.end()}
         onDblClick={(event) => {
           if (props.onDoubleClick && event.target === event.currentTarget)
             props.onDoubleClick(event.clientX - event.currentTarget.getBoundingClientRect().left);
@@ -90,7 +70,8 @@ export function TimeRuler(props: {
           lane.setPointerCapture(event.pointerId);
           const { edge, marker } = (event.target as HTMLElement).dataset;
           const x = laneX(event, lane);
-          if (marker === "start" || marker === "end" || marker === "preview") props.markers.down(marker);
+          if (marker === "start" || marker === "end" || marker === "preview")
+            props.markers.down(marker, xToTime(props.view, x), x);
           else props.loop.down(xToTime(props.view, x), x, edge === "start" || edge === "end" ? edge : null);
         }}
         onPointerMove={(event) => {
@@ -99,7 +80,7 @@ export function TimeRuler(props: {
           // Past the lane's ends it goes to them (and the view scrolls on).
           const move = () => {
             const x = laneX(event, lane);
-            if (props.markers.busy()) props.markers.move(xToTime(props.view, x));
+            if (props.markers.busy()) props.markers.move(xToTime(props.view, x), x);
             else props.loop.move(xToTime(props.view, x), x);
           };
           move();
@@ -128,23 +109,6 @@ export function TimeRuler(props: {
             </span>
           )}
         </For>
-        <Show when={props.loop.range()}>
-          {(range) => (
-            <div
-              class="absolute inset-y-0 border-x border-faint-foreground bg-foreground/8 data-on:border-primary data-on:bg-primary/20"
-              data-on={props.loop.on() ? "" : undefined}
-              style={{
-                left: `${timeToX(props.view, range().start)}px`,
-                width: `${(range().end - range().start) * props.view.pxPerSecond}px`,
-              }}
-              title="Loop range: drag its edges to change it, double-click to remove it"
-              data-testid="loop-range"
-            >
-              <span data-edge="start" class="absolute inset-y-0 -left-1 w-2 cursor-col-resize" />
-              <span data-edge="end" class="absolute inset-y-0 -right-1 w-2 cursor-col-resize" />
-            </div>
-          )}
-        </Show>
         {/* Before the start and after the end: not played. */}
         <div
           class="pointer-events-none absolute inset-y-0 left-0 bg-background/55"
@@ -180,6 +144,23 @@ export function TimeRuler(props: {
               style={{ left: `${timeToX(props.view, preview().at)}px` }}
               data-testid="marker-preview"
             />
+          )}
+        </Show>
+        {/* Over the markers: where a loop edge and a marker meet, the loop edge is what a press takes. */}
+        <Show when={props.loop.range()}>
+          {(range) => (
+            <div
+              class="pointer-events-none absolute inset-y-0 border-x border-faint-foreground bg-foreground/8 data-on:border-primary data-on:bg-primary/20"
+              data-on={props.loop.on() ? "" : undefined}
+              style={{
+                left: `${timeToX(props.view, range().start)}px`,
+                width: `${(range().end - range().start) * props.view.pxPerSecond}px`,
+              }}
+              data-testid="loop-range"
+            >
+              <span data-edge="start" class="pointer-events-auto absolute inset-y-0 -left-1 w-2 cursor-col-resize" />
+              <span data-edge="end" class="pointer-events-auto absolute inset-y-0 -right-1 w-2 cursor-col-resize" />
+            </div>
           )}
         </Show>
       </div>

@@ -19,7 +19,7 @@ export function readImage(path: string) {
     const name = quoted(path.split(/[\\/]/).at(-1) ?? path);
     const info = yield* fs.stat(path).pipe(mapFileError(name, "read"));
     if (info.type !== "File" || Number(info.size) > MAX_IMAGE_SIZE) {
-      return yield* new ImageUnreadable({ message: `${name} is too big for a cover. Choose an image under 20 MB.` });
+      return yield* new ImageUnreadable({ message: `${name} is too big. Choose an image under 20 MB.` });
     }
     const bytes = yield* fs.readFile(path).pipe(mapFileError(name, "read"));
     const extension = imageExtension(bytes);

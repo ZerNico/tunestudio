@@ -25,10 +25,17 @@ import { revealLabel } from "~/lib/desktop";
 import { projectNameExtra } from "~/lib/file-names";
 import { formatFullDate, formatRelativeTime } from "~/lib/format";
 import { type RecentProject, searchRecentProjects } from "~/lib/recent-projects";
+import { createStored, type StoredFormat } from "~/lib/stored";
 
 import { ProjectCover } from "./project-cover";
 
 type View = "grid" | "list";
+
+/** "grid" or "list". */
+const VIEW_FORMAT: StoredFormat<View> = {
+  read: (text) => (text === "list" || text === "grid" ? text : undefined),
+  write: (view) => view,
+};
 
 const VIEW_STORAGE_KEY = "tunestudio.home.recentView";
 
@@ -48,13 +55,8 @@ export function RecentProjects(
   },
 ) {
   const [query, setQuery] = createSignal("");
-  const [view, setView] = createSignal<View>(localStorage.getItem(VIEW_STORAGE_KEY) === "list" ? "list" : "grid");
+  const [view, changeView] = createStored<View>(VIEW_STORAGE_KEY, VIEW_FORMAT, "grid");
   const filtered = createMemo(() => searchRecentProjects(props.projects, query()));
-
-  const changeView = (next: View) => {
-    setView(next);
-    localStorage.setItem(VIEW_STORAGE_KEY, next);
-  };
 
   return (
     <section id="recent" aria-labelledby="recent-title" class="flex flex-col gap-4" data-testid="recent-projects">

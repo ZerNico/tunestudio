@@ -6,13 +6,13 @@
  */
 import { createSignal } from "solid-js";
 
+import { DRAG_PX } from "./drag";
+
 export interface LoopRange {
   start: number;
   end: number;
 }
 
-/** A press that moves less than this is a click, not a drag (px). */
-const DRAG_PX = 3;
 /** The shortest range (seconds): shorter drags are clicks. */
 const MIN_SECONDS = 0.05;
 
@@ -38,7 +38,7 @@ export function createLoop(options: {
   const [on, setOn] = createSignal(false);
   /** The range as a drag in progress has it. */
   const [draft, setDraft] = createSignal<LoopRange | null>(null);
-  let gesture: { fixed: number; at: number; x: number; moved: boolean; edge: boolean } | null = null;
+  let gesture: { fixed: number; at: number; x: number; moved: boolean } | null = null;
 
   /** A time on the grid and inside the song. */
   const clamp = (seconds: number) => Math.min(options.length(), Math.max(0, options.snap(seconds)));
@@ -72,11 +72,6 @@ export function createLoop(options: {
       setOn(true);
       return true;
     },
-    /** Removes the range (a double-click on it). */
-    clear() {
-      setRange(null);
-      setOn(false);
-    },
     /** A double-click on the ruler at `time` (or on the playhead's head there): removes the range it is in. */
     clearAt(time: number) {
       const current = range();
@@ -91,9 +86,9 @@ export function createLoop(options: {
       const current = range();
       if (edge && current) {
         // An edge moves; the other stays.
-        gesture = { fixed: edge === "start" ? current.end : current.start, at: time, x, moved: true, edge: true };
+        gesture = { fixed: edge === "start" ? current.end : current.start, at: time, x, moved: true };
         setDraft(current);
-      } else gesture = { fixed: time, at: time, x, moved: false, edge: false };
+      } else gesture = { fixed: time, at: time, x, moved: false };
     },
     move(time: number, x: number) {
       if (!gesture) return;

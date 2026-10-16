@@ -5,6 +5,7 @@ import { NodeServices } from "@effect/platform-node";
 import { afterEach, describe, expect, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
 
+import { FINDING_THE_PITCH } from "../../src/lib/chart-steps";
 import { readEditorChart } from "../project/editor-chart";
 import { sungPitch } from "../project/pitch";
 import { projectsLayer } from "../project/projects";
@@ -14,7 +15,7 @@ import { fakeModels, fakeNative, recordingDesktop, soloChart, syntheticBytes, te
 import { Tools } from "../tools/tools";
 import { importSong, inspectSong } from "../ultrastar/song-import";
 import { chartLanguage } from "./generate";
-import { autoPitchNotes, FINDING_THE_PITCH } from "./project-auto-pitch";
+import { autoPitchNotes } from "./project-auto-pitch";
 
 let cleanups: (() => void)[] = [];
 afterEach(() => {

@@ -11,18 +11,18 @@ import { BreakLane, LyricsLane, OverviewBar, TimeRuler } from "~/components/edit
 import { NoteMenu, type NoteMenuActions } from "~/components/editor/note-menu";
 import { GUTTER_PX, PianoRoll } from "~/components/editor/piano-roll";
 import { Playhead } from "~/components/editor/playhead";
-import { type ArtworkActions, CoverDialog } from "~/components/editor/song-artwork";
-import { SongDetailsDialog } from "~/components/editor/song-details-dialog";
-import { SongFiles } from "~/components/editor/song-files";
-import { SongTiming } from "~/components/editor/song-timing";
-import { Transport, type Volumes } from "~/components/editor/transport";
+import type { ArtworkActions } from "~/components/editor/song-artwork";
+import { SongDetails } from "~/components/editor/song-details";
+import { Transport } from "~/components/editor/transport";
 import { follow as followProgress, percentOf, progressBarClass } from "~/components/new-project/progress";
 import { ReplaceExportDialog } from "~/components/project/replace-export-dialog";
 import { TitleBar } from "~/components/title-bar";
 import { Button } from "~/components/ui/button";
 import { toast } from "~/components/ui/toast";
+import { CHART_STEPS } from "~/lib/chart-steps";
 import { platform, revealLabel } from "~/lib/desktop";
 import { isTyping, pasteFromClipboard, runEditCommand, setEditHandler } from "~/lib/edit-commands";
+import { createAutoPitchJob } from "~/lib/editor/auto-pitch-job";
 import { createAutoScroll } from "~/lib/editor/autoscroll";
 import { createBreakEditing } from "~/lib/editor/break-editing";
 import {
@@ -33,6 +33,7 @@ import {
   lineIndexAt,
   lineSpans,
   longest,
+  spanOf,
   stepLine,
 } from "~/lib/editor/chart";
 import { createChartDocument } from "~/lib/editor/document";
@@ -40,6 +41,7 @@ import { onGrid, overlapping } from "~/lib/editor/edits";
 import { createLoop } from "~/lib/editor/loop";
 import { createNoteEditing } from "~/lib/editor/note-editing";
 import { createPlayback } from "~/lib/editor/playback";
+import { createEditorPrefs } from "~/lib/editor/prefs";
 import { createSongMarkers } from "~/lib/editor/song-markers";
 import { createTones } from "~/lib/editor/tones";
 import { createTools } from "~/lib/editor/tools";
@@ -48,6 +50,7 @@ import {
   fitRange,
   follow,
   onPage,
+  revealSpan,
   type PitchRange,
   pitchRange,
   scrollBy,
@@ -79,34 +82,17 @@ function reveal(path: string) {
 
 /** How much of the song the view shows at first. */
 const FIRST_VIEW_SECONDS = 12;
-
-/** Where the editor remembers whether the view follows the playhead, and which notes are heard as tones. */
-const FOLLOW_KEY = "tunestudio.editor.follow";
-const TONES_KEY = "tunestudio.editor.tones";
-const VOLUMES_KEY = "tunestudio.editor.volumes";
-
-/** The volumes as remembered; anything missing or not a volume is full. */
-function storedVolumes(): Volumes {
-  const full: Volumes = { song: 1, tones: 1 };
-  try {
-    const stored: unknown = JSON.parse(localStorage.getItem(VOLUMES_KEY) ?? "null");
-    if (typeof stored !== "object" || stored === null) return full;
-    const values = stored as Record<string, unknown>;
-    for (const channel of Object.keys(full) as (keyof Volumes)[]) {
-      const value = values[channel];
-      if (typeof value === "number" && value >= 0 && value <= 1) full[channel] = value;
-    }
-  } catch {
-    // Not JSON: as if nothing were stored.
-  }
-  return full;
-}
+/** Brought on screen, a line starts this share of the screen from the left, a note (Tab) further in. */
+const LINE_LEAD = 0.1;
+const NOTE_LEAD = 0.25;
+/** A line that would fill more than this share of the screen is fitted to it instead. */
+const FIT_SHARE = 0.9;
 
 /**
  * An open project: the chart editor. The editing area shows the song at a glance (overview), the notes against time
- * and pitch, and each line's text, with playback of the song, its vocals or its music. Everything else about the song
- * (details, media, lyrics, making the chart) is in the Song panel. Notes are edited with the keys and clicks in
- * `note-editing.ts`.
+ * and pitch, and each line's text, with playback of the song, its vocals or its music. The song's details, files,
+ * timing and lyrics are in the Song details dialog (from its name in the title bar). Notes are edited with the keys and
+ * clicks in `note-editing.ts`.
  */
 export default function ProjectScreen() {
   const data = route.useLoaderData();
@@ -119,8 +105,8 @@ export default function ProjectScreen() {
   /** The selected notes (by id); undo and redo bring back the selection that went with a step. */
   const [selection, setSelection] = createSignal<number[]>([]);
   /**
-   * The chart being edited, with its history. Made anew when the project's chart is loaded again (after "Make the
-   * chart", or when saving failed), which also starts the history over.
+   * The chart being edited, with its history. Made anew when the project's chart is loaded again (when saving failed),
+   * which also starts the history over.
    */
   const doc = createMemo(() =>
     createChartDocument<number[]>({
@@ -142,17 +128,11 @@ export default function ProjectScreen() {
   );
   const chart = () => doc().chart();
   /**
-   * The overview with the song's details as the editor has them (they change with edits; the overview is only read
-   * when the project opens, and reading it again would start the editor over).
+   * The media as changed since the project opened (a new cover or background), if they were: the overview is only
+   * read when the project opens, and reading it again would start the editor over.
    */
-  /** The media as changed since the project opened (a new cover or background), if they were. */
   const [changedMedia, setChangedMedia] = createSignal<ProjectOverview["media"] | null>(null);
-  const shownOverview = createMemo(() => ({
-    ...overview(),
-    song: { ...overview().song, ...chart().song },
-    media: changedMedia() ?? overview().media,
-  }));
-  const mediaUrl = (role: string) => shownOverview().media.find((item) => item.role === role)?.url;
+  const projectMedia = () => changedMedia() ?? overview().media;
   const artworkActions: ArtworkActions = {
     set: async (role, choice) => {
       const updated = await native.project.setArtwork({ id: overview().id, role, choice });
@@ -170,10 +150,10 @@ export default function ProjectScreen() {
     },
   };
   const [detailsOpen, setDetailsOpen] = createSignal(false);
-  const [coverOpen, setCoverOpen] = createSignal(false);
   const notes = createMemo(() => drawnNotes(chart()));
   const lines = createMemo(() => lineSpans(chart()));
   const selectedIds = createMemo(() => new Set(selection()));
+  const selectedNotes = createMemo(() => notes().filter((note) => selectedIds().has(note.id)));
   const overlaps = createMemo(() => overlapping(chart()));
   const longestNote = createMemo(() => longest(notes()));
   const longestLine = createMemo(() => longest(lines()));
@@ -185,7 +165,8 @@ export default function ProjectScreen() {
   /** Opening isn't finished: the pitch is being prepared (shown after a moment, with its progress). */
   const [opening, setOpening] = createSignal<ImportProgress | null | undefined>(undefined);
 
-  const media = (role: string) => overview().media.find((item) => item.role === role)?.url;
+  /** A media file's URL by role (the project's as changed: a new cover). */
+  const media = (role: string) => projectMedia().find((item) => item.role === role)?.url;
   const [view, setView] = createSignal<TimeView>({ start: 0, pxPerSecond: 80 });
   const [size, setSize] = createSignal({ width: 0, height: 0 });
   /**
@@ -197,21 +178,18 @@ export default function ProjectScreen() {
   const width = () => size().width;
   const length = () => Math.max(playback.duration(), chartEnd(notes()) + 1, 1);
 
-  /** Whether the view follows the playhead while playing (remembered). */
-  const [following, setFollowing] = createSignal(localStorage.getItem(FOLLOW_KEY) !== "off");
-  /** Whether notes are heard as tones, while playing and while their pitch changes (remembered; off at first). */
-  const [tonesOn, setTonesOn] = createSignal(localStorage.getItem(TONES_KEY) === "on");
+  const prefs = createEditorPrefs();
   const tones = createTones({ notes });
-  /** Each source's and the tones' volume (remembered). */
-  const startVolumes = storedVolumes();
-  const [volumes, setVolumes] = createSignal<Volumes>(startVolumes);
-  const loop = createLoop({ snap: (seconds) => onGrid(chart(), seconds), length, onSeek: (seconds) => seek(seconds) });
+  /** A time on the chart's grid. */
+  const snap = (seconds: number) => onGrid(chart(), seconds);
+  const loop = createLoop({ snap, length, onSeek: (seconds) => seek(seconds) });
   const songMarkers = createSongMarkers({
     song: () => chart().song,
     length,
-    snap: (seconds) => onGrid(chart(), seconds),
-    lines: () => lines().filter((line) => line.singer === 1),
+    snap,
+    lines,
     onChange: (label, patch) => doc().edit(label, (tx) => tx.updateSong(patch)),
+    onSeek: (seconds) => seek(seconds),
   });
 
   const playback = createPlayback(
@@ -220,46 +198,35 @@ export default function ProjectScreen() {
       const back = loop.back(time);
       if (back !== null) playback.seek(back);
       const now = back ?? time;
-      if (tonesOn()) tones.frame(now, playback.speed());
+      if (prefs.tones()) tones.frame(now, playback.speed());
       // Scrolled away, then the playhead came back on screen (or the view back to it): following goes on.
       if (scrolledAway && width() > 0 && onPage(view(), now, width())) scrolledAway = false;
-      if (following() && !scrolledAway && width() > 0) setView((current) => follow(current, now, width(), length()));
+      if (prefs.following() && !scrolledAway && width() > 0)
+        setView((current) => follow(current, now, width(), length()));
     },
     (time) => loop.startAt(time),
   );
   // Tones stop with playback, at another speed (they start again on the next frame) and when turned off.
   createEffect(
-    () => [playback.playing(), playback.speed(), tonesOn()] as const,
+    () => [playback.playing(), playback.speed(), prefs.tones()] as const,
     () => tones.stop(),
   );
   const changeFollowing = (next: boolean) => {
-    setFollowing(next);
-    localStorage.setItem(FOLLOW_KEY, next ? "on" : "off");
+    prefs.setFollowing(next);
     if (next) scrolledAway = false;
   };
-  playback.setVolume(startVolumes.song);
-  tones.setVolume(startVolumes.tones);
-  const changeVolume = (channel: keyof Volumes, value: number) => {
-    const next = { ...volumes(), [channel]: value };
-    setVolumes(next);
-    localStorage.setItem(VOLUMES_KEY, JSON.stringify(next));
-    if (channel === "tones") tones.setVolume(value);
-    else playback.setVolume(value);
-  };
-  const changeTones = (next: boolean) => {
-    setTonesOn(next);
-    localStorage.setItem(TONES_KEY, next ? "on" : "off");
-  };
+  // The engines take the volumes as they are set (and as remembered, from the start).
+  createEffect(
+    () => prefs.volumes(),
+    (volumes) => {
+      playback.setVolume(volumes.song);
+      tones.setVolume(volumes.tones);
+    },
+  );
   /** L: looping on (over the selected notes when there are any) or off; says what to do when there's nothing. */
   const toggleLoop = () => {
-    const chosen = notes().filter((note) => selectedIds().has(note.id));
-    const span = chosen.length
-      ? {
-          start: Math.min(...chosen.map((note) => note.start)),
-          end: Math.max(...chosen.map((note) => note.start + note.duration)),
-        }
-      : null;
-    if (!loop.toggle(span)) toast.add({ title: "Drag on the time ruler or select notes to loop them." });
+    if (!loop.toggle(spanOf(selectedNotes())))
+      toast.add({ title: "Drag on the time ruler or select notes to loop them." });
   };
 
   /** Scrolls the view while a drag is at the roll's left or right edge. */
@@ -283,11 +250,13 @@ export default function ProjectScreen() {
     onSelect: () => setSelection([]),
     onRefused: (message) => toast.add({ title: message }),
   });
-  /** Both gestures: a note drag or drawing, or a break drag. */
-  const gestureBusy = () => editing.busy() || breakEditing.busy();
+  /** Every gesture: a note drag or drawing, a break drag, a loop range or a song marker on the ruler. */
+  const gestureBusy = () => editing.busy() || breakEditing.busy() || loop.busy() || songMarkers.busy();
   const cancelGestures = () => {
     editing.cancel();
     breakEditing.cancel();
+    loop.cancel();
+    songMarkers.cancel();
   };
 
   const visibleNotes = createMemo(() =>
@@ -320,64 +289,26 @@ export default function ProjectScreen() {
   const goToLine = (line: { start: number; duration: number } | undefined, fit = false) => {
     if (!line) return;
     seek(line.start);
-    const current = view();
-    const fits = line.duration < visibleSeconds(current, width()) * 0.9;
-    const onScreen =
-      line.start >= current.start && line.start + line.duration <= current.start + visibleSeconds(current, width());
-    if (fit || !fits) setView(fitRange(line.start, line.start + line.duration, width(), length()));
-    else if (!onScreen)
-      setView(clampView({ ...current, start: line.start - visibleSeconds(current, width()) * 0.1 }, width(), length()));
+    const span = { start: line.start, end: line.start + line.duration };
+    // A line that (nearly) fills the screen, or with Z, is fitted; else it is only brought on screen.
+    if (fit || line.duration >= visibleSeconds(view(), width()) * FIT_SHARE)
+      setView(fitRange(span.start, span.end, width(), length()));
+    else setView(revealSpan(view(), span, width(), length(), LINE_LEAD));
   };
 
-  /** Auto pitch at work (undefined: not), with its progress once there is some. */
-  const [autoPitching, setAutoPitching] = createSignal<ImportProgress | null | undefined>(undefined);
-  /** The notes auto pitch is working on (they pulse). */
-  const [autoPitchNotes, setAutoPitchNotes] = createSignal<ReadonlySet<number>>(new Set());
-  let autoPitchController: AbortController | undefined;
-  /**
-   * A: the selected notes' pitch, worked out in main as the chart is made (seconds), then applied as one edit to the
-   * notes still where they were. Edits so far are saved first, so main reads the chart as it is drawn.
-   */
-  const runAutoPitch = async (ids: number[]) => {
-    if (autoPitching() !== undefined) return;
-    const chosen = new Set(ids);
-    const asked = new Map(
-      notes()
-        .filter((note) => chosen.has(note.id))
-        .map((note) => [note.id, { start: note.start, duration: note.duration, pitch: note.pitch }]),
-    );
-    // The chart is made again or reloaded meanwhile: the pitches were for the one before.
-    const asking = doc();
-    const controller = new AbortController();
-    autoPitchController = controller;
-    setAutoPitching(null);
-    setAutoPitchNotes(chosen);
-    try {
-      await doc().saved();
-      const pitches = await followProgress(
-        () => native.project.autoPitch({ id: overview().id, notes: ids }, { signal: controller.signal }),
-        controller.signal,
-        (progress) => setAutoPitching(progress),
-      );
-      // Null: stopped (the editor went away).
-      if (!pitches || controller.signal.aborted || doc() !== asking) return;
-      if (pitches.length === 0) toast.add({ title: "Nothing is sung there to take the pitch from." });
-      else editing.applyPitches(pitches, asked);
-    } catch (error) {
-      if (!isAbort(error))
-        toast.add({ type: "error", title: "Couldn't find the pitch", description: errorMessage(error) });
-    } finally {
-      if (autoPitchController === controller) {
-        setAutoPitching(undefined);
-        setAutoPitchNotes(new Set<number>());
-      }
-    }
-  };
+  const autoPitch = createAutoPitchJob({
+    notes,
+    doc,
+    request: (ids, signal, onProgress) =>
+      followProgress(() => native.project.autoPitch({ id: overview().id, notes: ids }, { signal }), signal, onProgress),
+    apply: (pitches, asked) => editing.applyPitches(pitches, asked),
+    onMessage: ({ title, description, error }) => toast.add({ type: error ? "error" : undefined, title, description }),
+  });
 
   const editing = createNoteEditing({
-    onAutoPitch: (ids) => void runAutoPitch(ids),
+    onAutoPitch: (ids) => autoPitch.run(ids),
     onPitch: (midi) => {
-      if (tonesOn()) tones.preview(midi);
+      if (prefs.tones()) tones.preview(midi);
     },
     autoScroll,
     viewStart: () => view().start,
@@ -390,10 +321,7 @@ export default function ProjectScreen() {
     playheadTime: () => playback.time(),
     onReveal: (note) => {
       if (!playback.playing()) seek(note.start);
-      const current = view();
-      const seconds = visibleSeconds(current, width());
-      if (note.start < current.start || note.start + note.duration > current.start + seconds)
-        setView(clampView({ ...current, start: note.start - seconds * 0.25 }, width(), length()));
+      setView(revealSpan(view(), { start: note.start, end: note.start + note.duration }, width(), length(), NOTE_LEAD));
     },
     onRefused: (message) => toast.add({ title: message }),
   });
@@ -408,7 +336,7 @@ export default function ProjectScreen() {
       if (note) editing.menuOpen(note);
       return note !== null;
     },
-    canAutoPitch: () => autoPitching() === undefined && selectedIds().size > 0,
+    canAutoPitch: () => !autoPitch.busy() && selectedIds().size > 0,
     autoPitch: () => editing.commands.autoPitch(),
     canSplitAtPlayhead: () => editing.commands.canSplitAtPlayhead(),
     splitAtPlayhead: () => editing.commands.splitAtPlayhead(),
@@ -589,7 +517,7 @@ export default function ProjectScreen() {
       stopEditing();
       cancelGestures();
       autoScroll.end();
-      autoPitchController?.abort();
+      autoPitch.stop();
       pitchController.abort();
       observer.disconnect();
       editArea?.removeEventListener("wheel", onWheel);
@@ -656,11 +584,11 @@ export default function ProjectScreen() {
             <ToolSwitch tool={tools.tool()} onTool={tools.setTool} />
             <div class="mx-1.5 h-4 w-px bg-bar-border" aria-hidden="true" />
             <AutoPitchButton
-              status={autoPitching() === undefined ? undefined : (autoPitching()?.step ?? null)}
-              percent={percentOf(autoPitching() ?? null) ?? null}
+              status={autoPitch.busy() ? (autoPitch.progress()?.step ?? null) : undefined}
+              percent={percentOf(autoPitch.progress() ?? null) ?? null}
               canStart={selectedIds().size > 0}
               onStart={() => editing.commands.autoPitch()}
-              onStop={() => autoPitchController?.abort()}
+              onStop={() => autoPitch.stop()}
             />
             <MergeButton canMerge={editing.commands.canMerge()} onMerge={() => editing.commands.merge()} />
           </>
@@ -741,7 +669,7 @@ export default function ProjectScreen() {
                   pitch={showPitch() ? pitch() : null}
                   selected={selectedIds()}
                   overlapping={overlaps()}
-                  pending={autoPitchNotes()}
+                  pending={autoPitch.pending()}
                   played={{ start: songMarkers.at("start"), end: songMarkers.at("end") }}
                   onNoteDown={(note, event, part, scale) => {
                     breakEditing.deselect();
@@ -802,63 +730,32 @@ export default function ProjectScreen() {
         onShowPitch={setShowPitch}
         looping={loop.on()}
         onLoop={toggleLoop}
-        following={following()}
+        following={prefs.following()}
         onFollow={changeFollowing}
-        tones={tonesOn()}
-        onTones={changeTones}
-        volumes={volumes()}
-        onVolume={changeVolume}
+        tones={prefs.tones()}
+        onTones={prefs.setTones}
+        volumes={prefs.volumes()}
+        onVolume={prefs.setVolume}
       />
 
-      <SongDetailsDialog
+      <SongDetails
         open={detailsOpen()}
         onOpenChange={setDetailsOpen}
-        song={chart().song}
-        bpm={chart().bpm}
-        gap={chart().gap}
-        singers={chart().singers}
-        otherHeaders={overview().song.extraHeaders.filter(([name]) => name.toUpperCase() !== "TAGS")}
-        onChange={(label, patch) => doc().edit(label, (tx) => tx.updateSong(patch))}
-        onSingerName={(id, name) => doc().edit("Change singer's name", (tx) => tx.updateSinger(id, name))}
-        timing={
-          <SongTiming
-            song={chart().song}
-            hasVideo={mediaUrl("video") !== undefined}
-            hasSelection={selectedIds().size > 0}
-            playheadTime={() => playback.time()}
-            actions={{
-              set: (marker, seconds) => songMarkers.set(marker, seconds),
-              setMedleyFromSelection: () => {
-                const chosen = new Set(
-                  notes()
-                    .filter((note) => selectedIds().has(note.id))
-                    .map((note) => note.lineId),
-                );
-                const picked = lines().filter((line) => chosen.has(line.id));
-                songMarkers.setMedley(picked);
-                return picked.length > 0;
-              },
-              clear: (marker) => songMarkers.clear(marker),
-              playFrom: (seconds) => {
-                seek(seconds);
-                playback.play();
-              },
-              setVideoGap: (seconds) => doc().edit("Change video offset", (tx) => tx.updateSong({ videoGap: seconds })),
-            }}
-          />
-        }
+        doc={doc()}
+        chart={chart()}
+        media={projectMedia()}
+        artwork={artworkActions}
+        markers={songMarkers}
+        selectedLines={() => {
+          const chosen = new Set(selectedNotes().map((note) => note.lineId));
+          return lines().filter((line) => chosen.has(line.id));
+        }}
+        playheadTime={() => playback.time()}
+        onPlayFrom={(seconds) => {
+          seek(seconds);
+          playback.play();
+        }}
         lyrics={overview().lyrics?.lines}
-        nested={
-          <CoverDialog
-            open={coverOpen()}
-            onOpenChange={setCoverOpen}
-            url={mediaUrl("cover")}
-            actions={artworkActions}
-          />
-        }
-        files={
-          <SongFiles media={shownOverview().media} actions={artworkActions} onChangeCover={() => setCoverOpen(true)} />
-        }
       />
 
       <ReplaceExportDialog
@@ -885,7 +782,7 @@ function OpeningOverlay(props: { progress: ImportProgress | null }) {
         <LoaderCircleIcon class="size-4 animate-spin text-primary" />
         Opening the project…
       </span>
-      <span class="text-[11.5px] text-muted-foreground">{props.progress?.step ?? "Following the melody"}</span>
+      <span class="text-[11.5px] text-muted-foreground">{props.progress?.step ?? CHART_STEPS.melody}</span>
       <div class="w-56">
         <progress aria-label="Opening progress" max="100" value={percentOf(props.progress)} class={progressBarClass} />
       </div>

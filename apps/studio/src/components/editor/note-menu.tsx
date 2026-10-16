@@ -16,7 +16,7 @@ import {
   ContextMenuTrigger,
 } from "~/components/ui/context-menu";
 import { platform } from "~/lib/desktop";
-import type { NoteFlag } from "~/lib/editor/edits";
+import { NOTE_FLAGS, type NoteFlag } from "~/lib/editor/edits";
 
 export interface NoteMenuActions {
   /** The menu is opening: whether it was over a note (which joins the selection). */
@@ -37,12 +37,6 @@ export interface NoteMenuActions {
 }
 
 const COMMAND = platform === "macos" ? "⌘" : "Ctrl+";
-
-const FLAGS: { flag: NoteFlag; label: string; key: string }[] = [
-  { flag: "golden", label: "Golden", key: "G" },
-  { flag: "rap", label: "Rap", key: "R" },
-  { flag: "freestyle", label: "Freestyle", key: "F" },
-];
 
 export function NoteMenu(props: { actions: NoteMenuActions; children: JSX.Element }) {
   const [onNote, setOnNote] = createSignal(false);
@@ -88,7 +82,7 @@ export function NoteMenu(props: { actions: NoteMenuActions; children: JSX.Elemen
             <ContextMenuShortcut>M</ContextMenuShortcut>
           </ContextMenuItem>
           <ContextMenuSeparator />
-          <For each={FLAGS}>
+          <For each={NOTE_FLAGS}>
             {(item) => (
               // A plain row with the tick by its name: a check item keeps a column free for the tick on every row.
               <ContextMenuItem

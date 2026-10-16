@@ -5,17 +5,7 @@ import type { EditorChart } from "~/lib/native/types";
 
 import { addBreak, breakLanding, breakRange, moveBreak, nearestGap, removeBreak } from "./breaks";
 import { createChartDocument } from "./document";
-import { testSong } from "./test-song";
-
-const note = (id: number, start: number, lyric: string) => ({
-  id,
-  start,
-  duration: 0.3,
-  pitch: 64,
-  lyric,
-  type: "normal" as const,
-  edited: false,
-});
+import { testNote as note, testSong } from "./test-chart";
 
 /** Grid: 0.05 s steps from 1 s. Line 10 ends at 2.1 s, its break is stored at 2.5 s; line 11 starts at 3 s. */
 const chart: EditorChart = {

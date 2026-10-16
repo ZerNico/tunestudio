@@ -56,6 +56,9 @@ describe("cover dialog", () => {
     fireEvent.click(await screen.findByRole("radio", { name: "No cover" }));
     await vi.waitFor(() => expect(actions.onError).toHaveBeenCalledWith("Couldn't change the cover", failure));
     expect(isOpen()).toBe(true);
+    // Unticked again, so the same tile can be picked again.
+    expect(screen.getByRole("radio", { name: "No cover" })).not.toBeChecked();
+    expect(screen.getByRole("radio", { name: "The song's cover" })).toBeChecked();
     fireEvent.click(screen.getByTestId("cover-choose"));
     await vi.waitFor(() => expect(set).toHaveBeenCalledWith("cover", { kind: "file", path: "/picked/front.jpg" }));
   });

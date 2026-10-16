@@ -2,6 +2,7 @@ import { createSignal, For, Show } from "solid-js";
 
 import type { AutoScroll } from "~/lib/editor/autoscroll";
 import type { DrawnNote, LineBreak } from "~/lib/editor/chart";
+import { followDrag } from "~/lib/editor/drag";
 import { type DragPreview, type NotePart, previewed, type RollScale } from "~/lib/editor/note-editing";
 import type { Tool } from "~/lib/editor/tools";
 import {
@@ -46,12 +47,12 @@ function noteLabel(note: DrawnNote, overlaps: boolean): string {
   return `${overlaps ? "⚠ " : ""}${note.lyric}`;
 }
 
-/** How wide the pitch labels at the roll's left are; the other lanes leave the same room. */
 /** Rows at least this tall (px) get every pitch's name; thinner ones only the C's. */
 const LABEL_ALL_PX = 14;
 /** Pitch classes of the black keys (named as sharps), whose names are dimmer. */
 const SHARPS = new Set([1, 3, 6, 8, 10]);
 
+/** How wide the pitch labels at the roll's left are; the other lanes leave the same room. */
 export const GUTTER_PX = 40;
 
 /**
@@ -62,9 +63,6 @@ export const breakX = (view: TimeView, time: number) => timeToX(view, time) - 1;
 
 /** Notes narrower than this have no resize edges: a press anywhere moves them (px). */
 const MIN_EDGES_PX = 12;
-
-/** A press that moves less than this is a click, not a drag (px). */
-const DRAG_PX = 3;
 
 /** A selection box being drawn: from where it started (seconds, px down) to the pointer. */
 interface Box {
@@ -202,29 +200,12 @@ export function PianoRoll(props: {
       time: xToTime(props.view, Math.min(props.width, Math.max(0, pointer.clientX - rect.left))),
       y: pointer.clientY - rect.top,
     });
-    const press = { x: event.clientX, y: event.clientY };
     /** Where the box started: taken once, at the press. */
     const initialPoint = at(event);
-    let dragging = false;
     /** The box as last drawn (the signal is written on the next microtask; a release can come first). */
     let drawn: Box | null = null;
+    let dragging = false;
     area.setPointerCapture(event.pointerId);
-    const move = (pointer: PointerEvent) => {
-      if (!dragging && Math.hypot(pointer.clientX - press.x, pointer.clientY - press.y) < DRAG_PX) return;
-      dragging = true;
-      props.autoScroll?.track(pointer.clientX, () => move(pointer));
-      const now = at(pointer);
-      drawn = { t0: initialPoint.time, y0: initialPoint.y, t1: now.time, y1: now.y };
-      setBox(drawn);
-    };
-    const stop = () => {
-      props.autoScroll?.end();
-      area.removeEventListener("pointermove", move);
-      area.removeEventListener("pointerup", up);
-      area.removeEventListener("pointercancel", up);
-      window.removeEventListener("keydown", escape, true);
-      setBox(null);
-    };
     /** Esc drops the box (and goes no further: it isn't a deselect or a tool change). */
     const escape = (key: KeyboardEvent) => {
       if (key.key !== "Escape" || !dragging) return;
@@ -232,26 +213,38 @@ export function PianoRoll(props: {
       key.stopImmediatePropagation();
       stop();
     };
-    const up = (pointer: PointerEvent) => {
-      stop();
-      if (!dragging || !drawn || pointer.type === "pointercancel") {
-        if (!dragging) props.onEmptyClick(initialPoint.time);
-        return;
-      }
-      const [top, bottom] = [Math.min(drawn.y0, drawn.y1), Math.max(drawn.y0, drawn.y1)];
-      props.onBox(
-        {
-          from: Math.min(drawn.t0, drawn.t1),
-          to: Math.max(drawn.t0, drawn.t1),
-          low: yToPitch(props.range, rowHeight(), bottom),
-          high: yToPitch(props.range, rowHeight(), top),
-        },
-        pointer.shiftKey || pointer.metaKey || pointer.ctrlKey,
-      );
-    };
-    area.addEventListener("pointermove", move);
-    area.addEventListener("pointerup", up);
-    area.addEventListener("pointercancel", up);
+    const stop = followDrag({
+      press: event,
+      target: area,
+      threshold: "xy",
+      autoScroll: props.autoScroll,
+      onMove: ({ event: pointer }) => {
+        dragging = true;
+        const now = at(pointer);
+        drawn = { t0: initialPoint.time, y0: initialPoint.y, t1: now.time, y1: now.y };
+        setBox(drawn);
+      },
+      onStop: () => {
+        window.removeEventListener("keydown", escape, true);
+        setBox(null);
+      },
+      onUp: (dragged, pointer) => {
+        if (!dragged || !drawn) {
+          props.onEmptyClick(initialPoint.time);
+          return;
+        }
+        const [top, bottom] = [Math.min(drawn.y0, drawn.y1), Math.max(drawn.y0, drawn.y1)];
+        props.onBox(
+          {
+            from: Math.min(drawn.t0, drawn.t1),
+            to: Math.max(drawn.t0, drawn.t1),
+            low: yToPitch(props.range, rowHeight(), bottom),
+            high: yToPitch(props.range, rowHeight(), top),
+          },
+          pointer.shiftKey || pointer.metaKey || pointer.ctrlKey,
+        );
+      },
+    });
     window.addEventListener("keydown", escape, true);
   };
   const rows = () => {

@@ -1,6 +1,6 @@
 /**
- * "Make the chart" for an open project: its vocals, song and lyrics through the chart pipeline (pipeline.ts), the
- * result written over the project's notes in one transaction. Downloads the chart models first if needed.
+ * Making a chart in setup (`drafts`): the vocals, song and lyrics through the chart pipeline (pipeline.ts), with the
+ * chart models downloaded first if needed; and which languages a chart can be made in.
  */
 import { Effect, FileSystem } from "effect";
 

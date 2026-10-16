@@ -1,7 +1,7 @@
 import { createRoot, createSignal, flush } from "solid-js";
 import { describe, expect, it } from "vitest";
 
-import type { EditorChart, NoteType } from "~/lib/native/types";
+import type { EditorChart } from "~/lib/native/types";
 
 import { createChartDocument } from "./document";
 import {
@@ -29,17 +29,7 @@ import {
   shiftPitch,
   toggleFlag,
 } from "./edits";
-import { testSong } from "./test-song";
-
-const note = (id: number, start: number, lyric: string, duration = 0.3, type: NoteType = "normal") => ({
-  id,
-  start,
-  duration,
-  pitch: 64,
-  lyric,
-  type,
-  edited: false,
-});
+import { testNote as note, testSong } from "./test-chart";
 
 /** Grid: 0.05 s steps from 1 s. Line 10 ends at a stored break at 2.5 s. */
 const chart: EditorChart = {

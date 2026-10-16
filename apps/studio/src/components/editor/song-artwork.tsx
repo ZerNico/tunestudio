@@ -3,7 +3,7 @@
  * picker (`CoverOption`): the cover the song has now, covers found online (looked for when this opens), none, and
  * choosing an image file. Picking a tile changes it at once (not part of undo) and closes the dialog.
  */
-import { createSignal, For, onSettled, Show } from "solid-js";
+import { createSignal, For, onCleanup, onSettled, Show } from "solid-js";
 import BanIcon from "~icons/lucide/ban";
 import ImagePlusIcon from "~icons/lucide/image-plus";
 import LoaderCircleIcon from "~icons/lucide/loader-circle";
@@ -40,6 +40,14 @@ const SOURCE_LABELS: Record<CoverCandidate["source"], string> = {
 /** The tiles; `onDone` once a choice is applied. */
 function CoverTiles(props: { url: string | undefined; actions: ArtworkActions; onDone: () => void }) {
   const [busy, setBusy] = createSignal(false);
+  /**
+   * The tile picked: whatever the song has ("song"), a found cover (by URL) or none. A change that fails goes back to what the song
+   * has, so the radio of the tile that failed is unticked and can be picked again.
+   */
+  const [picked, setPicked] = createSignal<"song" | string | null>("song");
+  /** Closed (and maybe opened again) while a change was under way: that change doesn't close the new one. */
+  let gone = false;
+  onCleanup(() => (gone = true));
   /** Found covers: null while looking. */
   const [covers, setCovers] = createSignal<readonly CoverCandidate[] | null>(null);
   onSettled(() => {
@@ -48,20 +56,26 @@ function CoverTiles(props: { url: string | undefined; actions: ArtworkActions; o
       props.actions.onError("Couldn't look for covers", error);
     });
   });
-  const apply = async (choice: ArtworkChoice) => {
+  /** Changes the cover to `choice` (for a file, the one the user picks; none picked: nothing changes). */
+  const apply = async (choice: ArtworkChoice | "file") => {
     setBusy(true);
     try {
-      await props.actions.set("cover", choice);
-      props.onDone();
+      if (choice !== "file")
+        setPicked(choice.kind === "found" ? choice.url : choice.kind === "none" ? null : "current");
+      let chosen = choice;
+      if (chosen === "file") {
+        const image = await props.actions.chooseImage();
+        if (!image) return;
+        chosen = { kind: "file", path: image.path };
+      }
+      await props.actions.set("cover", chosen);
+      if (!gone) props.onDone();
     } catch (error) {
+      setPicked("song");
       props.actions.onError("Couldn't change the cover", error);
     } finally {
       setBusy(false);
     }
-  };
-  const choose = async () => {
-    const image = await props.actions.chooseImage();
-    if (image) await apply({ kind: "file", path: image.path });
   };
   return (
     <div
@@ -77,7 +91,7 @@ function CoverTiles(props: { url: string | undefined; actions: ArtworkActions; o
             name="song-cover"
             label="The song's cover"
             hint="The song's cover now"
-            checked
+            checked={picked() === "song"}
             disabled={busy()}
             testid="cover-current"
             onSelect={() => {}}
@@ -92,7 +106,7 @@ function CoverTiles(props: { url: string | undefined; actions: ArtworkActions; o
             name="song-cover"
             label={`${cover.artist}, ${cover.album ?? cover.title} (${SOURCE_LABELS[cover.source]})`}
             hint={describeCover(cover)}
-            checked={false}
+            checked={picked() === cover.url}
             disabled={busy()}
             testid="cover-option"
             onSelect={() => void apply({ kind: "found", url: cover.url })}
@@ -111,7 +125,7 @@ function CoverTiles(props: { url: string | undefined; actions: ArtworkActions; o
         name="song-cover"
         label="No cover"
         hint="No cover"
-        checked={!props.url}
+        checked={picked() === null || (picked() === "song" && !props.url)}
         disabled={busy()}
         testid="cover-none"
         onSelect={() => void apply({ kind: "none" })}
@@ -123,7 +137,7 @@ function CoverTiles(props: { url: string | undefined; actions: ArtworkActions; o
         disabled={busy()}
         class={`${tileClass} flex-col gap-1 border border-dashed border-popover-line bg-transparent text-[9.5px] text-popover-muted outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-60`}
         aria-label="Choose an image…"
-        onClick={() => void choose()}
+        onClick={() => void apply("file")}
         data-testid="cover-choose"
       >
         <ImagePlusIcon class="size-4" />

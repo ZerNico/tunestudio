@@ -5,6 +5,7 @@ import {
   fitRange,
   follow,
   onPage,
+  revealSpan,
   formatTime,
   pitchName,
   pitchRange,
@@ -111,5 +112,14 @@ describe("visibleItems", () => {
     expect(visibleItems(notes, 4, 8, 4)).toEqual([notes[1], notes[2]]);
     expect(visibleItems(notes, 10.5, 12, 4)).toEqual([]);
     expect(visibleItems([], 0, 10, 0)).toEqual([]);
+  });
+});
+
+describe("revealSpan", () => {
+  it("leaves a span on screen as it is, and scrolls one off screen in with the lead given", () => {
+    const view = { start: 10, pxPerSecond: 100 };
+    // 8 s on screen.
+    expect(revealSpan(view, { start: 11, end: 12 }, 800, 200, 0.25)).toBe(view);
+    expect(revealSpan(view, { start: 30, end: 31 }, 800, 200, 0.25)).toEqual({ start: 28, pxPerSecond: 100 });
   });
 });

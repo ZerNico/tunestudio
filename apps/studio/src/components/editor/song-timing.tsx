@@ -128,9 +128,9 @@ export function SongTiming(props: {
         label="Medley"
         hint="The excerpt sung in medley mode: whole lines"
         value={
-          props.song.medleyStart === null || props.song.medleyEnd === null
+          props.song.medleyStart === null && props.song.medleyEnd === null
             ? null
-            : `${formatTime(props.song.medleyStart)} – ${formatTime(props.song.medleyEnd)}`
+            : `${time(props.song.medleyStart) ?? "?"} – ${time(props.song.medleyEnd) ?? "?"}`
         }
         unset="Not set"
         playFrom={props.song.medleyStart}

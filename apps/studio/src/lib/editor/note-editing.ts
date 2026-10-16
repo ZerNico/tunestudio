@@ -1,6 +1,6 @@
 /**
- * Editing notes with the Select tool: clicks, drags, the selection box and the keys, turned into selections and
- * document edits (`edits.ts` has the rules).
+ * Editing notes: clicks, drags, the selection box and the keys of every tool, the clipboard, auto pitch's result and
+ * typing syllables, turned into selections and document edits (`edits.ts` has the rules; `drag.ts` follows the drags).
  *
  * A press on a note selects it (Shift: a range to it, Cmd/Ctrl: toggles it); one on a selected note keeps the
  * selection, so a drag moves all of it, and becomes "just this note" when it doesn't drag. Dragging the body moves the
@@ -8,9 +8,8 @@
  * and semitones, within the limits. A drag is a preview (`drag`) until it is let go, then one edit; Esc cancels it.
  *
  * Draw (D): a drag on empty space draws a note, a click adds one as long as the last note drawn or clicked (FL Studio's
- * way; a short one at first). Split (C): a cut line follows the pointer on
- * a note (`cut`), a click splits there (Shift: every note at that time). In any tool, a double-click on empty space adds
- * a note, Cmd/Ctrl+K splits at the playhead. A note added or double-clicked gets its syllable typed in place
+ * way; a short one at first). Split (C): a cut line follows the pointer on a note (`cut`), a click splits there (Shift:
+ * every note at that time). In any tool, a double-click on empty space adds a note, Cmd/Ctrl+K splits at the playhead. A note added or double-clicked gets its syllable typed in place
  * (`editingLyric`); Enter edits the selected note's, Tab goes on to the next note.
  *
  * Copy, cut and paste (`clipboard.ts`): the selected notes, with their line breaks; a paste goes in at the playhead for
@@ -27,9 +26,10 @@
 import { createSignal } from "solid-js";
 
 import type { AutoScroll } from "./autoscroll";
-import type { DrawnNote } from "./chart";
+import { type DrawnNote, notesAt } from "./chart";
 import { type Clip, copyNotes, pasteNotes } from "./clipboard";
 import type { ChartDocument } from "./document";
+import { type DragMove, followDrag } from "./drag";
 import {
   addNote,
   canMerge,
@@ -43,6 +43,7 @@ import {
   mergeNotes,
   moveLimits,
   moveNotes,
+  NOTE_FLAGS,
   type NoteFlag,
   pitchFits,
   pitchLimits,
@@ -59,19 +60,14 @@ import {
 import { adjacentNote, notesInBox, rangeSelection, toggled } from "./selection";
 import { pitchName } from "./view";
 
-const FLAG_KEYS: Record<string, { flag: NoteFlag; label: string }> = {
-  g: { flag: "golden", label: "Golden" },
-  r: { flag: "rap", label: "Rap" },
-  f: { flag: "freestyle", label: "Freestyle" },
-};
-
 /** Held past the roll's top or bottom, a dragged note goes a semitone further this often (ms), the rows growing along. */
 const EDGE_STEP_MS = 90;
 
-/** A press that moves less than this is a click, not a drag (px). */
-const DRAG_PX = 3;
+/** The note type a key toggles (g, r, f), if any. */
+const flagFor = (key: string) => NOTE_FLAGS.find((item) => item.key.toLowerCase() === key)?.flag;
 
-const count = (ids: readonly number[]) => (ids.length === 1 ? "note" : `${ids.length} notes`);
+/** "note" or "3 notes", for an edit's name. */
+const count = (notes: number) => (notes === 1 ? "note" : `${notes} notes`);
 
 /** What was copied last, in any project this session (the system clipboard has its text). */
 let clip: Clip | null = null;
@@ -183,7 +179,7 @@ export function createNoteEditing(options: {
     const current = chart();
     const limits = moveLimits(placeNotes(current, options.length()), new Set(ids));
     if (!fits(delta, limits)) return;
-    options.doc().edit(`Move ${count(ids)}`, (tx) => moveNotes(tx, current, ids, delta), {
+    options.doc().edit(`Move ${count(ids.length)}`, (tx) => moveNotes(tx, current, ids, delta), {
       merge: `move:${ids.join()}`,
     });
   };
@@ -192,7 +188,7 @@ export function createNoteEditing(options: {
     const current = chart();
     const limits = lengthLimits(placeNotes(current, options.length()), new Set(ids), gridStep(current));
     if (!fits(delta, limits)) return;
-    options.doc().edit(`Change length of ${count(ids)}`, (tx) => resizeNotes(tx, current, ids, delta), {
+    options.doc().edit(`Change length of ${count(ids.length)}`, (tx) => resizeNotes(tx, current, ids, delta), {
       merge: `length:${ids.join()}`,
     });
   };
@@ -201,7 +197,7 @@ export function createNoteEditing(options: {
     if (!pitchFits(chart(), new Set(ids), semitones)) return;
     const first = options.notes().find((note) => note.id === ids[0]);
     if (first) options.onPitch?.(first.pitch + semitones);
-    options.doc().edit(`Change pitch of ${count(ids)}`, (tx) => shiftPitch(tx, ids, semitones), {
+    options.doc().edit(`Change pitch of ${count(ids.length)}`, (tx) => shiftPitch(tx, ids, semitones), {
       merge: `pitch:${ids.join()}`,
     });
   };
@@ -252,7 +248,7 @@ export function createNoteEditing(options: {
     if (fitting.length === 0) return false;
     const seconds: number[] = [];
     options.doc().edit(
-      `Split ${count(fitting.map((note) => note.id))}`,
+      `Split ${count(fitting.length)}`,
       (tx) => {
         for (const note of fitting) {
           const second = splitNote(tx, current, note.id, time);
@@ -276,7 +272,7 @@ export function createNoteEditing(options: {
     merge() {
       const ids = selected();
       let merged: number | null = null;
-      options.doc().edit(`Merge ${count(ids)}`, (tx) => (merged = mergeNotes(tx, chart(), new Set(ids))), {
+      options.doc().edit(`Merge ${count(ids.length)}`, (tx) => (merged = mergeNotes(tx, chart(), new Set(ids))), {
         selectionAfter: () => (merged === null ? ids : [merged]),
       });
       if (merged === null) options.onRefused("Select notes next to each other in one line to merge them.");
@@ -288,8 +284,8 @@ export function createNoteEditing(options: {
     },
     toggleFlag(flag: NoteFlag) {
       const ids = selected();
-      const label = Object.values(FLAG_KEYS).find((item) => item.flag === flag)!.label;
-      options.doc().edit(`${label} ${count(ids)}`, (tx) => toggleFlag(tx, chart(), new Set(ids), flag));
+      const label = NOTE_FLAGS.find((item) => item.flag === flag)!.label;
+      options.doc().edit(`${label} ${count(ids.length)}`, (tx) => toggleFlag(tx, chart(), new Set(ids), flag));
     },
     /** Whether all the selected notes have `flag` (the menu ticks it). */
     flagOn(flag: NoteFlag) {
@@ -302,17 +298,16 @@ export function createNoteEditing(options: {
     },
     remove() {
       const ids = selected();
-      options.doc().edit(`Delete ${count(ids)}`, (tx) => deleteNotes(tx, chart(), new Set(ids)), { selection: [] });
+      options
+        .doc()
+        .edit(`Delete ${count(ids.length)}`, (tx) => deleteNotes(tx, chart(), new Set(ids)), { selection: [] });
     },
   };
   /** The notes the playhead is in: the selected ones, or any with nothing selected. */
   const playheadNotes = () => {
     const time = options.playheadTime();
     const ids = selected();
-    return options
-      .notes()
-      .filter((note) => note.start < time && note.start + note.duration > time)
-      .filter((note) => ids.length === 0 || ids.includes(note.id));
+    return notesAt(options.notes(), time).filter((note) => ids.length === 0 || ids.includes(note.id));
   };
 
   /** Starts typing a note's syllable (and selects it). */
@@ -326,14 +321,14 @@ export function createNoteEditing(options: {
     const current = chart();
     const ids = [...preview.ids];
     if (preview.part === "body") {
-      options.doc().edit(`Move ${count(ids)}`, (tx) => {
+      options.doc().edit(`Move ${count(ids.length)}`, (tx) => {
         moveNotes(tx, current, ids, preview.time);
         shiftPitch(tx, ids, preview.pitch);
       });
     } else if (preview.part === "start") {
-      options.doc().edit(`Change start of ${count(ids)}`, (tx) => resizeStarts(tx, current, ids, preview.time));
+      options.doc().edit(`Change start of ${count(ids.length)}`, (tx) => resizeStarts(tx, current, ids, preview.time));
     } else {
-      options.doc().edit(`Change length of ${count(ids)}`, (tx) => resizeNotes(tx, current, ids, preview.time));
+      options.doc().edit(`Change length of ${count(ids.length)}`, (tx) => resizeNotes(tx, current, ids, preview.time));
     }
   };
 
@@ -370,7 +365,7 @@ export function createNoteEditing(options: {
       edge = null;
     };
     /** How far the pointer has moved in pitch, by the rows as drawn now (null: no rows given, go by px). */
-    const pitchMoved = (event: Event, clientY: number): number | null => {
+    const pitchMoved = (clientY: number): number | null => {
       if (pressPitch === undefined || !scale.pitchAt) return null;
       const at = scale.pitchAt(clientY);
       const rows = scale.rows?.();
@@ -385,36 +380,29 @@ export function createNoteEditing(options: {
         const start = (way === 1 ? rows!.high : rows!.low) + way;
         const timer = setInterval(() => {
           if (edge) edge.pitch += way;
-          move(event);
+          if (lastMove) onMove(lastMove);
         }, EDGE_STEP_MS);
         edge = { way, pitch: start, timer };
       }
       return edge.pitch - note.pitch;
     };
-    const target = options.pointerTarget ?? window;
-    const startView = options.viewStart?.() ?? 0;
-    let dragging = false;
     /** With Shift, the way the drag went first: only that changes. */
     let locked: "time" | "pitch" | null = null;
     /** The preview as last set (the signal is written on the next microtask; a release can come first). */
     let latest: DragPreview | null = null;
+    /** The last move, for the steps past the roll's edge. */
+    let lastMove: DragMove | null = null;
 
-    const move = (event: Event) => {
-      const pointer = event as PointerEvent;
-      const dx = pointer.clientX - press.clientX;
-      const dy = pointer.clientY - press.clientY;
-      if (!dragging && Math.hypot(dx, dy) < DRAG_PX) return;
-      dragging = true;
-      options.autoScroll?.track(pointer.clientX, () => move(event));
-      /** How far the view scrolled since the press (the notes go along). */
-      const scrolled = (options.viewStart?.() ?? startView) - startView;
-      if (pointer.shiftKey && part === "body") locked ??= Math.abs(dx) >= Math.abs(dy) ? "time" : "pitch";
+    const onMove = (move: DragMove) => {
+      lastMove = move;
+      const { dx, dy, scrolled, event } = move;
+      if (event.shiftKey && part === "body") locked ??= Math.abs(dx) >= Math.abs(dy) ? "time" : "pitch";
       else locked = null;
       const seconds = locked === "pitch" ? 0 : snapDelta(dx / scale.pxPerSecond + scrolled, unit, time);
       const semitones =
         part !== "body" || locked === "time"
           ? 0
-          : snapDelta(pitchMoved(event, pointer.clientY) ?? -dy / scale.rowHeight, 1, pitch);
+          : snapDelta(pitchMoved(event.clientY) ?? -dy / scale.rowHeight, 1, pitch);
       const steps = Math.round(seconds / unit);
       const label =
         part === "body"
@@ -424,29 +412,23 @@ export function createNoteEditing(options: {
       latest = { ids, part, time: seconds, pitch: semitones, anchor: note.id, label };
       setDrag(latest);
     };
-    const stop = () => {
-      options.autoScroll?.end();
-      leaveEdge();
-      target.removeEventListener("pointermove", move);
-      target.removeEventListener("pointerup", up);
-      target.removeEventListener("pointercancel", cancel);
-      target.removeEventListener("blur", cancel);
-      cancelDrag = null;
-      setDrag(null);
-    };
-    const up = () => {
-      const preview = latest;
-      stop();
-      if (preview && (preview.time !== 0 || preview.pitch !== 0)) commitDrag(preview);
-      else if (!dragging && justThis) select([note.id]);
-    };
-    const cancel = () => stop();
-    target.addEventListener("pointermove", move);
-    target.addEventListener("pointerup", up);
-    target.addEventListener("pointercancel", cancel);
-    // A release outside the window may never arrive: losing focus ends the drag too.
-    target.addEventListener("blur", cancel);
-    cancelDrag = stop;
+    cancelDrag = followDrag({
+      press,
+      target: options.pointerTarget ?? window,
+      threshold: "xy",
+      autoScroll: options.autoScroll,
+      viewStart: options.viewStart,
+      onMove,
+      onStop: () => {
+        leaveEdge();
+        cancelDrag = null;
+        setDrag(null);
+      },
+      onUp: (dragged) => {
+        if (latest && (latest.time !== 0 || latest.pitch !== 0)) commitDrag(latest);
+        else if (!dragged && justThis) select([note.id]);
+      },
+    });
   };
 
   return {
@@ -471,43 +453,31 @@ export function createNoteEditing(options: {
       const current = chart();
       const unit = gridStep(current);
       const start = Math.max(0, onGrid(current, at.time));
-      const target = options.pointerTarget ?? window;
-      const startView = options.viewStart?.() ?? 0;
-      let dragging = false;
+      /** The note as last drawn (the signal is written on the next microtask; a release can come first). */
       let drawn: { start: number; duration: number; pitch: number } | null = null;
       options.onPitch?.(at.pitch);
-      const move = (event: Event) => {
-        const pointer = event as PointerEvent;
-        const dx = pointer.clientX - press.clientX;
-        if (!dragging && Math.abs(dx) < DRAG_PX) return;
-        dragging = true;
-        options.autoScroll?.track(pointer.clientX, () => move(event));
-        const scrolled = (options.viewStart?.() ?? startView) - startView;
-        const end = Math.min(options.length(), onGrid(current, at.time + dx / scale.pxPerSecond + scrolled));
-        drawn = { start, duration: Math.max(unit, end - start), pitch: at.pitch };
-        setDrawing(drawn);
-      };
-      const stop = () => {
-        options.autoScroll?.end();
-        target.removeEventListener("pointermove", move);
-        target.removeEventListener("pointerup", up);
-        target.removeEventListener("pointercancel", stop);
-        target.removeEventListener("blur", stop);
-        cancelDrag = null;
-        setDrawing(null);
-      };
-      const up = () => {
-        stop();
-        if (drawn) {
-          lastLength = drawn.duration;
-          add(drawn.start, drawn.duration, drawn.pitch);
-        } else if (!dragging) add(start, clickLength(), at.pitch);
-      };
-      target.addEventListener("pointermove", move);
-      target.addEventListener("pointerup", up);
-      target.addEventListener("pointercancel", stop);
-      target.addEventListener("blur", stop);
-      cancelDrag = stop;
+      cancelDrag = followDrag({
+        press,
+        target: options.pointerTarget ?? window,
+        threshold: "x",
+        autoScroll: options.autoScroll,
+        viewStart: options.viewStart,
+        onMove: ({ dx, scrolled }) => {
+          const end = Math.min(options.length(), onGrid(current, at.time + dx / scale.pxPerSecond + scrolled));
+          drawn = { start, duration: Math.max(unit, end - start), pitch: at.pitch };
+          setDrawing(drawn);
+        },
+        onStop: () => {
+          cancelDrag = null;
+          setDrawing(null);
+        },
+        onUp: (dragged) => {
+          if (drawn) {
+            lastLength = drawn.duration;
+            add(drawn.start, drawn.duration, drawn.pitch);
+          } else if (!dragged) add(start, clickLength(), at.pitch);
+        },
+      });
     },
 
     /** A double-click on empty space (any tool): adds a short note there. */
@@ -528,9 +498,7 @@ export function createNoteEditing(options: {
     /** Split tool: a click on `note` at `time` splits it there, or every note at that time with Shift. */
     splitAt(note: DrawnNote, time: number, every: boolean) {
       lastSinger = note.singer;
-      const targets = every
-        ? options.notes().filter((item) => item.start < time && item.start + item.duration > time)
-        : [note];
+      const targets = every ? notesAt(options.notes(), time) : [note];
       split(targets, time);
     },
 
@@ -602,7 +570,7 @@ export function createNoteEditing(options: {
       const ids = selected();
       const text = this.copySelection();
       if (typeof text !== "string") return text;
-      options.doc().edit(`Cut ${count(ids)}`, (tx) => deleteNotes(tx, chart(), new Set(ids)), { selection: [] });
+      options.doc().edit(`Cut ${count(ids.length)}`, (tx) => deleteNotes(tx, chart(), new Set(ids)), { selection: [] });
       return text;
     },
 
@@ -622,11 +590,9 @@ export function createNoteEditing(options: {
       let ids: number[] = [];
       options
         .doc()
-        .edit(
-          `Paste ${count(pasted.notes.map((_, i) => i))}`,
-          (tx) => (ids = pasteNotes(tx, chart(), pasted, target)),
-          { selectionAfter: () => ids },
-        );
+        .edit(`Paste ${count(pasted.notes.length)}`, (tx) => (ids = pasteNotes(tx, chart(), pasted, target)), {
+          selectionAfter: () => ids,
+        });
       if (ids.length === 0) options.onRefused("There's no room to paste here: it would be past the song's end.");
       return true;
     },
@@ -655,7 +621,7 @@ export function createNoteEditing(options: {
           note.pitch !== pitch
         );
       });
-      options.doc().edit(`Auto pitch ${count(changed.map(({ id }) => id))}`, (tx) => {
+      options.doc().edit(`Auto pitch ${count(changed.length)}`, (tx) => {
         for (const { id, pitch } of changed) tx.updateNote(id, { pitch });
       });
       return changed.length;
@@ -746,7 +712,7 @@ export function createNoteEditing(options: {
       // Held down, A doesn't start it again each time a run ends.
       else if (key === "a") {
         if (!event.repeat) commands.autoPitch();
-      } else if (FLAG_KEYS[key]) commands.toggleFlag(FLAG_KEYS[key].flag);
+      } else if (flagFor(key)) commands.toggleFlag(flagFor(key)!);
       else return false;
       return true;
     },

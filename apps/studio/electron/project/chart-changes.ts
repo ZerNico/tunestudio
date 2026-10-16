@@ -75,7 +75,8 @@ function songChange(db: Queryable, before: SongFields, after: SongFields) {
     if (!row) return yield* outOfStep("the song details");
     const stored = yield* decodeLanguages(row.language).pipe(Effect.orElseSucceed(() => null));
     const headers = yield* decodeExtraHeaders(row.extraHeaders).pipe(Effect.orElseSucceed(() => null));
-    const current = { ...row, language: stored, tags: headers ? tagsOf(headers) : null };
+    // As the editor read them: unreadable ones as none.
+    const current = { ...row, language: stored ?? [], tags: tagsOf(headers ?? []) };
     if (!matches(current, before)) return yield* outOfStep("the song details");
     const { language, tags, ...rest } = after;
     yield* db
@@ -83,7 +84,7 @@ function songChange(db: Queryable, before: SongFields, after: SongFields) {
       .set({
         ...rest,
         ...(language === undefined ? {} : { language: encodeLanguages(language) }),
-        ...(tags === undefined || !headers ? {} : { extraHeaders: encodeExtraHeaders(withTags(headers, tags)) }),
+        ...(tags === undefined ? {} : { extraHeaders: encodeExtraHeaders(withTags(headers ?? [], tags)) }),
       })
       .pipe(orDiskFull);
   });

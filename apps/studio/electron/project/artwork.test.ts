@@ -98,4 +98,23 @@ describe("artwork", () => {
       expect((yield* listMedia(session.db)).filter((row) => row.role === "cover")).toHaveLength(1);
     }).pipe(Effect.provide(layer));
   });
+
+  it.effect("leaves one cover when two changes overlap", () => {
+    const { dir, layer, open } = setup(false);
+    return Effect.gen(function* () {
+      const session = yield* open;
+      const first = path.join(dir, "first.jpg");
+      const second = path.join(dir, "second.jpg");
+      fs.writeFileSync(first, jpeg(3));
+      fs.writeFileSync(second, jpeg(4));
+      yield* Effect.all(
+        [
+          setArtwork(session, "cover", { kind: "file", path: first }),
+          setArtwork(session, "cover", { kind: "file", path: second }),
+        ],
+        { concurrency: 2 },
+      );
+      expect((yield* listMedia(session.db)).filter((row) => row.role === "cover")).toHaveLength(1);
+    }).pipe(Effect.provide(layer));
+  });
 });

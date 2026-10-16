@@ -139,7 +139,9 @@ test("a drag on the ruler loops a range, L loops the selected notes, a double-cl
   await page.keyboard.press("l");
   await expect(loop).toHaveAttribute("aria-pressed", "false");
   await expect(range).not.toHaveAttribute("data-on");
-  await range.dblclick();
+  // On the ruler where the range is (the band itself lets presses through to the ruler).
+  const band = (await range.boundingBox())!;
+  await page.mouse.dblclick(band.x + band.width / 2, band.y + band.height / 2);
   await expect(range).toHaveCount(0);
 
   // The selected note: the range is just around it.
