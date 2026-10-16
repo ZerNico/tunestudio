@@ -16,6 +16,7 @@ import type { MediaActions } from "~/components/editor/song-files";
 import { Transport } from "~/components/editor/transport";
 import { follow as followProgress, percentOf, progressBarClass } from "~/components/new-project/progress";
 import { ExportMenu } from "~/components/project/export-menu";
+import { ProblemsMenu } from "~/components/project/problems-menu";
 import { ReplaceExportDialog } from "~/components/project/replace-export-dialog";
 import { TitleBar } from "~/components/title-bar";
 import { Button } from "~/components/ui/button";
@@ -39,13 +40,14 @@ import {
   spanOf,
   stepLine,
 } from "~/lib/editor/chart";
+import { type ChartProblem, chartProblems } from "~/lib/editor/checks";
 import { createChartDocument } from "~/lib/editor/document";
 import { overlapping } from "~/lib/editor/edits";
 import { createLoop } from "~/lib/editor/loop";
 import { createNoteEditing, previewChart } from "~/lib/editor/note-editing";
 import { createPlayback } from "~/lib/editor/playback";
 import { createEditorPrefs } from "~/lib/editor/prefs";
-import { NOTHING, type Selection } from "~/lib/editor/selection";
+import { breaksOnly, NOTHING, notesOnly, type Selection } from "~/lib/editor/selection";
 import { createSongMarkers } from "~/lib/editor/song-markers";
 import { createTones } from "~/lib/editor/tones";
 import { createTools } from "~/lib/editor/tools";
@@ -311,6 +313,17 @@ export default function ProjectScreen() {
   const changeView = (next: TimeView) => {
     if (playback.playing()) scrolledAway = true;
     setView(clampView(next, width(), length()));
+  };
+  /** What's wrong with the chart, as it is now. */
+  const problems = createMemo(() => chartProblems(chart(), playback.duration()));
+  /** Selects a problem's notes (or line break) and brings them on screen, fitting them when they don't fit. */
+  const showProblem = (problem: ChartProblem) => {
+    setSelection(problem.lineId === undefined ? notesOnly(problem.noteIds) : breaksOnly([problem.lineId]));
+    if (!playback.playing()) seek(problem.start);
+    const span = { start: problem.start, end: problem.end };
+    if (span.end - span.start >= visibleSeconds(view(), width()) * FIT_SHARE)
+      setView(fitRange(span.start, span.end, width(), length()));
+    else setView(revealSpan(view(), span, width(), length(), NOTE_LEAD));
   };
   /** Moves the playhead to a line and brings it on screen, fitting it when it doesn't fit. */
   const goToLine = (line: { start: number; duration: number } | undefined, fit = false) => {
@@ -726,16 +739,19 @@ export default function ProjectScreen() {
           </>
         }
       >
-        <button
-          type="button"
-          class="mr-auto flex max-w-[420px] min-w-0 cursor-pointer items-baseline gap-1.5 rounded-md px-1.5 py-1 text-[12.5px] hover:bg-sage-20"
-          title="Song details"
-          onClick={() => setDetailsOpen(true)}
-          data-testid="open-song-details"
-        >
-          <h1 class="m-0 truncate text-[12.5px] font-medium text-foreground">{chart().song.title || "Untitled"}</h1>
-          <span class="truncate text-muted-foreground">· {chart().song.artist || "Unknown artist"}</span>
-        </button>
+        <div class="mr-auto flex min-w-0 items-center gap-1.5">
+          <button
+            type="button"
+            class="flex max-w-[420px] min-w-0 cursor-pointer items-baseline gap-1.5 rounded-md px-1.5 py-1 text-[12.5px] hover:bg-sage-20"
+            title="Song details"
+            onClick={() => setDetailsOpen(true)}
+            data-testid="open-song-details"
+          >
+            <h1 class="m-0 truncate text-[12.5px] font-medium text-foreground">{chart().song.title || "Untitled"}</h1>
+            <span class="truncate text-muted-foreground">· {chart().song.artist || "Unknown artist"}</span>
+          </button>
+          <ProblemsMenu problems={problems()} onShow={showProblem} />
+        </div>
 
         <ExportMenu busy={exporting()} onSongFolder={() => void chooseExport()} onUsdb={() => void exportUsdb()} />
         <Button variant="ghost" size="sm" onClick={() => void close()} data-testid="close-project">

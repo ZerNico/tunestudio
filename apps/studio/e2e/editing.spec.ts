@@ -322,3 +322,27 @@ test("scrubbing to the roll's edge scrolls the view, and the playhead goes on wi
   // Past the last tick that was in view before.
   expect(time!.split("/")[0]!.trim() > before.at(-1)!).toBe(true);
 });
+
+test("the title bar lists the chart's problems and shows the one chosen", async () => {
+  const { page } = studio;
+  await openSong();
+  await expect(page.getByTestId("problems")).toHaveAccessibleName("No problems found");
+
+  // "Hel" made a step longer runs into "lo".
+  const notes = page.getByTestId("roll-note");
+  await notes.filter({ hasText: "Hel" }).click();
+  await page.keyboard.press("Shift+ArrowRight");
+  await expect(page.getByTestId("problems")).toHaveText("1");
+
+  // Choosing it selects both notes.
+  await page.keyboard.press("Escape");
+  await page.getByTestId("problems").click();
+  await page.getByTestId("problem").filter({ hasText: "Notes overlap" }).click();
+  await expect(notes.filter({ hasText: "Hel" })).toHaveAttribute("data-selected", "true");
+  await expect(notes.filter({ hasText: /^\W*lo\s*$/ })).toHaveAttribute("data-selected", "true");
+
+  // Undone, nothing is wrong again.
+  await page.keyboard.press("Escape");
+  await page.getByTestId("undo").click();
+  await expect(page.getByTestId("problems")).toHaveAccessibleName("No problems found");
+});
