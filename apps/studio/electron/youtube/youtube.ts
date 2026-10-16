@@ -1,6 +1,7 @@
 import { Data, Effect, FileSystem, Path, Schedule, Schema } from "effect";
 
 import { languageCode } from "../../src/lib/languages";
+import { LONGEST_SONG_SECONDS } from "../../src/lib/native/contract";
 import type { ImportProgress, YoutubeVideo } from "../../src/lib/native/types";
 import type { Settings, VideoFormat } from "../../src/lib/settings";
 import { suggestSongDetails } from "../../src/lib/youtube";
@@ -284,6 +285,7 @@ export interface DownloadedMedia {
 /** Lines yt-dlp prints for Tune Studio (see `--progress-template` and `--print`). */
 const PROGRESS = /^@progress (\d+) (\S+) (\S+)$/;
 const FILE = /^@file (.+)$/;
+const DURATION = /^@duration (\d+(?:\.\d+)?)$/;
 
 /**
  * Downloads one stream with yt-dlp into `folder` as `<name>.<ext>`, reporting the bytes as
@@ -292,12 +294,22 @@ const FILE = /^@file (.+)$/;
 function fetchStream(
   tools: YoutubeTools,
   videoId: string,
-  options: { name: string; format: string; extra: string[]; step: string; folder: string },
+  options: {
+    name: string;
+    format: string;
+    extra: string[];
+    step: string;
+    folder: string;
+    /** Seconds: a longer video isn't downloaded (one whose length isn't known is). */
+    longest?: number;
+  },
   onProgress: (progress: ImportProgress) => Effect.Effect<void>,
 ) {
   const attempt = Effect.gen(function* () {
     const path = yield* Path.Path;
     let file: string | null = null;
+    /** Seconds, as yt-dlp knows it before filtering (null: not known). */
+    let duration: number | null = null;
     const result = yield* runTool(
       tools.ytDlp,
       [
@@ -308,10 +320,13 @@ function fetchStream(
         "--progress-template",
         "download:@progress %(progress.downloaded_bytes)s %(progress.total_bytes)s %(progress.total_bytes_estimate)s",
         "--print",
+        "pre_process:@duration %(duration)s",
+        "--print",
         "after_move:@file %(filepath)s",
         "--no-part",
         "-f",
         options.format,
+        ...(options.longest ? ["--match-filters", `duration<=?${options.longest}`] : []),
         ...options.extra,
         "-o",
         path.join(options.folder, `${options.name}.%(ext)s`),
@@ -327,6 +342,8 @@ function fetchStream(
         }
         const printed = FILE.exec(line);
         if (printed) file = printed[1]!.trim();
+        const length = DURATION.exec(line);
+        if (length) duration = Number(length[1]);
         return Effect.void;
       },
     ).pipe(Effect.mapError((message) => new VideoDownloadFailed({ message: `Couldn't start yt-dlp: ${message}` })));
@@ -334,7 +351,17 @@ function fetchStream(
       yield* AppLog.use((log) => log.write("WARN", "youtube", lastLine(result.stderr)));
       return yield* FORBIDDEN.test(result.stderr) ? new Forbidden() : youtubeError(result.stderr);
     }
-    if (!file) return yield* new VideoDownloadFailed({ message: "yt-dlp didn't say where it saved the file." });
+    if (!file) {
+      // A video the length filter turned away is skipped without a word.
+      const { longest } = options;
+      const seconds = duration as number | null;
+      if (longest !== undefined && seconds !== null && seconds > longest) {
+        return yield* new VideoUnavailable({
+          message: `This video is longer than ${longest / 60} minutes, too long for a song. Choose the song's own video.`,
+        });
+      }
+      return yield* new VideoDownloadFailed({ message: "yt-dlp didn't say where it saved the file." });
+    }
     return file as string;
   });
   // YouTube now and then refuses a download link it just handed out. yt-dlp's own retries reuse
@@ -398,6 +425,8 @@ export function downloadVideo(
             ],
             step: "Downloading the audio",
             folder,
+            // The renderer turns longer videos away too; this holds for any caller.
+            longest: LONGEST_SONG_SECONDS,
           },
           onProgress,
         );

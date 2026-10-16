@@ -5,9 +5,11 @@
  * pass its neighbours. Adding one splits a line in two, removing one joins two. Breaks are on the grid and never inside
  * a note: they are kept out of the stretches notes cover (`occupied`; overlapping notes count as one stretch).
  */
+import { defaultSwitch } from "@tunestudio/ultrastar";
+
 import type { EditorChart } from "~/lib/native/types";
 
-import { defaultSwitch, gridCeil, gridFloor, gridStep, onGrid } from "./chart";
+import { gridCeil, gridFloor, gridStep, onGrid } from "./chart";
 import type { EditRecorder } from "./document";
 
 const EPSILON = 1e-6;

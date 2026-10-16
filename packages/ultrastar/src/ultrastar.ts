@@ -1,4 +1,12 @@
-import { gridFromMetadata, quantizeNoteTiming, secondsToTicks, ticksToSeconds, type ChartGrid } from "./grid";
+import {
+  defaultSwitch,
+  gridFromMetadata,
+  quantizeNoteTiming,
+  secondsToTicks,
+  tickDuration,
+  ticksToSeconds,
+  type ChartGrid,
+} from "./grid";
 import {
   createId,
   DocumentValidationError,
@@ -247,7 +255,12 @@ export function serializeUltraStarWithDiagnostics(document: ChartDocument): Seri
         const start = breakTick(saved.start);
         const end = saved.end === undefined ? undefined : breakTick(saved.end);
         output.push(`- ${start}${end === undefined ? "" : ` ${end}`}`);
-      } else if (nextStart !== undefined) output.push(`- ${Math.min(lastEnd, nextStart)}`);
+      } else if (nextStart !== undefined) {
+        // The default the editor draws, so the file reads the same in every game and editor.
+        const gapEnd = Math.max(lastEnd, nextStart);
+        const time = defaultSwitch(ticksToSeconds(lastEnd, grid), ticksToSeconds(gapEnd, grid), tickDuration(grid.bpm));
+        output.push(`- ${Math.min(Math.max(breakTick(time), lastEnd), gapEnd)}`);
+      }
     }
   }
   output.push("E");

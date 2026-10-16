@@ -9,14 +9,13 @@ import { Effect, Schema } from "effect";
 
 import type { ChartChange, LineFields, NoteFields, SingerFields, SongFields } from "../../src/lib/native/contract";
 import { ChartOutOfStep } from "../errors";
+import { readSong } from "./chart";
 import { orDiskFull, type Queryable } from "./database";
 import { ExtraHeaders, Languages, lines, notes, singers, song } from "./schema";
 import { tagsOf, withTags } from "./tags";
 
 const encodeLanguages = Schema.encodeSync(Languages);
 const encodeExtraHeaders = Schema.encodeSync(ExtraHeaders);
-const decodeExtraHeaders = Schema.decodeUnknownEffect(ExtraHeaders);
-const decodeLanguages = Schema.decodeUnknownEffect(Languages);
 
 const outOfStep = (what: string) =>
   new ChartOutOfStep({ message: `The editor and the project disagree about ${what}, so the edit wasn't saved.` });
@@ -71,12 +70,8 @@ function lineChange(db: Queryable, id: number, before: LineFields | null, after:
 
 function songChange(db: Queryable, before: SongFields, after: SongFields) {
   return Effect.gen(function* () {
-    const [row] = yield* db.select().from(song).limit(1).pipe(Effect.orDie);
-    if (!row) return yield* outOfStep("the song details");
-    const stored = yield* decodeLanguages(row.language).pipe(Effect.orElseSucceed(() => null));
-    const headers = yield* decodeExtraHeaders(row.extraHeaders).pipe(Effect.orElseSucceed(() => null));
-    // As the editor read them: unreadable ones as none.
-    const current = { ...row, language: stored ?? [], tags: tagsOf(headers ?? []) };
+    const { songRow, language: stored, extraHeaders: headers } = yield* readSong(db);
+    const current = { ...songRow, language: stored, tags: tagsOf(headers) };
     if (!matches(current, before)) return yield* outOfStep("the song details");
     const { language, tags, ...rest } = after;
     yield* db
@@ -84,7 +79,7 @@ function songChange(db: Queryable, before: SongFields, after: SongFields) {
       .set({
         ...rest,
         ...(language === undefined ? {} : { language: encodeLanguages(language) }),
-        ...(tags === undefined ? {} : { extraHeaders: encodeExtraHeaders(withTags(headers ?? [], tags)) }),
+        ...(tags === undefined ? {} : { extraHeaders: encodeExtraHeaders(withTags(headers, tags)) }),
       })
       .pipe(orDiskFull);
   });

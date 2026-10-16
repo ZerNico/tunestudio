@@ -129,7 +129,9 @@ export function findLyrics(song: { artist: string; title: string; duration: numb
       entry = pickLyrics([...entries, ...alternatives], song);
     }
     if (!entry) return null;
-    const lines = entry.syncedLyrics ? parseLrc(entry.syncedLyrics) : plainLines(entry.plainLyrics ?? "");
+    // Synced lyrics that don't parse (only tags, or broken times) fall back to the plain ones.
+    const synced = entry.syncedLyrics ? parseLrc(entry.syncedLyrics) : [];
+    const lines = synced.length > 0 ? synced : plainLines(entry.plainLyrics ?? "");
     return {
       source: "lrclib",
       id: entry.id,
@@ -137,7 +139,7 @@ export function findLyrics(song: { artist: string; title: string; duration: numb
       title: entry.trackName,
       album: entry.albumName ?? null,
       duration: entry.duration ?? null,
-      synced: Boolean(entry.syncedLyrics) && lines.length > 0,
+      synced: synced.length > 0,
       instrumental: entry.instrumental ?? false,
       versionMismatch: isVariant(entry.trackName, song.title),
       lines,

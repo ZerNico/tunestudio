@@ -47,6 +47,8 @@ export function createFlow(stages: readonly Stage[]) {
     current: () => stages[index()]!,
     /** A job is running. */
     running,
+    /** A job that can't be stopped is running (saving): the dialog stays open until it's done. */
+    locked: () => running() && stages[index()]!.stoppable === false,
     back: () => {
       if (running()) stop();
       else if (index() > 0) show(index() - 1);
@@ -90,8 +92,16 @@ export function FlowView(props: {
   busy?: boolean;
   /** Shown above every stage: what the project is made from. */
   source?: JSX.Element;
+  /** Whether the dialog may close now: not while a job that can't be stopped runs. */
+  onLockedChange?: (locked: boolean) => void;
 }) {
   onSettled(() => () => props.flow.stop());
+  createEffect(
+    () => props.flow.locked(),
+    (locked) => {
+      props.onLockedChange?.(locked);
+    },
+  );
   createEffect(
     () => props.open,
     (open) => {
@@ -113,6 +123,7 @@ export function FlowView(props: {
           </Button>
         </Show>
         <DialogClose
+          disabled={props.flow.locked()}
           render={(closeProps: JSX.HTMLAttributes<HTMLButtonElement>) => <Button variant="outline" {...closeProps} />}
         >
           Cancel

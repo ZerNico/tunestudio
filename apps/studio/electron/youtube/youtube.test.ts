@@ -56,6 +56,10 @@ if (tool === "yt-dlp") {
     process.exit(0);
   }
   const format = value("-f");
+  // A video the length filter turns away is skipped without a word, as yt-dlp does with --quiet.
+  console.log("@duration " + behavior.video.duration);
+  const filter = /^duration<=\?(\d+)$/.exec(value("--match-filters") ?? "");
+  if (filter && behavior.video.duration > Number(filter[1])) process.exit(0);
   if (format.startsWith("bestvideo") && behavior.failVideo) fail(behavior.failVideo);
   if (format.startsWith("bestvideo") && behavior.failVideoUntilUpdated && !updated) fail(behavior.failVideoUntilUpdated);
   if (behavior.forbidden) {
@@ -381,6 +385,23 @@ describe("downloadVideo", () => {
       expect(media.audio).toBe(path.join(work, "audio.m4a"));
       expect(media.video).toBeNull();
       expect(media.videoProblem).toBe("Couldn't get the video from YouTube: Requested format is not available");
+    }).pipe(Effect.provide(layer));
+  });
+});
+
+describe("downloadVideo's length limit", () => {
+  it.effect("doesn't download a video longer than a song can be", () => {
+    const { layer, behave, calls, work } = setup();
+    behave({ video: { ...VIDEO_JSON, duration: 3600 } });
+    return Effect.gen(function* () {
+      const error = yield* Effect.flip(downloadVideo("dQw4w9WgXcQ", DEFAULT_SETTINGS, work, () => Effect.void));
+      expect(error).toMatchObject({
+        _tag: "VideoUnavailable",
+        message: expect.stringContaining("longer than 20 minutes"),
+      });
+      const [audio] = ytDlpCalls(calls());
+      expect(audio![audio!.indexOf("--match-filters") + 1]).toBe("duration<=?1200");
+      expect(fs.readdirSync(work)).toEqual([]);
     }).pipe(Effect.provide(layer));
   });
 });

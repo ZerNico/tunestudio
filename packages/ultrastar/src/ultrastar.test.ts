@@ -235,7 +235,14 @@ describe("serialization and validation", () => {
   it("adds breaks for newly created lyric lines", () => {
     const document = parse(": 0 4 0 one\n: 8 4 0 two\nE");
     document.notes[1]!.lineId = "new-line";
-    expect(serializeUltraStar(document)).toContain("one\n- 4\n: 8");
+    expect(serializeUltraStar(document)).toContain("one\n- 6\n: 8");
+  });
+
+  it("writes a break without a stored switch where the editor draws it", () => {
+    // A tick is 1/8 s: gaps of 1 tick (at the end), 4 (two before the next note) and 20, 2.5 s (1 s after the end).
+    const document = parse(": 0 4 0 a\n: 5 2 0 b\n: 11 2 0 c\n: 33 2 0 d\nE");
+    for (const [index, note] of document.notes.entries()) note.lineId = `line-${index}`;
+    expect(serializeUltraStar(document)).toContain("a\n- 4\n: 5 2 0 b\n- 9\n: 11 2 0 c\n- 21\n");
   });
 
   it("warns about stale break timing instead of silently rewriting it", () => {

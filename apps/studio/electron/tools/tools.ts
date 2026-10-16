@@ -34,7 +34,7 @@ const Manifest = Schema.fromJsonString(
     version: Schema.String,
     checkedAt: Schema.Number,
     executables: Schema.Record(Schema.String, Schema.String),
-    sources: Schema.optional(Schema.Array(Schema.String)),
+    sources: Schema.Array(Schema.String),
   }),
 );
 type Manifest = typeof Manifest.Type;
@@ -260,12 +260,7 @@ export function toolsLayer(options: { folder: string; platform: Platform }) {
             const now = yield* Clock.currentTimeMillis;
             const installed = yield* readManifest(tool);
             const current = installed._tag === "Some" ? yield* installedPaths(tool, installed.value) : undefined;
-            // Installs from before the manifest named its sources are checked (and updated) right away.
-            const fresh =
-              installed._tag === "Some" &&
-              installed.value.sources !== undefined &&
-              now - installed.value.checkedAt < CHECK_INTERVAL[tool] &&
-              !force;
+            const fresh = installed._tag === "Some" && now - installed.value.checkedAt < CHECK_INTERVAL[tool] && !force;
             if (current && fresh) return current;
 
             yield* onProgress({ tool, phase: "checking" });
@@ -285,14 +280,20 @@ export function toolsLayer(options: { folder: string; platform: Platform }) {
               current &&
               installed._tag === "Some" &&
               installed.value.version === release.success.version &&
-              installed.value.sources?.join("\n") === sourcesOf(release.success).join("\n")
+              installed.value.sources.join("\n") === sourcesOf(release.success).join("\n")
             ) {
               yield* writeManifest(tool, { ...installed.value, checkedAt: now });
               return current;
             }
             const manifest = yield* install(release.success, onProgress);
             yield* log.write("INFO", "tools", `Installed ${tool} ${manifest.version}`);
-            return (yield* installedPaths(tool, manifest)) ?? {};
+            const files = yield* installedPaths(tool, manifest);
+            if (!files) {
+              return yield* new ToolDownloadFailed({
+                message: `${TOOL_LABELS[tool]} was installed, but its files aren't there. Try again.`,
+              });
+            }
+            return files;
           }),
         );
 

@@ -1,24 +1,18 @@
 /** The chart as the editor sees it: every singer, line and note with its row id, so edits can address them. */
 import { asc } from "drizzle-orm";
-import { Effect, Schema } from "effect";
+import { Effect } from "effect";
 
 import type { EditorChart, EditorLine, EditorNote, EditorSinger } from "../../src/lib/native/types";
-import { ProjectDamaged } from "../errors";
+import type { ProjectDamaged } from "../errors";
+import { readSong } from "./chart";
 import type { Queryable } from "./database";
-import { ExtraHeaders, Languages, lines, notes, singers, song } from "./schema";
+import { lines, notes, singers } from "./schema";
 import { tagsOf, withoutTags } from "./tags";
-
-const decodeLanguages = Schema.decodeUnknownEffect(Languages);
-const decodeExtraHeaders = Schema.decodeUnknownEffect(ExtraHeaders);
 
 /** The project's singers, lines and notes in order, with the grid (#BPM and #GAP) they are exported on. */
 export function readEditorChart(db: Queryable): Effect.Effect<EditorChart, ProjectDamaged> {
   return Effect.gen(function* () {
-    const [songRow] = yield* db.select().from(song).limit(1).pipe(Effect.orDie);
-    if (!songRow) return yield* new ProjectDamaged({ message: "The project has no song details; it may be damaged." });
-    // Unreadable (a damaged file) reads as none, so the chart still opens; saving them writes them anew.
-    const language = yield* decodeLanguages(songRow.language).pipe(Effect.orElseSucceed(() => []));
-    const headers = yield* decodeExtraHeaders(songRow.extraHeaders).pipe(Effect.orElseSucceed(() => []));
+    const { songRow, language, extraHeaders: headers } = yield* readSong(db);
     const singerRows = yield* db.select().from(singers).orderBy(asc(singers.index)).pipe(Effect.orDie);
     const lineRows = yield* db
       .select()

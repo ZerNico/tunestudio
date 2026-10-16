@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { EditorChart, EditorNote } from "~/lib/native/types";
 
-import { chartEnd, defaultSwitch, drawnNotes, lineBreaks, lineIndexAt, lineSpans, lineText, stepLine } from "./chart";
+import { chartEnd, drawnNotes, lineBreaks, lineIndexAt, lineSpans, lineText, stepLine } from "./chart";
 import { testSong } from "./test-chart";
 
 let nextId = 1;
@@ -69,17 +69,6 @@ describe("editor chart", () => {
 });
 
 describe("line breaks", () => {
-  it("puts a break without a stored switch where YASS, Karedi and UltraStar Deluxe put it", () => {
-    const step = 0.1;
-    expect(defaultSwitch(2, 7, step)).toBe(4);
-    expect(defaultSwitch(2, 5, step)).toBe(3);
-    expect(defaultSwitch(2, 2.1, step)).toBe(2);
-    expect(defaultSwitch(2, 2.6, step)).toBeCloseTo(2.4);
-    expect(defaultSwitch(2, 3.2, step)).toBeCloseTo(2.9);
-    expect(defaultSwitch(2, 3.6, step)).toBeCloseTo(3.2);
-    expect(defaultSwitch(2, 3.8, step)).toBeCloseTo(3);
-  });
-
   it("puts each break at the stored switch, or where the default rule says", () => {
     // P1: 1.0–2.1, then 5.0–6.3 (a gap of 2.9 s, nothing stored); P2 has one line, so no break.
     const breaks = lineBreaks(chart);

@@ -104,22 +104,31 @@ export function dropBacking(lines: readonly LyricLine[]): LyricLine[] {
     .filter((line) => line.text.split(" ").some((w) => isWord(w)));
 }
 
+/**
+ * The chart for `input`. A cancelled chart (`signal`) stops before the next model runs; the aligner and GAME, the
+ * longest, also stop where they are, so little runs on beside a new one.
+ */
 export async function makeChart(
   input: ChartInput,
   engines: ChartEngines,
   onStep: (step: ChartStep, percent: number) => void = () => {},
+  signal?: AbortSignal,
 ): Promise<ChartResult> {
   onStep("melody", 0);
   const track: FullPitchTrack = pitchTrack(await engines.trackPitch(input.vocals16k), input.vocals16k);
+  signal?.throwIfAborted();
 
   onStep("beat", 0);
   const logits = await engines.beatLogits(input.mix22k);
+  signal?.throwIfAborted();
   const { beats, downbeats } = beatTimes(logits.beat, logits.downbeat);
   const { bpm, t0 } = fitGrid(beats, downbeats);
 
   onStep("timing", 0);
   const aligner = await engines.alignerOutputs(input.vocals16k, (percent) => onStep("timing", percent));
+  signal?.throwIfAborted();
   const forcedAlign = async (from: number, to: number, ids: Int32Array) => {
+    signal?.throwIfAborted();
     try {
       return await engines.forcedAlign(aligner.emissions, ALIGNER_CLASSES, from, to, ids);
     } catch (error) {
@@ -151,6 +160,7 @@ export async function makeChart(
     gameLanguage(input.language),
     (percent) => onStep("notes", percent),
   );
+  signal?.throwIfAborted();
   const byRequest = splitGameNotes(raw);
   let next = 0;
   const outLines: { notes: Note[]; trace: TraceEntry[] }[] = lines.map(({ spans }, i) => {
@@ -164,6 +174,7 @@ export async function makeChart(
   const shifts = pitchFeatures.length
     ? await engines.predictPitchShifts(featureMatrix(pitchFeatures))
     : new Float32Array();
+  signal?.throwIfAborted();
   let at = 0;
   for (const { notes } of outLines) {
     applyPitchShifts(notes, shifts.subarray(at * 5, (at + notes.length) * 5));
@@ -173,6 +184,7 @@ export async function makeChart(
     endFeatures(noteFeatures(notes, trace, track, tuning, scale), trace),
   );
   const deltas = endRows.length ? await engines.predictNoteEnds(featureMatrix(endRows)) : new Float32Array();
+  signal?.throwIfAborted();
   at = 0;
   for (const { notes, trace } of outLines) {
     applyEnds(notes, trace, deltas.subarray(at, at + notes.length), grid);

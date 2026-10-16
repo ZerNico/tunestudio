@@ -2,7 +2,8 @@
  * Looping a stretch of the song. The range is marked on the time ruler: a click there still moves the playhead, a drag
  * marks a range (on the grid) and turns looping on; a range's edges are dragged to change it, a double-click removes
  * it. L (or the transport's button) turns looping on and off; with notes selected, turning it on loops them. While
- * looping, playing starts at the range when the playhead is outside it, and goes back to its start at its end.
+ * looping, playing starts at the range when the playhead is outside it, and goes back to its start at its end (or at
+ * the song's, for a range past it).
  */
 import { createSignal } from "solid-js";
 
@@ -128,6 +129,8 @@ export function createLoop(options: {
       const current = active();
       return current ? loopBack(time, current) : null;
     },
+    /** Where playing goes on from when the audio ends before the range does: its start (null: not looping). */
+    restart: (): number | null => active()?.start ?? null,
   };
 }
 

@@ -63,7 +63,7 @@ describe("playback", () => {
 
   it("reads the time every frame while playing, and reports it", () => {
     const seen: number[] = [];
-    const playback = createPlayback(urls, (time) => seen.push(time));
+    const playback = createPlayback(urls, { onFrame: (time) => seen.push(time) });
     playback.play();
     const audio = FakeAudio.made[0]!;
     audio.currentTime = 1.25;
@@ -119,11 +119,7 @@ describe("playback", () => {
   });
 
   it("plays slower with the pitch kept, on every source, and starts where it is told", () => {
-    const playback = createPlayback(
-      urls,
-      () => {},
-      (time) => (time < 5 ? 5 : time),
-    );
+    const playback = createPlayback(urls, { startAt: (time) => (time < 5 ? 5 : time) });
     playback.setSpeed(0.5);
     playback.play();
     const song = FakeAudio.made[0]!;
@@ -133,6 +129,20 @@ describe("playback", () => {
     expect(FakeAudio.made[1]!.playbackRate).toBe(0.5);
     playback.setSpeed(1);
     expect([song.playbackRate, FakeAudio.made[1]!.playbackRate]).toEqual([1, 1]);
+  });
+
+  it("goes on from where it is told when the audio ends, else stops there", () => {
+    let again: number | null = 12;
+    const playback = createPlayback(urls, { onEnd: () => again });
+    playback.play();
+    const song = FakeAudio.made[0]!;
+    song.currentTime = 200;
+    song.paused = true;
+    song.fire("ended");
+    expect([playback.playing(), playback.time(), song.currentTime, song.paused]).toEqual([true, 12, 12, false]);
+    again = null;
+    song.fire("ended");
+    expect([playback.playing(), playback.time()]).toEqual([false, 200]);
   });
 
   it("plays every source at the volume set, before or while it plays", () => {

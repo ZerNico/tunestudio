@@ -19,14 +19,18 @@ export const SOURCE_LABELS: Record<PlaybackSource, string> = {
 export const SPEEDS = [1, 0.75, 0.5] as const;
 export type Speed = (typeof SPEEDS)[number];
 
-/**
- * `onFrame` gets the time on every frame while playing (to follow the playhead, to loop); `startAt` may move where
- * playing starts (a loop starts at its range).
- */
+export interface PlaybackOptions {
+  /** The time on every frame while playing (to follow the playhead, to loop). */
+  onFrame?: (seconds: number) => void;
+  /** Where playing starts from `seconds` (a loop starts at its range). */
+  startAt?: (seconds: number) => number;
+  /** Where playing goes on from once the audio ends (a loop's start), or null to stop. */
+  onEnd?: () => number | null;
+}
+
 export function createPlayback(
   urls: Partial<Record<PlaybackSource, string>>,
-  onFrame: (seconds: number) => void = () => {},
-  startAt: (seconds: number) => number = (seconds) => seconds,
+  { onFrame = () => {}, startAt = (seconds) => seconds, onEnd = () => null }: PlaybackOptions = {},
 ) {
   const available = PLAYBACK_SOURCES.filter((source) => urls[source]);
   const [source, setSource] = createSignal<PlaybackSource | null>(available[0] ?? null);
@@ -56,7 +60,13 @@ export function createPlayback(
         if (Number.isFinite(audio!.duration)) setDuration(Math.max(duration(), audio!.duration));
       });
       audio.addEventListener("ended", () => {
-        if (which === current) stopTicking(audio!.duration);
+        if (which !== current) return;
+        const again = onEnd();
+        // Nothing to go on with before the end (a loop starting past it): stops.
+        if (again === null || again >= audio!.duration) return stopTicking(audio!.duration);
+        audio!.currentTime = again;
+        setTime(again);
+        audio!.play().catch(() => stopTicking(audio!.currentTime));
       });
       elements.set(which, audio);
     }

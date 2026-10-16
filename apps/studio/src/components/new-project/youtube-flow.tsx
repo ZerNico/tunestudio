@@ -13,7 +13,7 @@ import { native } from "~/lib/native/client";
 import { LONGEST_SONG_SECONDS } from "~/lib/native/contract";
 import { errorMessage } from "~/lib/native/errors";
 import type { ImportProgress, ModelStatus, OpenedProject, YoutubeVideo } from "~/lib/native/types";
-import { AUDIO_FORMAT_LABELS, type Settings, VIDEO_FORMAT_LABELS } from "~/lib/settings";
+import { AUDIO_FORMAT_LABELS, encodesAudio, type Settings, VIDEO_FORMAT_LABELS } from "~/lib/settings";
 
 import { Checklist } from "./checklist";
 import { CoverPicker } from "./cover-picker";
@@ -28,10 +28,9 @@ export const YOUTUBE_STAGES = ["Song", "Lyrics", "Chart", "Finish"];
 
 /** What the settings will download, in a few words. */
 export function describeDownload(settings: Settings): string {
-  const audio =
-    settings.audio.format === "m4a" || settings.audio.format === "opus"
-      ? AUDIO_FORMAT_LABELS[settings.audio.format]
-      : `${AUDIO_FORMAT_LABELS[settings.audio.format]} ${settings.audio.bitrate} kbps`;
+  const audio = encodesAudio(settings.audio)
+    ? `${AUDIO_FORMAT_LABELS[settings.audio.format]} ${settings.audio.bitrate} kbps`
+    : AUDIO_FORMAT_LABELS[settings.audio.format];
   if (!settings.video.download) return `Audio as ${audio}, without the video`;
   return `Audio as ${audio}, video as ${VIDEO_FORMAT_LABELS[settings.video.format]} up to ${settings.video.maxResolution}p`;
 }
@@ -209,6 +208,8 @@ export function YoutubeFlow(props: {
   open: boolean;
   header: (stage: number) => JSX.Element;
   onOpened: (project: OpenedProject) => void;
+  /** Whether the dialog may close now: not while the project is saved. */
+  onLockedChange?: (locked: boolean) => void;
 }) {
   const project = createNewProject();
   const [lookup, setLookup] = createSignal<Lookup>({ status: "tools" });
@@ -255,6 +256,7 @@ export function YoutubeFlow(props: {
       open={props.open}
       busy={lookup().status === "looking"}
       header={props.header}
+      onLockedChange={props.onLockedChange}
       source={
         <Show
           when={video()}

@@ -90,8 +90,12 @@ export function chartFromFiles(
           predictPitchShifts: (features) => addon.predictPitchShifts(models.chartPitchFix, features),
           predictNoteEnds: (features) => addon.predictNoteEnds(models.chartNoteEnds, features),
         };
-        return makeChart({ vocals16k, vocals44k, mix22k, lines, language: source.language }, engines, (step, percent) =>
-          Effect.runFork(onProgress({ step: STEPS[step], done: percent, total: 100, unit: "percent" })),
+        return makeChart(
+          { vocals16k, vocals44k, mix22k, lines, language: source.language },
+          engines,
+          (step, percent) =>
+            Effect.runFork(onProgress({ step: STEPS[step], done: percent, total: 100, unit: "percent" })),
+          signal,
         );
       },
       catch: (error) =>

@@ -236,13 +236,19 @@ describe("Tools", () => {
   it.effect("installs a tool again when the same version comes from other files", () => {
     const { internet, folder, layer } = setup();
     internet.release("yt-dlp/yt-dlp", "2026.08.19", { "yt-dlp_macos.zip": ytDlpBuild("onedir") });
-    // What an older Tune Studio installed: the single-file build, without its sources.
+    // Installed before: the single-file build of the same version.
     const old = path.join(folder, "yt-dlp", "2026.08.19");
     fs.mkdirSync(old, { recursive: true });
     fs.writeFileSync(path.join(old, "yt-dlp"), script("onefile"), { mode: 0o755 });
     fs.writeFileSync(
       path.join(folder, "yt-dlp", "current.json"),
-      JSON.stringify({ version: "2026.08.19", checkedAt: 0, executables: { "yt-dlp": "2026.08.19/yt-dlp" } }),
+      JSON.stringify({
+        version: "2026.08.19",
+        // Due for a check.
+        checkedAt: -1e12,
+        executables: { "yt-dlp": "2026.08.19/yt-dlp" },
+        sources: ["https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp_macos"],
+      }),
     );
     return Effect.gen(function* () {
       const installed = yield* (yield* Tools).ensure(["yt-dlp"]);

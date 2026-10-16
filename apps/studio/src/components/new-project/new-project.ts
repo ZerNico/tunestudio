@@ -308,9 +308,12 @@ export function createNewProject() {
       setLyricsSource("own");
     },
     checkModels: async () => setModels(await native.models.status().catch(() => null)),
-    /** The song is in a draft now. A draft that arrives after the flow went away is thrown away. */
+    /**
+     * The song is in a draft now. A draft that arrives after the flow went away is thrown away, and so is one that
+     * arrives when there is one already (a stopped download that finished anyway, after it was started again).
+     */
     setDraft: (downloaded: DownloadedDraft) => {
-      if (disposed) {
+      if (disposed || (currentDraft && currentDraft.draftId !== downloaded.draftId)) {
         native.drafts.discard({ draftId: downloaded.draftId }).catch(() => {});
         return;
       }

@@ -112,24 +112,36 @@ export default function HomeScreen() {
       });
     },
     onRemove: (project: RecentProject) => {
-      setRemoved((current) => new Set([...current, project.id]));
-      native.recents.remove({ path: project.path }).catch((error: unknown) => console.error(error));
-      toast.add({
-        type: "success",
-        title: "Removed from recents",
-        description: `${project.artist}, “${project.title}”. The project file stays where it is.`,
-        actionProps: {
-          children: "Undo",
-          onClick: () => {
-            setRemoved((current) => {
-              const next = new Set(current);
-              next.delete(project.id);
-              return next;
-            });
-            native.recents.restore(toEntry(project)).catch((error: unknown) => console.error(error));
-          },
+      const show = (shown: boolean) =>
+        setRemoved((current) => {
+          const next = new Set(current);
+          if (shown) next.delete(project.id);
+          else next.add(project.id);
+          return next;
+        });
+      show(false);
+      native.recents.remove({ path: project.path }).then(
+        () =>
+          toast.add({
+            type: "success",
+            title: "Removed from recents",
+            description: `${project.artist}, “${project.title}”. The project file stays where it is.`,
+            actionProps: {
+              children: "Undo",
+              onClick: () => {
+                show(true);
+                native.recents.restore(toEntry(project)).catch((error: unknown) => {
+                  show(false);
+                  toast.add({ type: "error", title: "Couldn't put it back", description: errorMessage(error) });
+                });
+              },
+            },
+          }),
+        (error: unknown) => {
+          show(true);
+          toast.add({ type: "error", title: "Couldn't remove it from recents", description: errorMessage(error) });
         },
-      });
+      );
     },
   };
 

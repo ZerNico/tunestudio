@@ -198,18 +198,26 @@ export default function ProjectScreen() {
 
   const playback = createPlayback(
     { audio: media("audio"), vocals: media("vocals"), instrumental: media("instrumental") },
-    (time) => {
-      const back = loop.back(time);
-      if (back !== null) playback.seek(back);
-      const now = back ?? time;
-      if (prefs.tones()) tones.frame(now, playback.speed());
-      // Scrolled away, then the playhead came back on screen (or the view back to it): following goes on.
-      if (scrolledAway && width() > 0 && onPage(view(), now, width())) scrolledAway = false;
-      if (prefs.following() && !scrolledAway && width() > 0)
-        setView((current) => follow(current, now, width(), length()));
+    {
+      onFrame: (time) => {
+        const back = loop.back(time);
+        if (back !== null) playback.seek(back);
+        const now = back ?? time;
+        if (prefs.tones()) tones.frame(now, playback.speed());
+        // Scrolled away, then the playhead came back on screen (or the view back to it): following goes on.
+        if (scrolledAway && width() > 0 && onPage(view(), now, width())) scrolledAway = false;
+        if (prefs.following() && !scrolledAway && width() > 0)
+          setView((current) => follow(current, now, width(), length()));
+      },
+      startAt: (time) => loop.startAt(time),
+      onEnd: () => loop.restart(),
     },
-    (time) => loop.startAt(time),
   );
+  /** Space or the transport's button: starting to play follows the playhead again. */
+  const togglePlay = () => {
+    if (!playback.playing()) scrolledAway = false;
+    playback.toggle();
+  };
   // Tones stop with playback, at another speed (they start again on the next frame) and when turned off.
   createEffect(
     () => [playback.playing(), playback.speed(), prefs.tones()] as const,
@@ -463,7 +471,14 @@ export default function ProjectScreen() {
         runEditCommand(command);
         return;
       }
-      // Esc: stops a drag first, then goes back to Select, then deselects.
+      // Esc: stops a drag first (a loop range or song marker on the ruler here, notes and breaks in their own keys),
+      // then goes back to Select, then deselects.
+      if (event.key === "Escape" && (loop.busy() || songMarkers.busy())) {
+        event.preventDefault();
+        loop.cancel();
+        songMarkers.cancel();
+        return;
+      }
       if (event.key === "Escape" && !gestureBusy() && tools.tool() !== "select") {
         tools.setTool("select");
         return;
@@ -479,8 +494,7 @@ export default function ProjectScreen() {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       if (event.key === " ") {
         event.preventDefault();
-        if (!playback.playing()) scrolledAway = false;
-        playback.toggle();
+        togglePlay();
       } else if (event.key === "." || event.key === ",") {
         event.preventDefault();
         goToLine(stepLine(lines(), playback.time(), event.key === "." ? 1 : -1));
@@ -727,6 +741,7 @@ export default function ProjectScreen() {
       </div>
       <Transport
         playback={playback}
+        onPlay={togglePlay}
         length={length()}
         onZoom={(factor) => changeView(zoomAt(view(), factor, width() / 2, width(), length()))}
         showPitch={pitch() ? showPitch() : undefined}

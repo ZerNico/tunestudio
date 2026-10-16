@@ -21,6 +21,7 @@ import {
   AUDIO_FORMATS,
   AUDIO_NORMALIZATION_LABELS,
   AUDIO_NORMALIZATIONS,
+  encodesAudio,
   type Settings,
   VIDEO_FORMAT_LABELS,
   VIDEO_FORMATS,
@@ -60,10 +61,11 @@ export default function SettingsScreen() {
 
   /** Applies a change right away and saves it; if saving fails, shows what is stored instead. */
   const save = (next: Settings) => {
+    const previous = settings();
     setSettings(next);
     native.settings.set(next).catch(async (error: unknown) => {
       toast.add({ type: "error", title: "Couldn't save the settings", description: errorMessage(error) });
-      setSettings(await native.settings.get());
+      setSettings(await native.settings.get().catch(() => previous));
     });
   };
   const setAudio = (change: Partial<Settings["audio"]>) =>
@@ -72,11 +74,9 @@ export default function SettingsScreen() {
     save({ ...settings(), video: { ...settings().video, ...change } });
 
   const bitrateHint = () => {
-    const { format, normalization } = settings().audio;
-    if (format === "mp3" || format === "ogg" || normalization === "rewrite") {
-      return "The quality the audio is converted at.";
-    }
-    return `${AUDIO_FORMAT_LABELS[format]} is saved as YouTube serves it; this applies only when it is normalized.`;
+    const { audio } = settings();
+    if (encodesAudio(audio)) return "The quality the audio is converted at.";
+    return `${AUDIO_FORMAT_LABELS[audio.format]} is saved as YouTube serves it; this applies only when it is normalized.`;
   };
 
   return (
@@ -296,7 +296,7 @@ function ToolsSection(props: { initial: readonly ToolStatus[] }) {
     } catch (error) {
       if (isAbort(error)) return;
       toast.add({ type: "error", title: "Couldn't update the download tools", description: errorMessage(error) });
-      setStatus(await native.tools.status());
+      setStatus(await native.tools.status().catch(() => status()));
     } finally {
       setChecking(false);
       setProgress(null);

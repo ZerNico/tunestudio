@@ -83,3 +83,21 @@ export function midiToPitchName(midi: number): string {
   const names = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"];
   return `${names[((midi % 12) + 12) % 12]}${Math.floor(midi / 12) - 1}`;
 }
+
+/**
+ * When the next line appears if the chart doesn't say, by the rule YASS, Karedi and UltraStar Deluxe's editor share
+ * (the one ultrastar-es.org expects), so a chart reads the same in all of them. In a gap of 4 s or more, 2 s after the
+ * last note; of 2 s or more, 1 s after. Shorter ones go by grid steps (`step`, the file's beats): under 2 at the last
+ * note's end, up to 8 two before the next note, up to 12 three before, up to 16 four before, else ten after the end.
+ */
+export function defaultSwitch(gapStart: number, gapEnd: number, step: number): number {
+  const seconds = gapEnd - gapStart;
+  if (seconds >= 4) return gapStart + 2;
+  if (seconds >= 2) return gapStart + 1;
+  const steps = Math.round(seconds / step);
+  if (steps < 2) return gapStart;
+  if (steps <= 8) return gapEnd - 2 * step;
+  if (steps <= 12) return gapEnd - 3 * step;
+  if (steps <= 16) return gapEnd - 4 * step;
+  return gapStart + 10 * step;
+}

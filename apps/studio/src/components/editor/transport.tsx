@@ -72,6 +72,8 @@ function VolumeTrack(props: JSX.HTMLAttributes<HTMLDivElement> & { dimmed?: bool
 /** Play/pause, where the playhead is, which source plays, looping, speed, following, tones, and zoom. */
 export function Transport(props: {
   playback: Playback;
+  /** Play/pause. */
+  onPlay: () => void;
   length: number;
   onZoom: (factor: number) => void;
   /** Whether the sung pitch is drawn; undefined when the project has none to draw. */
@@ -122,7 +124,7 @@ export function Transport(props: {
         size="icon-sm"
         aria-label={props.playback.playing() ? "Pause" : "Play"}
         disabled={!props.playback.source()}
-        onClick={() => props.playback.toggle()}
+        onClick={() => props.onPlay()}
         data-testid="transport-play"
       >
         <Show when={props.playback.playing()} fallback={<PlayIcon />}>

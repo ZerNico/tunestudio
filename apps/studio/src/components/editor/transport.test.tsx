@@ -10,6 +10,7 @@ import { Transport } from "./transport";
 /** The props besides playback that each test doesn't care about. */
 const rest = {
   length: 100,
+  onPlay: () => {},
   onZoom: () => {},
   onShowPitch: () => {},
   looping: false,

@@ -93,7 +93,7 @@ export function chartStage(project: NewProject): Stage {
         <Show when={error()}>
           {(message) => (
             <Note tone="error" testid="chart-error">
-              {message()} You can leave the chart empty and make it later in the project.
+              {message()} You can save the project without a chart and add the notes in the editor.
             </Note>
           )}
         </Show>
@@ -230,7 +230,7 @@ export function finishStage(
               {describeLyrics(project)}
             </SummaryRow>
             <SummaryRow label="Chart" testid="finish-chart">
-              <Show when={project.wantsChart() && chart()} fallback="Empty, to make later in the project">
+              <Show when={project.wantsChart() && chart()} fallback="Empty, to add the notes in the editor">
                 {(made) => (
                   <>
                     Made: {made().notes} notes in {lineCount(made().lines)}

@@ -32,6 +32,9 @@ if (devServerUrl && !/^http:\/\/(localhost|127\.0\.0\.1):\d+\/?$/.test(devServer
  */
 const background = process.env.TUNESTUDIO_BACKGROUND === "1";
 
+/** How long quitting waits for the services to release what they hold. */
+const QUIT_TIMEOUT_MS = 5000;
+
 const appUrl = devServerUrl ?? `${APP_ORIGIN}/`;
 const appOrigin = devServerUrl ? new URL(devServerUrl).origin : APP_ORIGIN;
 
@@ -45,12 +48,16 @@ app.enableSandbox();
 
 registerSchemes();
 
-const logger = createLogger(app.getPath("logs"));
-
-// `TUNESTUDIO_DATA_DIR` moves the data directory (and with it the single-instance lock and the
-// recent projects) elsewhere, so tests and screenshots never touch, or quit for, a running copy.
-if (process.env.TUNESTUDIO_DATA_DIR) app.setPath("userData", process.env.TUNESTUDIO_DATA_DIR);
+// `TUNESTUDIO_DATA_DIR` moves the data directory (and with it the single-instance lock, the
+// recent projects and the log) elsewhere, so tests and screenshots never touch, or quit for, a
+// running copy.
+if (process.env.TUNESTUDIO_DATA_DIR) {
+  app.setPath("userData", process.env.TUNESTUDIO_DATA_DIR);
+  app.setAppLogsPath(path.join(process.env.TUNESTUDIO_DATA_DIR, "logs"));
+}
 const dataDir = app.getPath("userData");
+
+const logger = createLogger(app.getPath("logs"));
 
 // `TUNESTUDIO_OFFLINE` keeps tests from downloading yt-dlp and FFmpeg.
 const runtime = makeRuntime(logger, {
@@ -206,8 +213,20 @@ function start() {
     return contents ? BrowserWindow.fromWebContents(contents) : null;
   });
 
-  // Services release what they hold (files, child processes) before the log is flushed.
-  app.on("before-quit", () => void runtime.dispose().finally(() => logger.flush()));
+  // Quitting waits while services release what they hold (projects, child processes) and the log
+  // is flushed, then quits for real; a service that hangs gets a few seconds. The windows go
+  // first, so nothing is edited against services that are closing.
+  let released = false;
+  app.on("before-quit", (event) => {
+    if (released) return;
+    event.preventDefault();
+    released = true;
+    for (const window of BrowserWindow.getAllWindows()) window.hide();
+    const timeout = new Promise((resolve) => setTimeout(resolve, QUIT_TIMEOUT_MS));
+    void Promise.race([runtime.dispose(), timeout])
+      .catch((error: unknown) => logger.write("ERROR", "main", `Quitting: ${String(error)}`))
+      .finally(() => logger.flush().finally(() => app.quit()));
+  });
 
   let window = createWindow();
   app.on("second-instance", () => {

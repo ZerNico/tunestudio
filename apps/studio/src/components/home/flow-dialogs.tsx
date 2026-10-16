@@ -1,5 +1,5 @@
 import type { JSX } from "@solidjs/web";
-import { createMemo, createSignal, For, Match, Show, Switch } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Match, Show, Switch } from "solid-js";
 import AudioLinesIcon from "~icons/lucide/audio-lines";
 import ConstructionIcon from "~icons/lucide/construction";
 import FileAudioIcon from "~icons/lucide/file-audio";
@@ -77,6 +77,15 @@ export function FlowDialog(props: {
 
   const [songBusy, setSongBusy] = createSignal(false);
   const [confirming, setConfirming] = createSignal(false);
+  /** A project is being saved: the dialog stays open until it's done (stopping would leave neither draft nor file). */
+  const [locked, setLocked] = createSignal(false);
+  // A new flow (or none) starts unlocked, even if the last one went away while saving.
+  createEffect(
+    () => props.flow,
+    () => {
+      setLocked(false);
+    },
+  );
   // A YouTube or audio project is set up as soon as its dialog opens; an UltraStar import only
   // once it saves or copies.
   const guarded = () => (shown()?.kind === "song" ? songBusy() : props.flow !== null);
@@ -87,6 +96,10 @@ export function FlowDialog(props: {
       disablePointerDismissal
       onOpenChange={(open: boolean, details: { cancel: () => void }) => {
         if (open) return;
+        if (locked()) {
+          details.cancel();
+          return;
+        }
         if (guarded()) {
           details.cancel();
           setConfirming(true);
@@ -95,7 +108,7 @@ export function FlowDialog(props: {
         props.onClose();
       }}
     >
-      <DialogContent class="w-[min(560px,calc(100vw-32px))]" data-testid="flow-dialog">
+      <DialogContent class="w-[min(560px,calc(100vw-32px))]" showCloseButton={!locked()} data-testid="flow-dialog">
         <Switch>
           <Match when={ofKind("youtube")}>
             <For each={youtubeFlows()}>
@@ -105,6 +118,7 @@ export function FlowDialog(props: {
                   videoId={flow.videoId}
                   open={props.flow !== null}
                   onOpened={props.onOpened}
+                  onLockedChange={setLocked}
                   header={(step) => (
                     <FlowHeader
                       kind="youtube"

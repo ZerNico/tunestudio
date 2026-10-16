@@ -336,7 +336,7 @@ describe("lyrics stage and saving", () => {
     await user.click(screen.getByTestId("flow-next"));
     expect(await screen.findByTestId("chart-choice-hint")).toHaveTextContent("The project starts with an empty chart.");
     await user.click(screen.getByTestId("flow-next"));
-    expect(await screen.findByTestId("finish-chart")).toHaveTextContent("Empty, to make later in the project");
+    expect(await screen.findByTestId("finish-chart")).toHaveTextContent("Empty, to add the notes in the editor");
     await user.click(screen.getByTestId("flow-next"));
     await vi.waitFor(() => expect(onOpened).toHaveBeenCalled());
     expect(native.drafts.makeChart).not.toHaveBeenCalled();
@@ -599,6 +599,21 @@ describe("lyrics stage and saving", () => {
     await toLyrics(user);
     cleanup();
     expect(native.drafts.discard).toHaveBeenCalledWith({ draftId: "draft-1" });
+  });
+
+  it("throws away a stopped download that finishes after the song was downloaded again", async () => {
+    let finish!: () => void;
+    native.youtube.download
+      .mockImplementationOnce(async () => steps([], DRAFT, new Promise<void>((resolve) => (finish = resolve))))
+      .mockImplementationOnce(async () => steps([], { ...DRAFT, draftId: "draft-2" }));
+    const { user } = setup();
+    await vi.waitFor(() => expect(screen.getByTestId("flow-next")).toBeEnabled());
+    await user.click(screen.getByTestId("flow-next"));
+    await screen.findByText("Downloading the song");
+    await user.click(screen.getByTestId("flow-back"));
+    await toLyrics(user);
+    finish();
+    await vi.waitFor(() => expect(native.drafts.discard).toHaveBeenCalledExactlyOnceWith({ draftId: "draft-1" }));
   });
 
   it("throws away a draft whose download finishes after the dialog closed", async () => {
@@ -887,7 +902,7 @@ describe("chart and finish stages", () => {
     await user.click(await screen.findByTestId("flow-next"));
     await user.click(await screen.findByTestId("flow-next"));
     expect(await screen.findByTestId("chart-error")).toHaveTextContent(
-      "The lyrics couldn't be matched to the vocals. You can leave the chart empty",
+      "The lyrics couldn't be matched to the vocals. You can save the project without a chart",
     );
     expect(screen.getByTestId("chart-choice")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Leave it empty" }));
@@ -959,15 +974,32 @@ describe("chart and finish stages", () => {
     expect(native.drafts.makeChart).toHaveBeenCalledTimes(3);
   });
 
-  it("can't be stopped with Back while saving", async () => {
+  it("can't be stopped with Back or Cancel while saving", async () => {
     native.drafts.create.mockImplementation(async () =>
       steps([{ step: "Saving the project", done: 0, total: 0 }], PROJECT, new Promise(() => {})),
     );
-    const { user } = setup();
+    const onLockedChange = vi.fn();
+    const user = userEvent.setup();
+    render(() => (
+      <Dialog open>
+        <DialogContent>
+          <YoutubeFlow
+            videoId="dQw4w9WgXcQ"
+            url="https://youtu.be/dQw4w9WgXcQ"
+            open
+            onOpened={() => {}}
+            onLockedChange={onLockedChange}
+            header={(step) => <h2 data-testid="step">{step}</h2>}
+          />
+        </DialogContent>
+      </Dialog>
+    ));
     await toLyrics(user);
     await createProject(user);
     await screen.findByTestId("finish-progress");
     expect(screen.queryByTestId("flow-back")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    expect(onLockedChange).toHaveBeenLastCalledWith(true);
   });
 
   it("says why saving failed, and stays on the summary to try again", async () => {
@@ -988,6 +1020,9 @@ describe("wording", () => {
     expect(describeDownload({ ...DEFAULT_SETTINGS, video: { ...DEFAULT_SETTINGS.video, download: false } })).toBe(
       "Audio as M4A (AAC), without the video",
     );
+    // Normalizing encodes it, at the bitrate set.
+    const normalized = { ...DEFAULT_SETTINGS.audio, normalization: "rewrite" as const };
+    expect(describeDownload({ ...DEFAULT_SETTINGS, audio: normalized })).toMatch(/^Audio as M4A \(AAC\) 256 kbps,/);
     const ready = { separation: true, whisper: false, chart: true };
     expect(downloadTasks(DEFAULT_SETTINGS, ready)).toEqual([
       "Downloading the audio",

@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { asc } from "drizzle-orm";
 import { Effect, Schema } from "effect";
 
 import { ProjectDamaged } from "../errors";
@@ -41,14 +41,6 @@ export function replaceChart(
   });
 }
 
-/** Whether any note was changed by hand since it was made or imported. */
-export function hasEditedNotes(db: Queryable): Effect.Effect<boolean> {
-  return Effect.map(
-    db.select({ id: notes.id }).from(notes).where(eq(notes.edited, true)).limit(1).pipe(Effect.orDie),
-    (rows) => rows.length > 0,
-  );
-}
-
 function writeSingers(db: Queryable, chartSingers: readonly ChartSingerRow[]) {
   return Effect.gen(function* () {
     for (const singer of chartSingers) {
@@ -81,13 +73,24 @@ function writeSingers(db: Queryable, chartSingers: readonly ChartSingerRow[]) {
 
 const damaged = () => new ProjectDamaged({ message: "The project's song details are damaged." });
 
-/** Reads the project's chart back. A JSON column that doesn't decode means a damaged file. */
-export function readChart(db: Queryable): Effect.Effect<ProjectChart, ProjectDamaged> {
+/**
+ * The project's song details, its JSON columns decoded. One that doesn't decode means a damaged file: reading it as
+ * empty would lose what it holds the next time the details are saved.
+ */
+export function readSong(db: Queryable) {
   return Effect.gen(function* () {
     const [songRow] = yield* db.select().from(song).limit(1).pipe(Effect.orDie);
     if (!songRow) return yield* new ProjectDamaged({ message: "The project has no song details; it may be damaged." });
     const language = yield* decodeLanguages(songRow.language).pipe(Effect.mapError(damaged));
     const extraHeaders = yield* decodeExtraHeaders(songRow.extraHeaders).pipe(Effect.mapError(damaged));
+    return { songRow, language, extraHeaders };
+  });
+}
+
+/** Reads the project's chart back. */
+export function readChart(db: Queryable): Effect.Effect<ProjectChart, ProjectDamaged> {
+  return Effect.gen(function* () {
+    const { songRow, language, extraHeaders } = yield* readSong(db);
 
     const singerRows = yield* db.select().from(singers).orderBy(asc(singers.index)).pipe(Effect.orDie);
     const lineRows = yield* db

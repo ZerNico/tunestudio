@@ -4,15 +4,7 @@ import { Layer } from "effect";
 import { Models, modelsLayer } from "../models/models";
 import { Native, nativeLayer } from "../native/native";
 import { projectsLayer } from "../project/projects";
-import {
-  COVER_HOSTS,
-  Downloads,
-  downloadsLayer,
-  LYRICS_HOSTS,
-  MODEL_HOSTS,
-  THUMBNAIL_HOSTS,
-  TOOL_HOSTS,
-} from "../tools/downloads";
+import type { Downloads } from "../tools/downloads";
 import type { Platform } from "../tools/sources";
 import { toolsLayer } from "../tools/tools";
 import type { AppLog } from "./app-log";
@@ -43,8 +35,8 @@ export interface StudioServicesOptions {
   native?: Layer.Layer<Native>;
   models?: Layer.Layer<Models>;
   platform?: Platform;
-  /** Tests pass a fake internet; the app downloads for real from the tool hosts. */
-  downloads?: Layer.Layer<Downloads>;
+  /** The app downloads for real from the tool hosts; tests from a fake internet, or nowhere. */
+  downloads: Layer.Layer<Downloads>;
 }
 
 /**
@@ -52,9 +44,7 @@ export interface StudioServicesOptions {
  * (`runtime.ts`); tests pass their own and get the real projects, recents, settings and file system.
  */
 export function studioServices(options: StudioServicesOptions) {
-  const downloads =
-    options.downloads ??
-    downloadsLayer({ hosts: [...TOOL_HOSTS, ...THUMBNAIL_HOSTS, ...COVER_HOSTS, ...LYRICS_HOSTS, ...MODEL_HOSTS] });
+  const { downloads } = options;
   const own = Layer.mergeAll(
     projectsLayer(options.appVersion),
     recentsLayer(options.recentsFile),

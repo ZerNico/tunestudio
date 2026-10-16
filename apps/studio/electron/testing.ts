@@ -15,6 +15,7 @@ import { Native, type NativeAddon } from "./native/native";
 import { AppLog } from "./services/app-log";
 import { Desktop } from "./services/desktop";
 import { studioServices } from "./services/layer";
+import { downloadsLayer } from "./tools/downloads";
 
 /**
  * A stand-in for the native addon: "separates" the vocals by halving the mix, on the GPU, and
@@ -189,7 +190,7 @@ export function recordingDesktop(musicFolder: string) {
   return { recorded, layer };
 }
 
-/** A runtime like the app's, in `dir`: real projects, recents and files, recorded desktop and log. */
+/** A runtime like the app's, in `dir`: real projects, recents and files, recorded desktop and log, no internet. */
 export function testRuntime(dir: string) {
   const { recorded, layer } = recordingDesktop(path.join(dir, "Music"));
   const lines: string[] = [];
@@ -207,6 +208,8 @@ export function testRuntime(dir: string) {
       nativeFolder: path.join(dir, "native"),
       native: fakeNative,
       models: fakeModels,
+      // Nothing is downloaded: a test that needs the internet fakes it.
+      downloads: downloadsLayer({ hosts: [] }),
       log,
       desktop: layer,
     }),

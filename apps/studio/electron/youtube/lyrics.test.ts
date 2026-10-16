@@ -144,6 +144,14 @@ describe("findLyrics", () => {
     }).pipe(Effect.provide(lrclib([entry(1), entry(2, { trackName: "Sommerregen (Live)" })]))),
   );
 
+  it.effect("uses the plain lyrics when the synced ones don't parse", () =>
+    Effect.gen(function* () {
+      const found = yield* findLyrics(SONG);
+      expect(found).toMatchObject({ synced: false });
+      expect(found?.lines.map((line) => line.text)).toEqual(["Ahh-ahh", "Fenster auf kipp"]);
+    }).pipe(Effect.provide(lrclib([entry(1, { syncedLyrics: "[ar: RAUM27]\n[ti: Sommerregen]" })]))),
+  );
+
   it.effect("is null when LRCLIB has nothing", () =>
     Effect.gen(function* () {
       expect(yield* findLyrics(SONG).pipe(Effect.provide(lrclib([])))).toBeNull();

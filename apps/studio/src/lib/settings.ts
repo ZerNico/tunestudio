@@ -46,6 +46,11 @@ export type AudioFormat = Settings["audio"]["format"];
 export type AudioNormalization = Settings["audio"]["normalization"];
 export type VideoFormat = Settings["video"]["format"];
 
+/** Whether downloaded audio is encoded at the bitrate set: MP3 and Ogg always, M4A and Opus only to normalize it. */
+export function encodesAudio(audio: Settings["audio"]): boolean {
+  return audio.format === "mp3" || audio.format === "ogg" || audio.normalization === "rewrite";
+}
+
 /** USDB Syncer's defaults. */
 export const DEFAULT_SETTINGS: Settings = {
   audio: { format: "m4a", bitrate: 256, normalization: "off" },

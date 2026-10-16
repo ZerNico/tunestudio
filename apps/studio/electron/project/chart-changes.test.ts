@@ -12,6 +12,7 @@ import { applyChartChanges } from "./chart-changes";
 import { createDatabase } from "./database";
 import { readEditorChart } from "./editor-chart";
 import { migrations } from "./migrations.gen";
+import { song } from "./schema";
 
 let cleanup = () => {};
 afterEach(() => cleanup());
@@ -220,6 +221,21 @@ describe("applyChartChanges", () => {
           applyChartChanges(db, [{ table: "singer", id: singer.id, before: { name: null }, after: { name: "Kai" } }]),
         );
         expect(stale._tag).toBe("ChartOutOfStep");
+      }),
+    ),
+  );
+
+  it.effect("reports damaged song details instead of reading them as empty and writing over them", () =>
+    withProject((db) =>
+      Effect.gen(function* () {
+        yield* db.update(song).set({ extraHeaders: "{not json" }).pipe(Effect.orDie);
+        expect((yield* Effect.flip(readEditorChart(db)))._tag).toBe("ProjectDamaged");
+        const error = yield* Effect.flip(
+          applyChartChanges(db, [{ table: "song", before: { tags: [] }, after: { tags: ["live"] } }]),
+        );
+        expect(error._tag).toBe("ProjectDamaged");
+        const [row] = yield* db.select().from(song).pipe(Effect.orDie);
+        expect(row!.extraHeaders).toBe("{not json");
       }),
     ),
   );
