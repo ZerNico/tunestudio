@@ -1,0 +1,1 @@
+ALTER TABLE `song` ADD `youtube_audio_id` text;

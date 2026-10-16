@@ -23,7 +23,9 @@ test.afterEach(async () => {
 async function importAs(page: Page, file: string) {
   await answerDialogs(studio.app, song.folder, file);
   await page.getByTestId("song-choose").click();
-  await page.getByTestId("flow-dialog").getByTestId("song-create").click();
+  // Song, then Finish.
+  await page.getByTestId("flow-dialog").getByTestId("flow-next").click();
+  await page.getByTestId("flow-dialog").getByRole("button", { name: "Create project" }).click();
   await expect(page.getByTestId("project")).toBeVisible();
   await page.getByTestId("close-project").click();
   await expect(page.getByTestId("home")).toBeVisible();
@@ -73,7 +75,9 @@ test("the mouse's back button doesn't leave the editor", async () => {
   const file = path.join(song.dir, "Project.tunestudio");
   await answerDialogs(studio.app, song.folder, file);
   await page.getByTestId("song-choose").click();
-  await page.getByTestId("flow-dialog").getByTestId("song-create").click();
+  // Song, then Finish.
+  await page.getByTestId("flow-dialog").getByTestId("flow-next").click();
+  await page.getByTestId("flow-dialog").getByRole("button", { name: "Create project" }).click();
   await expect(page.getByTestId("project")).toBeVisible();
   const cdp = await page.context().newCDPSession(page);
   for (const type of ["mousePressed", "mouseReleased"] as const) {
@@ -81,4 +85,24 @@ test("the mouse's back button doesn't leave the editor", async () => {
   }
   await page.waitForTimeout(300);
   await expect(page.getByTestId("project")).toBeVisible();
+});
+
+test("the File menu's project items act on the project in front (macOS)", async () => {
+  test.skip(process.platform !== "darwin", "Only macOS has a menu bar");
+  const { app, page } = studio;
+  await importAs(page, path.join(song.dir, "Project.tunestudio"));
+  await openFromOs(path.join(song.dir, "Project.tunestudio"));
+  await expect(page.getByTestId("project")).toBeVisible();
+  const click = (id: string) =>
+    app.evaluate(({ BrowserWindow, Menu }, item) => {
+      const window = BrowserWindow.getAllWindows()[0];
+      Menu.getApplicationMenu()
+        ?.getMenuItemById(item)
+        ?.click(undefined, window, undefined as never);
+    }, id);
+  await click("song-details");
+  await expect(page.getByTestId("song-details")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await click("close-project");
+  await expect(page.getByTestId("home")).toBeVisible();
 });

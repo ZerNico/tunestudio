@@ -103,6 +103,21 @@ describe("projectToChart", () => {
     );
   });
 
+  it("rewrites source metadata for games instead of reviving imported sources", () => {
+    const { chart: project } = chartToProject(chart(["#BPM:300"]));
+    project.song.extraHeaders = [["VIDEO", "a=dQw4w9WgXcQ,v=kPBzTxZQG5Q,co=cover.jpg"]];
+    project.song.youtubeId = "rl0IjlamWPI";
+    project.song.youtubeAudioId = "dQw4w9WgXcQ";
+    expect(projectToChart(project, {}).metadata.VIDEO).toBe("a=dQw4w9WgXcQ,v=rl0IjlamWPI,co=cover.jpg");
+    project.song.youtubeAudioId = null;
+    expect(projectToChart(project, {}).metadata.VIDEO).toBe("v=rl0IjlamWPI,co=cover.jpg");
+    project.song.youtubeId = null;
+    expect(projectToChart(project, {}).metadata.VIDEO).toBe("co=cover.jpg");
+    expect(projectToChart(project, { VIDEO: "clip.mp4" }).metadata.VIDEO).toBe("clip.mp4");
+    project.song.extraHeaders = [["VIDEO", "a=dQw4w9WgXcQ,v=kPBzTxZQG5Q"]];
+    expect(projectToChart(project, {}).metadata.VIDEO).toBeUndefined();
+  });
+
   it("formats header numbers without float noise", () => {
     expect(headerNumber(0.2505 * 1000)).toBe("250.5");
     expect(headerNumber(-0.2505 * 1000)).toBe("-250.5");

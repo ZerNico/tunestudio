@@ -62,6 +62,19 @@ From a song folder or its `.txt`:
 
 The original folder is only read, never changed.
 
+A USDB Syncer `.usdb` sidecar is matched to the selected chart by `txt.fname`. Its `meta_tags`
+restore source IDs, artwork references and other Syncer metadata. Only when `meta_tags` is
+absent or null do `audio.resource` and `video.resource` supply the sources. Explicit chart
+headers take precedence, with `a` and `v` treated as a pair. Malformed, oversized, outside-folder
+or ambiguous sidecars are skipped with a warning. Folders with more than 16 sidecars skip
+metadata recovery rather than selecting an arbitrary subset.
+
+The song stores optional `youtube_id` (video) and `youtube_audio_id` (separate audio) columns.
+Both contain only an 11-character YouTube ID, never a URL. When both use the same upload,
+`youtube_audio_id` is null. An audio-only source uses only `youtube_audio_id`. Song details
+accepts URLs or IDs and displays canonical watch URLs. USDB export writes `v=` and `a=` from
+these fields, so edits and clearing a field override the imported metadata.
+
 ## Exporting an UltraStar song
 
 Writes `<Artist> - <Title>/` into a folder the user picks:

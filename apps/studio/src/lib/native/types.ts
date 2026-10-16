@@ -70,6 +70,8 @@ export const EditorSong = Schema.Struct({
   medleyEnd: Schema.NullOr(Schema.Number),
   /** The song's YouTube video id, or null. */
   youtubeId: Schema.NullOr(Schema.String),
+  /** A separate YouTube audio source id, or null to use the video's audio. */
+  youtubeAudioId: Schema.NullOr(Schema.String),
 });
 export type EditorSong = typeof EditorSong.Type;
 

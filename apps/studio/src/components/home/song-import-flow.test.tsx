@@ -1,16 +1,18 @@
-import { render, screen, within } from "@solidjs/testing-library";
+import { cleanup, render, screen, within } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Dialog, DialogContent } from "~/components/ui/dialog";
-import type { ImportProgress, OpenedProject, SongInspection } from "~/lib/native/types";
+import type { ImportProgress, SongInspection } from "~/lib/native/types";
 
 import { SongImportFlow } from "./song-import-flow";
 
 // The main process isn't there in jsdom: its client is the one thing replaced.
 const native = vi.hoisted(() => ({
-  song: { inspect: vi.fn(), import: vi.fn() },
+  song: { inspect: vi.fn(), separate: vi.fn(), import: vi.fn() },
   dialogs: { chooseProjectLocation: vi.fn() },
+  drafts: { discard: vi.fn() },
+  models: { status: vi.fn() },
 }));
 vi.mock("~/lib/native/client", () => ({ native }));
 
@@ -33,7 +35,7 @@ const inspection = (overrides: Partial<SongInspection> = {}): SongInspection => 
   ...overrides,
 });
 
-async function* progress(steps: ImportProgress[], result: OpenedProject) {
+async function* progress<R>(steps: ImportProgress[], result: R) {
   for (const step of steps) yield step;
   return result;
 }
@@ -50,7 +52,11 @@ function setup() {
   return { onOpened, user: userEvent.setup() };
 }
 
-beforeEach(() => vi.resetAllMocks());
+beforeEach(() => {
+  vi.resetAllMocks();
+  native.models.status.mockResolvedValue({ separation: true, whisper: true, chart: true });
+  native.drafts.discard.mockResolvedValue(undefined);
+});
 
 describe("SongImportFlow", () => {
   it("lists what the folder holds, with missing files and warnings", async () => {
@@ -69,13 +75,13 @@ describe("SongImportFlow", () => {
     expect(native.song.inspect).toHaveBeenCalledExactlyOnceWith({ path: "/Songs/Night Signals" });
   });
 
-  it("can't create a project without the main audio", async () => {
+  it("can't go on without the main audio", async () => {
     native.song.inspect.mockResolvedValue(
       inspection({ blocker: "The audio file “song.mp3” is missing from the song folder." }),
     );
     setup();
     expect(await screen.findByRole("alert")).toHaveTextContent("The audio file “song.mp3” is missing");
-    expect(screen.getByRole("button", { name: "Create project" })).toBeDisabled();
+    expect(screen.getByTestId("flow-next")).toBeDisabled();
   });
 
   it("shows why a folder can't be read, and tries again", async () => {
@@ -86,14 +92,24 @@ describe("SongImportFlow", () => {
     expect(await screen.findByText("Test Artist · Night Signals")).toBeInTheDocument();
   });
 
-  it("asks where to save, imports without the video when switched off, and reports the project", async () => {
+  it("separates the voice on Next, then asks where to save and imports with it, without the video if switched off", async () => {
     native.song.inspect.mockResolvedValue(inspection());
+    native.song.separate.mockResolvedValue(
+      progress([{ step: "Separating the voice", done: 40, total: 100, unit: "percent" }], { draftId: "draft-1" }),
+    );
     native.dialogs.chooseProjectLocation.mockResolvedValue("/Projects/Night Signals.tunestudio");
     const opened = { id: "session-1", path: "/Projects/Night Signals.tunestudio" };
     native.song.import.mockResolvedValue(progress([{ step: "Copying song.mp3", done: 10, total: 20 }], opened));
     const { onOpened, user } = setup();
 
     await user.click(await screen.findByRole("switch", { name: "Include video" }));
+    await user.click(screen.getByTestId("flow-next"));
+    expect(await screen.findByTestId("song-summary")).toHaveTextContent("Separated from the song");
+    expect(screen.getByTestId("summary-video")).toHaveTextContent("Left out");
+    expect(native.song.separate).toHaveBeenCalledWith(
+      { path: "/Songs/Night Signals", chart: "song.txt" },
+      { signal: expect.any(AbortSignal) },
+    );
     await user.click(screen.getByRole("button", { name: "Create project" }));
     await vi.waitFor(() => expect(onOpened).toHaveBeenCalledExactlyOnceWith(opened));
     expect(native.dialogs.chooseProjectLocation).toHaveBeenCalledExactlyOnceWith({
@@ -105,45 +121,43 @@ describe("SongImportFlow", () => {
         chart: "song.txt",
         includeVideo: false,
         target: "/Projects/Night Signals.tunestudio",
+        draftId: "draft-1",
       },
       { signal: expect.any(AbortSignal) },
     );
+    // Saved: the draft went into the project.
+    expect(native.drafts.discard).not.toHaveBeenCalled();
   });
 
-  it("reports when it is busy, whatever the listener returns", async () => {
-    native.song.inspect.mockResolvedValue(inspection());
-    native.dialogs.chooseProjectLocation.mockResolvedValue("/Projects/Night Signals.tunestudio");
-    const opened = { id: "session-1", path: "/Projects/Night Signals.tunestudio" };
-    native.song.import.mockResolvedValue(progress([{ step: "Copying song.mp3", done: 10, total: 20 }], opened));
-    const busy: boolean[] = [];
-    const onOpened = vi.fn();
-    render(() => (
-      <Dialog open>
-        <DialogContent>
-          <SongImportFlow
-            path="/Songs/Night Signals"
-            open
-            onOpened={onOpened}
-            // A signal setter returns the value it set; the flow must not hand that back as an effect cleanup.
-            onBusyChange={(value) => {
-              busy.push(value);
-              return value as never;
-            }}
-            header={() => <h2>Import</h2>}
-          />
-        </DialogContent>
-      </Dialog>
-    ));
-    const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: "Create project" }));
-    await vi.waitFor(() => expect(onOpened).toHaveBeenCalledExactlyOnceWith(opened));
-    expect(busy).toContain(true);
+  it("takes the folder's own vocals and music without separating", async () => {
+    const media = [
+      ...inspection().media,
+      { role: "vocals" as const, fileName: "song [VOC].mp3", size: 1_000_000, found: true },
+      { role: "instrumental" as const, fileName: "song [INSTR].mp3", size: 1_000_000, found: true },
+    ];
+    native.song.inspect.mockResolvedValue(inspection({ media }));
+    const { user } = setup();
+    await user.click(await screen.findByTestId("flow-next"));
+    expect(await screen.findByTestId("song-summary")).toHaveTextContent("The song's own vocals and music");
+    expect(native.song.separate).not.toHaveBeenCalled();
   });
 
-  it("goes back to the summary when the save dialog is cancelled", async () => {
+  it("throws the separated voice away when the dialog closes without saving", async () => {
     native.song.inspect.mockResolvedValue(inspection());
+    native.song.separate.mockResolvedValue(progress([], { draftId: "draft-1" }));
+    const { user } = setup();
+    await user.click(await screen.findByTestId("flow-next"));
+    await screen.findByTestId("song-summary");
+    cleanup();
+    expect(native.drafts.discard).toHaveBeenCalledWith({ draftId: "draft-1" });
+  });
+
+  it("stays on the summary when the save dialog is cancelled", async () => {
+    native.song.inspect.mockResolvedValue(inspection());
+    native.song.separate.mockResolvedValue(progress([], { draftId: "draft-1" }));
     native.dialogs.chooseProjectLocation.mockResolvedValue(null);
     const { user } = setup();
+    await user.click(await screen.findByTestId("flow-next"));
     await user.click(await screen.findByRole("button", { name: "Create project" }));
     await vi.waitFor(() => expect(screen.getByRole("button", { name: "Create project" })).toBeEnabled());
     expect(native.song.import).not.toHaveBeenCalled();

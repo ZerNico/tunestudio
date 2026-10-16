@@ -33,6 +33,7 @@ export function toProjectChart(result: ChartResult, details: ChartSongDetails): 
       medleyEnd: null,
       extraHeaders: [],
       youtubeId: null,
+      youtubeAudioId: null,
     },
     singers: [
       {

@@ -31,7 +31,9 @@ async function openSong() {
   fs.mkdirSync(path.dirname(projectFile));
   await answerDialogs(app, song.folder, projectFile);
   await page.getByTestId("song-choose").click();
-  await page.getByTestId("flow-dialog").getByTestId("song-create").click();
+  // Song, then Finish.
+  await page.getByTestId("flow-dialog").getByTestId("flow-next").click();
+  await page.getByTestId("flow-dialog").getByRole("button", { name: "Create project" }).click();
   await expect(page.getByTestId("roll-note")).toHaveCount(5);
 }
 
@@ -145,10 +147,10 @@ test("the note menu acts on the selection, pastes on empty space, and auto pitch
   await expect(notes).toHaveCount(6);
   await expect(page.getByTestId("undo")).toHaveAttribute("aria-label", "Undo Paste note");
 
-  // The pasted note is selected: the button runs auto pitch, which needs the vocals this song doesn't have.
+  // The pasted note is selected: the button runs auto pitch, which can't get FFmpeg offline (tests never download).
   await expect(autoPitch).toBeEnabled();
   await autoPitch.click();
-  await expect(page.getByText("The song needs its vocals separated first.")).toBeVisible();
+  await expect(page.getByText("Couldn't find the pitch")).toBeVisible();
   await expect(autoPitch).toBeVisible();
 });
 
@@ -345,4 +347,38 @@ test("the title bar lists the chart's problems and shows the one chosen", async 
   await page.keyboard.press("Escape");
   await page.getByTestId("undo").click();
   await expect(page.getByTestId("problems")).toHaveAccessibleName("No problems found");
+});
+
+test("Tab stays inside a dialog, going round from the last control to the first", async () => {
+  const { page } = studio;
+  await openSong();
+  await page.getByTestId("open-song-details").click();
+  const dialog = page.getByTestId("song-details");
+  await expect(dialog).toBeVisible();
+  const focused = () =>
+    page.evaluate(() => {
+      const element = document.activeElement as HTMLElement | null;
+      return {
+        inDialog: Boolean(element?.closest("[data-testid=song-details]")),
+        label: element?.getAttribute("aria-label") ?? element?.dataset.testid ?? "",
+      };
+    });
+  // Tab goes round: from the close button through every control and back to it, never out of the dialog (the focus
+  // guard at the end hands focus on a frame later).
+  await dialog.getByRole("button", { name: "Close dialog" }).focus();
+  const seen: string[] = [];
+  for (let i = 0; i < 80; i++) {
+    await page.keyboard.press("Tab");
+    await page.waitForTimeout(40);
+    const now = await focused();
+    expect(now.inDialog).toBe(true);
+    seen.push(now.label);
+    if (now.label === "Close dialog") break;
+  }
+  expect(seen.at(-1)).toBe("Close dialog");
+  expect(seen.length).toBeGreaterThan(10);
+  // Back the other way, past the first control.
+  await page.keyboard.press("Shift+Tab");
+  await page.waitForTimeout(40);
+  expect((await focused()).inDialog).toBe(true);
 });

@@ -6,8 +6,11 @@ import { DraftGone, type FileError, mapFileError } from "../errors";
 import type { ProjectChart } from "../ultrastar/chart-mapping";
 import type { DownloadedMedia } from "../youtube/youtube";
 
-/** Where a new project's song comes from: a YouTube video, or an audio file the user has. */
-export type DraftSource = { kind: "youtube"; videoId: string } | { kind: "file"; path: string };
+/** Where a new project's song comes from: a YouTube video, an audio file the user has, or an UltraStar song folder. */
+export type DraftSource =
+  | { kind: "youtube"; videoId: string }
+  | { kind: "file"; path: string }
+  | { kind: "song"; path: string };
 
 /** A chart made for a draft, and what it was made from (`chartInputsKey`), so a changed choice can be noticed. */
 export interface DraftChart {

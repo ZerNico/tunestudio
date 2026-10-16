@@ -660,6 +660,7 @@ function tinyChart() {
       medleyEnd: null,
       extraHeaders: [],
       youtubeId: null,
+      youtubeAudioId: null,
     },
     singers: [
       {

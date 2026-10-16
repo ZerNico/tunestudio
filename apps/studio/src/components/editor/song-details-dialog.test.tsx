@@ -1,8 +1,10 @@
 import { fireEvent, render, screen } from "@solidjs/testing-library";
-import { createSignal } from "solid-js";
+import userEvent from "@testing-library/user-event";
+import { createSignal, untrack } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
 
 import { testSong } from "~/lib/editor/test-chart";
+import type { EditorSong } from "~/lib/native/types";
 
 import { listFrom, SongDetailsDialog, type SongDetailsSinger, yearFrom } from "./song-details-dialog";
 
@@ -67,6 +69,50 @@ describe("song details", () => {
     expect(onChange).not.toHaveBeenCalled();
     enter("song-youtube", " ");
     expect(onChange).toHaveBeenLastCalledWith("Change YouTube video", { youtubeId: null });
+  });
+
+  it("stores only IDs for both sources and shows clean URLs after editing", async () => {
+    const [song, setSong] = createSignal<EditorSong>({ ...testSong });
+    render(() => (
+      <SongDetailsDialog
+        open
+        onOpenChange={() => {}}
+        song={song()}
+        bpm={300}
+        gap={1}
+        singers={[{ id: 1, index: 1, name: null }]}
+        otherHeaders={[]}
+        onChange={(_label, patch) => setSong({ ...song(), ...patch })}
+        onSingerName={() => {}}
+      />
+    ));
+    const user = userEvent.setup();
+    const video = await screen.findByRole("textbox", { name: "YouTube video" });
+    const audio = screen.getByRole("textbox", { name: "YouTube audio" });
+    await user.type(video, "kPBzTxZQG5Q{Enter}");
+    await user.type(audio, "https://youtu.be/dQw4w9WgXcQ?si=tracking{Enter}");
+    expect(untrack(song)).toMatchObject({ youtubeId: "kPBzTxZQG5Q", youtubeAudioId: "dQw4w9WgXcQ" });
+    expect(video).toHaveValue("https://www.youtube.com/watch?v=kPBzTxZQG5Q");
+    expect(audio).toHaveValue("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+    await user.clear(audio);
+    await user.type(audio, "invalid{Enter}");
+    expect(audio).toHaveValue("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+    // Identical uploads need only the video field.
+    await user.clear(audio);
+    await user.type(audio, "kPBzTxZQG5Q{Enter}");
+    expect(untrack(song).youtubeAudioId).toBeNull();
+    expect(audio).toHaveValue("");
+    await user.type(audio, "dQw4w9WgXcQ{Enter}");
+    await user.clear(video);
+    await user.type(video, "dQw4w9WgXcQ{Enter}");
+    expect(untrack(song)).toMatchObject({ youtubeId: "dQw4w9WgXcQ", youtubeAudioId: null });
+    await user.clear(video);
+    await user.tab();
+    await user.type(audio, "kPBzTxZQG5Q{Enter}");
+    expect(untrack(song)).toMatchObject({ youtubeId: null, youtubeAudioId: "kPBzTxZQG5Q" });
+    await user.clear(audio);
+    await user.tab();
+    expect(untrack(song)).toMatchObject({ youtubeId: null, youtubeAudioId: null });
   });
 
   it("puts back a title left empty and a year that isn't one", async () => {

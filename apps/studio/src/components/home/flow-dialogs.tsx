@@ -19,7 +19,7 @@ import {
 import type { AudioFileSummary } from "~/lib/import-files";
 import type { OpenedProject } from "~/lib/native/types";
 
-import { SongImportFlow } from "./song-import-flow";
+import { SONG_STAGES, SongImportFlow } from "./song-import-flow";
 
 /** The next step of a "start a new project" option, opened from the start screen. */
 export type Flow =
@@ -32,7 +32,7 @@ export type Flow =
 const STEPS: Record<Flow["kind"], string[]> = {
   youtube: YOUTUBE_STAGES,
   audio: AUDIO_STAGES,
-  song: ["Check song", "Choose location", "Copy into project"],
+  song: SONG_STAGES,
 };
 
 const DISCARD_TEXT: Record<Flow["kind"], string> = {
@@ -158,6 +158,7 @@ export function FlowDialog(props: {
                   open={props.flow !== null}
                   onOpened={props.onOpened}
                   onBusyChange={setSongBusy}
+                  onLockedChange={setLocked}
                   header={(step) => (
                     <FlowHeader
                       kind="song"

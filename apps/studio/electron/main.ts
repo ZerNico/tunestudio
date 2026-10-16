@@ -8,7 +8,7 @@ import { contentSecurityPolicy } from "./csp";
 import { onDevReload } from "./dev-reload";
 import { BACKGROUND_COLOR, PRODUCT_NAME } from "./identity";
 import { createLogger } from "./logger";
-import { attachContextMenu, sendEditCommand, setApplicationMenu } from "./menu";
+import { attachContextMenu, sendEditCommand, setApplicationMenu, setProjectItemsEnabled } from "./menu";
 import { Projects } from "./project/projects";
 import { mediaResponse } from "./protocols/media";
 import { MEDIA_SCHEME } from "./protocols/media-url";
@@ -18,6 +18,7 @@ import { listenForRpc } from "./rpc";
 import { nativeHandlers } from "./rpc/procedures";
 import { startRpcServer } from "./rpc/server";
 import { makeRuntime } from "./runtime";
+import { Desktop } from "./services/desktop";
 import { PathGrants } from "./services/path-grants";
 import { loadWindowState, saveWindowState } from "./window-state";
 import { createWindows, projectFilesIn, type Windows } from "./windows";
@@ -184,7 +185,15 @@ function createWindow(): BrowserWindow {
 function start() {
   // No Dock icon and no activation: a background run never steals focus on macOS.
   if (background && process.platform === "darwin") app.setActivationPolicy("accessory");
-  setApplicationMenu(() => windows?.add());
+  setApplicationMenu(
+    () => windows?.add(),
+    () => {
+      const front = BrowserWindow.getFocusedWindow();
+      void runtime.runPromise(Desktop.use((desktop) => desktop.chooseProject(front))).then((file) => {
+        if (file) void windows?.open(file);
+      });
+    },
+  );
 
   // Packaged apps get their icon from the bundle; in development the Dock would show Electron's.
   if (!app.isPackaged && process.platform === "darwin") {
@@ -219,8 +228,15 @@ function start() {
     grant: (file) => runtime.runPromise(PathGrants.use((grants) => grants.grant(file))),
     // A project's window closed without closing it first: its session ends with it.
     onClosed: (project) => void runtime.runPromise(Projects.use((projects) => projects.close(project.id))),
+    onChange: () => updateProjectItems(),
   });
   const opened = windows;
+  // The File menu's project items follow the window in front.
+  const updateProjectItems = () => {
+    const front = BrowserWindow.getFocusedWindow();
+    setProjectItemsEnabled(front !== null && opened.showsProject(front));
+  };
+  app.on("browser-window-focus", () => updateProjectItems());
   listenForRpc(startRpcServer(runtime, nativeHandlers, opened), appOrigin, (id) => {
     const contents = webContents.fromId(id);
     return contents ? BrowserWindow.fromWebContents(contents) : null;

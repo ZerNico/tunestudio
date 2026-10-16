@@ -33,3 +33,9 @@ export type ClipboardRequest = { write: string } | { native: "cut" | "copy" | "p
  * page then asks for it (`windows.takeOpenRequest`).
  */
 export const OPEN_REQUEST_CHANNEL = "tunestudio:open-request";
+
+/** IPC channel the File menu (macOS) sends a project window's commands on: exports, song details, closing it. */
+export const MENU_COMMAND_CHANNEL = "tunestudio:menu-command";
+
+/** What the File menu asks a project window to do. */
+export type MenuCommand = "export-games" | "export-usdb" | "song-details" | "close-project";

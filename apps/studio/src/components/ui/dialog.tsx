@@ -11,34 +11,6 @@ import { Button } from "./button";
  * shadcn/ui Dialog (Base UI variant) on base-ui-solid. Studio look: green-tinted popover
  * surface, 13px radius, blurred dark backdrop, header and footer separated by hairlines.
  */
-/**
- * TEMPORARY WORKAROUND for a base-ui-solid 0.2.0 bug: a modal Dialog's focus guards don't wrap
- * focus (Tab past the last tabbable lands on a focus guard instead of the first tabbable).
- * See "Known base-ui-solid issues" in apps/studio/AGENTS.md. Remove once fixed upstream.
- */
-const TABBABLE =
-  'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-export function wrapFocus(event: KeyboardEvent) {
-  if (event.key !== "Tab" || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
-  const popup = event.currentTarget as HTMLElement;
-  const items = [...popup.querySelectorAll<HTMLElement>(TABBABLE)].filter(
-    (el) =>
-      !el.hasAttribute("data-base-ui-focus-guard") &&
-      !el.closest('[aria-hidden="true"], [inert]') &&
-      el.getClientRects().length > 0,
-  );
-  const first = items[0];
-  const last = items.at(-1);
-  if (!first || !last) return;
-  if (!event.shiftKey && document.activeElement === last) {
-    event.preventDefault();
-    first.focus();
-  } else if (event.shiftKey && document.activeElement === first) {
-    event.preventDefault();
-    last.focus();
-  }
-}
-
 export function Dialog(props: DialogPrimitive.Root.Props) {
   return <DialogPrimitive.Root data-slot="dialog" {...props} />;
 }
@@ -75,7 +47,7 @@ export type DialogContentProps = DialogPrimitive.Popup.Props & {
 };
 
 export function DialogContent(props: DialogContentProps) {
-  const rest = omit(props, "class", "children", "showCloseButton", "closeLabel", "onKeyDown");
+  const rest = omit(props, "class", "children", "showCloseButton", "closeLabel");
   return (
     <DialogPortal>
       <DialogOverlay />
@@ -88,10 +60,6 @@ export function DialogContent(props: DialogContentProps) {
           )
         }
         {...rest}
-        onKeyDown={(event) => {
-          (props.onKeyDown as ((e: KeyboardEvent) => void) | undefined)?.(event);
-          wrapFocus(event);
-        }}
       >
         <Show when={props.showCloseButton !== false}>
           <DialogPrimitive.Close

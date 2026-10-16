@@ -208,6 +208,7 @@ export function createDraftProject(
         creator: null,
         // The video the song came from, for USDB and usdb_syncer.
         youtubeId: draft.source.kind === "youtube" ? draft.source.videoId : null,
+        youtubeAudioId: null,
       };
       const chart = made
         ? { ...made, song: { ...made.song, ...details } }

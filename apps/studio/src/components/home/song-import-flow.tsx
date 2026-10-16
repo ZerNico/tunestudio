@@ -7,15 +7,18 @@ import LoaderCircleIcon from "~icons/lucide/loader-circle";
 import OctagonAlertIcon from "~icons/lucide/octagon-alert";
 import TriangleAlertIcon from "~icons/lucide/triangle-alert";
 
+import { Checklist } from "~/components/new-project/checklist";
+import { createFlow, FlowView, type Stage } from "~/components/new-project/flow-runner";
+import { follow } from "~/components/new-project/progress";
+import { SummaryRow } from "~/components/new-project/summary";
 import { Button } from "~/components/ui/button";
-import { DialogBody, DialogClose, DialogFooter } from "~/components/ui/dialog";
 import { Label } from "~/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import { Switch as Toggle } from "~/components/ui/switch";
 import { formatFileSize } from "~/lib/format";
 import { native } from "~/lib/native/client";
-import { errorMessage, isAbort } from "~/lib/native/errors";
-import type { ImportProgress, MediaRole, OpenedProject, SongInspection } from "~/lib/native/types";
+import { errorMessage } from "~/lib/native/errors";
+import type { ImportProgress, MediaRole, ModelStatus, OpenedProject, SongInspection } from "~/lib/native/types";
 
 /** Labels for media roles, in the order the dialog lists them. */
 export const ROLE_LABELS: Record<MediaRole, string> = {
@@ -27,22 +30,26 @@ export const ROLE_LABELS: Record<MediaRole, string> = {
   background: "Background",
 };
 
-type State =
-  | { step: "checking" }
-  | { step: "ready"; inspection: SongInspection }
-  | { step: "saving"; inspection: SongInspection }
-  | { step: "importing"; inspection: SongInspection; progress: ImportProgress | null }
-  | { step: "failed"; message: string; inspection?: SongInspection };
+const discard = (id: string) => void native.drafts.discard({ draftId: id }).catch(() => {});
 
-/** The step the dialog's step list highlights: check, choose a location, copy. */
-export function songFlowStep(state: State["step"]): number {
-  return state === "saving" ? 1 : state === "importing" ? 2 : 0;
-}
+/** The stages an UltraStar import goes through, as the dialog's header lists them. */
+export const SONG_STAGES = ["Song", "Finish"];
+
+/** Reading the song folder. */
+type Reading =
+  | { status: "reading" }
+  | { status: "failed"; message: string }
+  | { status: "read"; inspection: SongInspection };
+
+/** Whether the folder brings its own vocals and music (nothing to separate). */
+const hasStems = (inspection: SongInspection) =>
+  ["vocals", "instrumental"].every((role) => inspection.media.some((file) => file.role === role && file.found));
 
 /**
- * Importing an UltraStar song: shows what the folder holds, asks where to save the project,
- * then copies everything in with progress. Closing the dialog while copying cancels the
- * import (main removes the half-written file).
+ * Importing an UltraStar song, stage by stage like a new project: the song (what the folder holds, which chart, the
+ * video or not; Next separates the voice from its audio unless the folder has vocals and music), and a summary whose
+ * "Create project" asks where to save and copies everything in. The folder stays as it is; the separated voice waits
+ * in a draft that is thrown away when the dialog closes.
  */
 export function SongImportFlow(props: {
   path: string;
@@ -50,144 +57,234 @@ export function SongImportFlow(props: {
   open: boolean;
   header: (step: number) => JSX.Element;
   onOpened: (project: OpenedProject) => void;
-  /** True while saving or copying, when closing would lose the user's progress. */
+  /** True once closing would lose work (the voice separated, or separating). */
   onBusyChange?: (busy: boolean) => void;
+  /** Whether the dialog may close now: not while the project is saved. */
+  onLockedChange?: (locked: boolean) => void;
 }) {
-  const [state, setState] = createSignal<State>({ step: "checking" });
+  const [reading, setReading] = createSignal<Reading>({ status: "reading" });
   const [includeVideo, setIncludeVideo] = createSignal(true);
-  let controller: AbortController | undefined;
-
-  const inspect = async (chart?: string) => {
-    setState({ step: "checking" });
-    try {
-      const inspection = await native.song.inspect({ path: props.path, ...(chart ? { chart } : {}) });
-      setIncludeVideo(inspection.media.some((file) => file.role === "video" && file.found));
-      setState({ step: "ready", inspection });
-    } catch (error) {
-      setState({ step: "failed", message: errorMessage(error) });
-    }
+  const [models, setModels] = createSignal<ModelStatus | null>(null);
+  const [separating, setSeparating] = createSignal<ImportProgress | null | undefined>(undefined);
+  const [saving, setSaving] = createSignal<ImportProgress | null | undefined>(undefined);
+  const [error, setError] = createSignal<string | null>(null);
+  const [draftId, setDraftId] = createSignal<string | null>(null);
+  let saved = false;
+  let disposed = false;
+  /** The separated voice is in a draft now; one that arrives after the dialog went away is thrown away. */
+  const keepDraft = (id: string) => {
+    if (disposed) discard(id);
+    else setDraftId(id);
   };
 
+  const inspection = () => {
+    const current = reading();
+    return current.status === "read" ? current.inspection : undefined;
+  };
+  const inspect = async (chart?: string) => {
+    setReading({ status: "reading" });
+    try {
+      const found = await native.song.inspect({ path: props.path, ...(chart ? { chart } : {}) });
+      setIncludeVideo(found.media.some((file) => file.role === "video" && file.found));
+      setReading({ status: "read", inspection: found });
+    } catch (failure) {
+      setReading({ status: "failed", message: errorMessage(failure) });
+    }
+  };
   onSettled(() => {
     void inspect();
+    return () => {
+      disposed = true;
+      const id = draftId();
+      if (id && !saved) discard(id);
+    };
   });
-
   createEffect(
-    () => state().step === "saving" || state().step === "importing",
-    // An effect may only return a cleanup; a signal setter returns the value it set.
-    (busy) => void props.onBusyChange?.(busy),
-  );
-
-  createEffect(
-    () => props.open,
-    (open) => {
-      if (!open) controller?.abort();
+    () => draftId() !== null || separating() !== undefined,
+    (busy) => {
+      props.onBusyChange?.(busy);
     },
   );
 
-  const create = async (inspection: SongInspection) => {
-    setState({ step: "saving", inspection });
-    let target: string | null;
-    try {
-      target = await native.dialogs.chooseProjectLocation({ name: inspection.suggestedName });
-    } catch (error) {
-      setState({ step: "failed", message: errorMessage(error), inspection });
-      return;
-    }
-    if (!target) {
-      setState({ step: "ready", inspection });
-      return;
-    }
-    controller = new AbortController();
-    setState({ step: "importing", inspection, progress: null });
-    try {
-      const iterator = await native.song.import(
-        { path: props.path, chart: inspection.chart, includeVideo: includeVideo(), target },
-        { signal: controller.signal },
-      );
-      for (;;) {
-        const next = await iterator.next();
-        if (next.done) {
-          props.onOpened(next.value);
-          return;
-        }
-        setState({ step: "importing", inspection, progress: next.value });
+  const songStage: Stage = {
+    id: "song",
+    tag: "Song",
+    canAdvance: () => Boolean(inspection() && !inspection()!.blocker),
+    run: async (signal) => {
+      setError(null);
+      const found = inspection();
+      if (!found || hasStems(found) || draftId()) return true;
+      setModels(await native.models.status().catch(() => null));
+      setSeparating(null);
+      try {
+        const separated = await follow(
+          () => native.song.separate({ path: props.path, chart: found.chart }, { signal }),
+          signal,
+          setSeparating,
+          (late) => keepDraft(late.draftId),
+        );
+        if (!separated) return false;
+        keepDraft(separated.draftId);
+        return true;
+      } catch (failure) {
+        setError(errorMessage(failure));
+        return false;
+      } finally {
+        setSeparating(undefined);
       }
-    } catch (error) {
-      if (isAbort(error) || controller.signal.aborted) setState({ step: "ready", inspection });
-      else setState({ step: "failed", message: errorMessage(error), inspection });
-    } finally {
-      controller = undefined;
-    }
-  };
-
-  const current = () => {
-    const value = state();
-    return "inspection" in value ? value.inspection : undefined;
-  };
-
-  return (
-    <>
-      {props.header(songFlowStep(state().step))}
-      <DialogBody aria-busy={state().step === "checking" || state().step === "importing" ? "true" : "false"}>
-        <Switch>
-          <Match when={state().step === "checking"}>
-            <p class="m-0 flex items-center gap-2 text-[11.5px] text-popover-foreground" aria-live="polite">
-              <LoaderCircleIcon class="size-4 animate-spin text-primary" />
-              Reading the song…
-            </p>
-          </Match>
-          <Match when={current()}>
-            {(inspection) => (
+    },
+    body: () => (
+      <Switch>
+        <Match when={reading().status === "reading"}>
+          <p class="m-0 flex items-center gap-2 text-[11.5px] text-popover-foreground" aria-live="polite">
+            <LoaderCircleIcon class="size-4 animate-spin text-primary" />
+            Reading the song…
+          </p>
+        </Match>
+        <Match when={reading().status === "failed" ? (reading() as { message: string }) : undefined}>
+          {(failed) => (
+            <Note tone="error" testid="song-import-error">
+              <span class="flex items-center gap-3">
+                <span class="flex-1">{failed().message}</span>
+                <Button variant="outline" size="xs" onClick={() => void inspect()}>
+                  Try again
+                </Button>
+              </span>
+            </Note>
+          )}
+        </Match>
+        <Match when={separating() !== undefined}>
+          <Checklist
+            title="Separating the voice"
+            hint="This takes a minute or two."
+            label="Separating"
+            testid="song-separating"
+            tasks={[
+              ...(models() && !models()!.separation ? ["Getting the voice separation model"] : []),
+              "Separating the voice",
+            ]}
+            progress={separating() ?? null}
+          />
+        </Match>
+        <Match when={inspection()}>
+          {(found) => (
+            <>
               <SongSummary
-                inspection={inspection()}
+                inspection={found()}
                 includeVideo={includeVideo()}
-                locked={state().step !== "ready" && state().step !== "failed"}
+                locked={false}
                 onIncludeVideo={setIncludeVideo}
                 onChart={(chart) => void inspect(chart)}
               />
-            )}
-          </Match>
-        </Switch>
-        <Show when={state().step === "importing" ? (state() as Extract<State, { step: "importing" }>) : undefined}>
-          {(importing) => <ImportProgressBar progress={importing().progress} />}
-        </Show>
-        <Show when={state().step === "failed" ? (state() as Extract<State, { step: "failed" }>).message : undefined}>
-          {(message) => (
-            <Note tone="error" testid="song-import-error">
-              {message()}
-            </Note>
-          )}
-        </Show>
-      </DialogBody>
-      <DialogFooter class="items-center">
-        <DialogClose
-          render={(closeProps: JSX.HTMLAttributes<HTMLButtonElement>) => <Button variant="outline" {...closeProps} />}
-        >
-          Cancel
-        </DialogClose>
-        <Show
-          when={state().step === "failed" && !current()}
-          fallback={
-            <Button
-              disabled={state().step !== "ready" || Boolean(current()?.blocker)}
-              onClick={() => {
-                const inspection = current();
-                if (inspection) void create(inspection);
-              }}
-              data-testid="song-create"
-            >
-              <Show when={state().step === "importing" || state().step === "saving"}>
-                <LoaderCircleIcon class="animate-spin" />
+              <Show when={error()}>
+                {(message) => (
+                  <Note tone="error" testid="song-separate-error">
+                    {message()}
+                  </Note>
+                )}
               </Show>
-              Create project
-            </Button>
-          }
-        >
-          <Button onClick={() => void inspect()}>Try again</Button>
-        </Show>
-      </DialogFooter>
-    </>
+            </>
+          )}
+        </Match>
+      </Switch>
+    ),
+  };
+
+  const finishStage: Stage = {
+    id: "finish",
+    tag: "Finish",
+    primary: "Create project",
+    // Once saving starts, the files go into the project: stopping halfway would leave neither.
+    stoppable: false,
+    enter: () => setError(null),
+    canAdvance: () => inspection() !== undefined,
+    run: async (signal) => {
+      setError(null);
+      const found = inspection();
+      if (!found) return false;
+      let target: string | null;
+      try {
+        target = await native.dialogs.chooseProjectLocation({ name: found.suggestedName });
+      } catch (failure) {
+        setError(errorMessage(failure));
+        return false;
+      }
+      if (!target || signal.aborted) return false;
+      setSaving(null);
+      try {
+        const opened = await follow(
+          () =>
+            native.song.import(
+              {
+                path: props.path,
+                chart: found.chart,
+                includeVideo: includeVideo(),
+                target,
+                ...(draftId() ? { draftId: draftId()! } : {}),
+              },
+              { signal },
+            ),
+          signal,
+          setSaving,
+        );
+        if (!opened) return false;
+        saved = true;
+        props.onOpened(opened);
+        return true;
+      } catch (failure) {
+        setError(errorMessage(failure));
+        return false;
+      } finally {
+        setSaving(undefined);
+      }
+    },
+    body: () => (
+      <Show when={inspection()}>
+        {(found) => (
+          <>
+            <ul class="m-0 flex list-none flex-col divide-y divide-popover-line p-0" data-testid="song-summary">
+              <SummaryRow label="Song" testid="summary-song">
+                {found().artist || "Unknown artist"} – {found().title || "Untitled"}
+              </SummaryRow>
+              <SummaryRow label="Chart" testid="summary-chart">
+                {found().notes} {found().notes === 1 ? "note" : "notes"} from {found().chart}
+              </SummaryRow>
+              <SummaryRow label="Vocals" testid="summary-vocals">
+                {hasStems(found()) ? "The song's own vocals and music" : "Separated from the song"}
+              </SummaryRow>
+              <SummaryRow label="Video" testid="summary-video">
+                {found().media.some((file) => file.role === "video" && file.found)
+                  ? includeVideo()
+                    ? "Included"
+                    : "Left out"
+                  : "None"}
+              </SummaryRow>
+            </ul>
+            <Show when={saving() !== undefined}>
+              <ImportProgressBar progress={saving() ?? null} />
+            </Show>
+            <Show when={error()}>
+              {(message) => (
+                <Note tone="error" testid="song-import-error">
+                  {message()}
+                </Note>
+              )}
+            </Show>
+          </>
+        )}
+      </Show>
+    ),
+  };
+
+  const flow = createFlow([songStage, finishStage]);
+  return (
+    <FlowView
+      flow={flow}
+      open={props.open}
+      busy={reading().status === "reading"}
+      header={props.header}
+      onLockedChange={props.onLockedChange}
+    />
   );
 }
 

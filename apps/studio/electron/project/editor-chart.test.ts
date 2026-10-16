@@ -41,6 +41,7 @@ const duet: ProjectChart = {
     medleyEnd: null,
     extraHeaders: [],
     youtubeId: null,
+    youtubeAudioId: null,
   },
   singers: [
     {

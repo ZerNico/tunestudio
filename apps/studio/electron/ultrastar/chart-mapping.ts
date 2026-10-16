@@ -10,6 +10,8 @@ import {
   ticksToSeconds,
 } from "@tunestudio/ultrastar";
 
+import { formatMetaTags, parseMetaTags, sourceMetaTags } from "./meta-tags";
+
 /*
  * Between an UltraStar chart (the parser's `ChartDocument`) and a project's rows. Headers the
  * project models become song columns, media headers become media rows (handled by the import),
@@ -36,6 +38,8 @@ export interface SongDetails {
   extraHeaders: [string, string][];
   /** The song's YouTube video id (usdb_syncer's `#VIDEO:v=…`), or null. */
   youtubeId: string | null;
+  /** A separate audio upload (`a=…`), or null to use the video's audio. */
+  youtubeAudioId: string | null;
 }
 
 export interface ChartNoteRow {
@@ -122,6 +126,7 @@ export function chartToProject(document: ChartDocument): { chart: ProjectChart; 
     medleyEnd: null,
     extraHeaders: [],
     youtubeId: null,
+    youtubeAudioId: null,
   };
   const singerNames = new Map<number, string>();
   const keep = (key: string, value: string) => song.extraHeaders.push([key, value]);
@@ -234,7 +239,12 @@ export function projectToChart(chart: ProjectChart, mediaHeaders: MediaHeaders):
   set("PREVIEWSTART", song.previewStart);
   set("MEDLEYSTARTBEAT", song.medleyStart === null ? null : Math.round(secondsToTicks(song.medleyStart, grid)));
   set("MEDLEYENDBEAT", song.medleyEnd === null ? null : Math.round(secondsToTicks(song.medleyEnd, grid)));
-  for (const [key, value] of song.extraHeaders) if (!(key in metadata)) metadata[key] = value;
+  for (const [key, value] of song.extraHeaders) {
+    if (key in metadata) continue;
+    const tags = key === "VIDEO" ? parseMetaTags(value) : null;
+    if (tags) set(key, formatMetaTags(sourceMetaTags(tags, song)));
+    else metadata[key] = value;
+  }
 
   const notes: ChartNote[] = [];
   const lineBreaks: ChartLineBreak[] = [];

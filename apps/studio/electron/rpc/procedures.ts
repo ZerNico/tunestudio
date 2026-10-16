@@ -30,7 +30,7 @@ import { Recents } from "../services/recents";
 import { AppSettings } from "../services/settings";
 import { Tools } from "../tools/tools";
 import { exportSong, exportUsdb } from "../ultrastar/song-export";
-import { describeSong, importSong, inspectSong } from "../ultrastar/song-import";
+import { describeSong, importSong, inspectSong, separateSongFolder } from "../ultrastar/song-import";
 import type { Windows } from "../windows";
 import { findCovers } from "../youtube/covers";
 import { findLyrics } from "../youtube/lyrics";
@@ -187,13 +187,28 @@ export const nativeHandlers = NativeRpcs.toLayer({
 
   "song.inspect": (input) =>
     Effect.flatMap(allowedPath(input.path), (path) => Effect.map(inspectSong(path, input.chart), describeSong)),
+  "song.separate": (input) =>
+    progressStream(
+      (onProgress) =>
+        Effect.gen(function* () {
+          const path = yield* allowedPath(input.path);
+          const source = yield* inspectSong(path, input.chart);
+          return { draftId: yield* separateSongFolder(source, onProgress) };
+        }),
+      // Cancelled just as it finished: the renderer won't hear of this draft to discard it.
+      (draft) => Drafts.use((drafts) => drafts.discard(draft.draftId)).pipe(Effect.ignore),
+    ),
   "song.import": (input, { client }) =>
     progressStream((onProgress) =>
       Effect.gen(function* () {
         const path = yield* allowedPath(input.path);
         const target = yield* allowedPath(input.target);
         const source = yield* inspectSong(path, input.chart);
-        const session = yield* importSong(source, { includeVideo: input.includeVideo, target }, onProgress);
+        const media = input.draftId ? (yield* Drafts.use((drafts) => drafts.get(input.draftId!))).media : null;
+        const stems =
+          media?.vocals && media.instrumental ? { vocals: media.vocals, instrumental: media.instrumental } : undefined;
+        const session = yield* importSong(source, { includeVideo: input.includeVideo, target, stems }, onProgress);
+        if (input.draftId) yield* Drafts.use((drafts) => drafts.discard(input.draftId!));
         return yield* openedIn(client, session);
       }),
     ),

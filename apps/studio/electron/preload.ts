@@ -6,6 +6,8 @@ import {
   EDIT_COMMAND_CHANNEL,
   type EditCommand,
   GRANT_PATH_CHANNEL,
+  MENU_COMMAND_CHANNEL,
+  type MenuCommand,
   OPEN_REQUEST_CHANNEL,
   RPC_CONNECT_CHANNEL,
 } from "../src/lib/native/channel";
@@ -36,6 +38,12 @@ contextBridge.exposeInMainWorld("tunestudio", {
     const forward = (_event: unknown, command: EditCommand, text?: string) => listener(command, text);
     ipcRenderer.on(EDIT_COMMAND_CHANNEL, forward);
     return () => ipcRenderer.removeListener(EDIT_COMMAND_CHANNEL, forward);
+  },
+  /** Calls `listener` with the File menu's commands for this window; returns a function that stops it. */
+  onMenuCommand: (listener: (command: MenuCommand) => void): (() => void) => {
+    const forward = (_event: unknown, command: MenuCommand) => listener(command);
+    ipcRenderer.on(MENU_COMMAND_CHANNEL, forward);
+    return () => ipcRenderer.removeListener(MENU_COMMAND_CHANNEL, forward);
   },
   /** Calls `listener` when main has a project file for this window to open; returns a function that stops it. */
   onOpenRequest: (listener: () => void): (() => void) => {

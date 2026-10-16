@@ -24,5 +24,11 @@ export const migrations: ReadonlyArray<{ readonly name: string; readonly stateme
     "statements": [
       "ALTER TABLE `song` ADD `youtube_id` text;"
     ]
+  },
+  {
+    "name": "20261016143047_youtube_audio_id",
+    "statements": [
+      "ALTER TABLE `song` ADD `youtube_audio_id` text;"
+    ]
   }
 ];

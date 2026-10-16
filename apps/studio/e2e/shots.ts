@@ -76,7 +76,9 @@ try {
     fs.writeFileSync(chart, fs.readFileSync(chart, "utf8").replace(/#TITLE:.*/, `#TITLE:${name}`));
     await answerDialogs(app, song.folder, path.join(song.dir, `${name}.tunestudio`));
     await page.getByTestId("song-choose").click();
-    await page.getByTestId("song-create").click();
+    // Song, then Finish.
+    await page.getByTestId("flow-next").click();
+    await page.getByRole("button", { name: "Create project" }).click();
     await page.getByTestId("project").waitFor();
     if (name === "Night Signals") {
       await page.mouse.move(0, 0);

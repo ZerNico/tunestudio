@@ -13,6 +13,7 @@ import { Projects } from "../project/projects";
 import type { StudioServices } from "../services/layer";
 import { soloChart, syntheticBytes, tempDir, testRuntime, writeSong } from "../testing";
 import { describeSong, importSong, inspectSong } from "./song-import";
+import { usdbText } from "./usdb";
 
 let cleanups: (() => void | Promise<void>)[] = [];
 afterEach(async () => {
@@ -128,6 +129,112 @@ describe("inspecting a song folder", () => {
   });
 });
 
+describe("importing Syncer metadata", () => {
+  const sidecar = (fname: string, meta_tags = "a=dQw4w9WgXcQ,v=kPBzTxZQG5Q,co=cover.jpg,preview=30") =>
+    JSON.stringify({ version: 1, txt: { fname }, meta_tags });
+
+  it("matches the selected chart, keeps the local video and exports both sources after import", async () => {
+    const { dir, run } = setup();
+    const data = sidecar("song.txt");
+    const folder = writeSong(dir, "Song", {
+      "song.txt": soloChart("#VIDEO:clip.mp4"),
+      "other.txt": soloChart(),
+      "random-id.usdb": data,
+      "other.usdb": sidecar("other.txt", "v=rl0IjlamWPI"),
+      "Test Artist - Night Signals.mp3": audio,
+      "clip.mp4": syntheticBytes(10, 1),
+    });
+    const chart = await run(
+      Effect.gen(function* () {
+        const source = yield* inspectSong(folder, "song.txt");
+        expect(source.media.find((file) => file.role === "video")?.fileName).toBe("clip.mp4");
+        const session = yield* importSong(source, { includeVideo: true, target: path.join(dir, "Song.tunestudio") });
+        expect((yield* listMedia(session.db)).map((file) => file.role)).toEqual(["audio", "video"]);
+        return yield* readChart(session.db);
+      }),
+    );
+    expect(chart.song).toMatchObject({ youtubeId: "kPBzTxZQG5Q", youtubeAudioId: "dQw4w9WgXcQ", previewStart: 12.5 });
+    expect(usdbText(chart, { audio: null, cover: null, background: null }).text).toContain(
+      "#VIDEO:a=dQw4w9WgXcQ,v=kPBzTxZQG5Q,co=cover.jpg,preview=12.5,tags=synthetic%2Ctest\r\n",
+    );
+    expect(fs.readFileSync(path.join(folder, "random-id.usdb"), "utf8")).toBe(data);
+    expect((await run(inspectSong(folder, "other.txt"))).keptHeaders).toContainEqual(["VIDEO", "v=rl0IjlamWPI"]);
+  });
+
+  it("prefers embedded chart metadata to sidecar values", async () => {
+    const { dir, run } = setup();
+    const folder = writeSong(dir, "Song", {
+      "song.txt": soloChart("#VIDEO:v=rl0IjlamWPI,co=chosen.jpg"),
+      "meta.usdb": sidecar("song.txt"),
+      "Test Artist - Night Signals.mp3": audio,
+    });
+    expect((await run(inspectSong(folder))).keptHeaders).toContainEqual([
+      "VIDEO",
+      "v=rl0IjlamWPI,co=chosen.jpg,preview=30",
+    ]);
+  });
+
+  it("keeps an embedded audio-only source audio-only", async () => {
+    const { dir, run } = setup();
+    const folder = writeSong(dir, "Song", {
+      "song.txt": soloChart("#VIDEO:a=rl0IjlamWPI"),
+      "meta.usdb": sidecar("song.txt"),
+      "Test Artist - Night Signals.mp3": audio,
+    });
+    const session = await run(
+      importSong(await run(inspectSong(folder)), {
+        includeVideo: false,
+        target: path.join(dir, "Song.tunestudio"),
+      }),
+    );
+    expect((await run(readChart(session.db))).song).toMatchObject({ youtubeId: null, youtubeAudioId: "rl0IjlamWPI" });
+  });
+
+  it("skips excessive sidecars instead of arbitrarily choosing a subset", async () => {
+    const { dir, run } = setup();
+    const folder = writeSong(dir, "Song", {
+      "song.txt": soloChart(),
+      "Test Artist - Night Signals.mp3": audio,
+      ...Object.fromEntries(Array.from({ length: 17 }, (_, i) => [`${i}.usdb`, sidecar("song.txt")])),
+    });
+    const source = await run(inspectSong(folder));
+    expect(source.keptHeaders).toEqual([]);
+    expect(source.warnings).toContain("There are too many metadata files in this folder, so none was used.");
+  });
+
+  it("leaves metadata out if multiple sidecars claim the selected chart", async () => {
+    const { dir, run } = setup();
+    const folder = writeSong(dir, "Song", {
+      "song.txt": soloChart(),
+      "one.usdb": sidecar("song.txt"),
+      "two.usdb": sidecar("song.txt", "v=rl0IjlamWPI"),
+      "Test Artist - Night Signals.mp3": audio,
+    });
+    const source = await run(inspectSong(folder));
+    expect(source.keptHeaders).toEqual([]);
+    expect(source.warnings).toContain("More than one metadata file belongs to this chart, so none was used.");
+  });
+
+  it("ignores malformed, oversized and outside-folder sidecars without blocking import", async () => {
+    const { dir, run } = setup();
+    const folder = writeSong(dir, "Song", {
+      "song.txt": soloChart(),
+      "broken.usdb": "{",
+      "big.usdb": " ".repeat(1024 * 1024 + 1),
+      "Test Artist - Night Signals.mp3": audio,
+    });
+    const outside = path.join(dir, "outside.usdb");
+    fs.writeFileSync(outside, sidecar("song.txt"));
+    fs.symlinkSync(outside, path.join(folder, "linked.usdb"));
+    const source = await run(inspectSong(folder));
+    expect(source.keptHeaders).toEqual([]);
+    expect(source.warnings.filter((warning) => warning.includes("song metadata"))).toHaveLength(3);
+    expect(describeSong(source).blocker).toBeNull();
+    const session = await run(importSong(source, { includeVideo: false, target: path.join(dir, "Song.tunestudio") }));
+    expect((await run(readChart(session.db))).song).toMatchObject({ youtubeId: null, youtubeAudioId: null });
+  });
+});
+
 describe("importing a song", () => {
   it("writes the chart, details, unknown headers and media into a new project", async () => {
     const { dir, run } = setup();
@@ -169,6 +276,7 @@ describe("importing a song", () => {
       language: ["English", "German"],
       year: 2024,
       youtubeId: null,
+      youtubeAudioId: null,
       genre: "Pop",
       edition: null,
       creator: "Tune Studio tests",

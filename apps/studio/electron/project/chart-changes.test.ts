@@ -38,6 +38,7 @@ const chart: ProjectChart = {
     medleyEnd: null,
     extraHeaders: [],
     youtubeId: null,
+    youtubeAudioId: null,
   },
   singers: [
     {
@@ -87,6 +88,34 @@ const inverse = (changes: ChartChange[]): ChartChange[] =>
   changes.toReversed().map((change) => ({ ...change, before: change.after, after: change.before }) as ChartChange);
 
 describe("applyChartChanges", () => {
+  it.effect("saves, clears and undoes both YouTube source IDs", () =>
+    withProject((db, before) =>
+      Effect.gen(function* () {
+        const edit: ChartChange = {
+          table: "song",
+          before: { youtubeId: null, youtubeAudioId: null },
+          after: { youtubeId: "kPBzTxZQG5Q", youtubeAudioId: "dQw4w9WgXcQ" },
+        };
+        yield* db.transaction((tx) => applyChartChanges(tx, [edit]));
+        expect((yield* readEditorChart(db)).song).toMatchObject(edit.after!);
+        expect((yield* readChart(db)).song).toMatchObject(edit.after!);
+        yield* db.transaction((tx) => applyChartChanges(tx, inverse([edit])));
+        expect(yield* readEditorChart(db)).toEqual(before);
+        yield* db.transaction((tx) => applyChartChanges(tx, [edit]));
+        yield* db.transaction((tx) =>
+          applyChartChanges(tx, [
+            {
+              table: "song",
+              before: { youtubeAudioId: "dQw4w9WgXcQ" },
+              after: { youtubeAudioId: null },
+            },
+          ]),
+        );
+        expect((yield* readChart(db)).song).toMatchObject({ youtubeId: "kPBzTxZQG5Q", youtubeAudioId: null });
+      }),
+    ),
+  );
+
   it.effect("moves a note, keeps its line in order, and undoes back to exactly what was there", () =>
     withProject((db, before) =>
       Effect.gen(function* () {

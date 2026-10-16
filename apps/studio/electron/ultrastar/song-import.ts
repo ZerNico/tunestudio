@@ -5,10 +5,11 @@ import {
   parseUltraStar,
   UltraStarError,
 } from "@tunestudio/ultrastar";
-import { Effect, FileSystem, Option, Path } from "effect";
+import { Effect, FileSystem, Option, Path, Stream } from "effect";
 
 import { songFileName } from "../../src/lib/file-names";
 import type { ImportProgress, MediaRole, SongInspection, SongMediaFile } from "../../src/lib/native/types";
+import { ffmpegTools } from "../audio-file/audio-file";
 import {
   ChartUnreadable,
   type DiskFull,
@@ -20,10 +21,15 @@ import {
 } from "../errors";
 import { writeChart } from "../project/chart";
 import { orDiskFull, writeMeta } from "../project/database";
-import { writeMedia } from "../project/media";
+import { type MediaSource, writeMedia } from "../project/media";
 import { type OpenError, Projects, type ProjectSession } from "../project/projects";
+import { separateStems } from "../separation/separation";
+import { Drafts } from "../services/drafts";
+import { AppSettings } from "../services/settings";
 import { chartToProject } from "./chart-mapping";
-import { parseMetaTags, readMetaTags } from "./usdb";
+import { formatMetaTags, type MetaTags, parseMetaTags } from "./meta-tags";
+import { readMetaTags } from "./usdb";
+import { usdbSidecarTags } from "./usdb-sidecar";
 
 /** Charts are text; anything bigger than this isn't one. */
 const MAX_CHART_SIZE = 8 * 1024 * 1024;
@@ -153,7 +159,61 @@ export function inspectSong(
           : `The ${ROLE_NAMES[role]} ${quoted(fileName)} is missing, so it isn't imported.`,
       );
     }
+    const sidecar = yield* readSidecarTags(folder, chart, entries, warnings);
+    if (sidecar?.length) {
+      const index = keptHeaders.findIndex(([key]) => key === "VIDEO");
+      const embedded = index >= 0 ? (parseMetaTags(keptHeaders[index]![1]) ?? []) : [];
+      // Explicit chart metadata wins over the sidecar. Local #VIDEO filenames still name the copied media.
+      const keys = new Set(embedded.map(([key]) => key));
+      // Source tags form a pair. A locally edited chart may have deliberately removed one.
+      if (keys.has("a") || keys.has("v")) {
+        keys.add("a");
+        keys.add("v");
+      }
+      const merged = formatMetaTags([...embedded, ...sidecar.filter(([key]) => !keys.has(key))]);
+      if (index >= 0) keptHeaders[index] = ["VIDEO", merged];
+      else keptHeaders.push(["VIDEO", merged]);
+    }
     return { folder, chart, charts, document: parsed.document, media, keptHeaders, warnings };
+  });
+}
+
+/** Optional Syncer metadata never blocks importing a chart, and never reads outside the song folder. */
+function readSidecarTags(folder: string, chart: string, entries: string[], warnings: string[]) {
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const matches: MetaTags[] = [];
+    const names = entries.filter((entry) => entry.toLowerCase().endsWith(".usdb")).toSorted();
+    if (names.length > 16) {
+      warnings.push("There are too many metadata files in this folder, so none was used.");
+      return null;
+    }
+    const maxSize = 1024 * 1024;
+    for (const name of names) {
+      const file = yield* resolveInFolder(folder, name);
+      if (file.status !== "found" || file.size > maxSize) {
+        warnings.push(`Couldn't read song metadata in ${quoted(name)}.`);
+        continue;
+      }
+      const tags = yield* fs.stream(file.path, { bytesToRead: maxSize + 1 }).pipe(
+        Stream.runCollect,
+        Effect.flatMap((chunks) =>
+          Effect.try(() => {
+            const bytes = Buffer.concat(chunks);
+            if (bytes.length > maxSize) throw new Error("Metadata file is too large");
+            return usdbSidecarTags(bytes.toString("utf8"), chart);
+          }),
+        ),
+        Effect.option,
+      );
+      if (Option.isNone(tags)) warnings.push(`Couldn't read song metadata in ${quoted(name)}.`);
+      else if (tags.value !== null) matches.push(tags.value);
+    }
+    if (matches.length > 1) {
+      warnings.push("More than one metadata file belongs to this chart, so none was used.");
+      return null;
+    }
+    return matches[0] ?? null;
   });
 }
 
@@ -221,6 +281,48 @@ export interface ImportOptions {
   includeVideo: boolean;
   /** The `.tunestudio` file to write. */
   target: string;
+  /** Vocals and music separated from the song (`separateSongFolder`), in place of any the folder has. */
+  stems?: { vocals: string; instrumental: string };
+}
+
+/**
+ * Separates the vocals and music from a song folder's audio into a new draft, for the import to take along (the folder
+ * stays as it is). Returns the draft; a failed or cancelled separation leaves none.
+ */
+export function separateSongFolder(
+  source: SongSource,
+  onProgress: (progress: ImportProgress) => Effect.Effect<void> = () => Effect.void,
+) {
+  return Effect.gen(function* () {
+    const audio = source.media.find((file) => file.role === "audio");
+    const problem = mainAudioProblem(audio);
+    if (problem || !audio?.path) return yield* new MissingMainAudio({ message: problem ?? "The song has no audio." });
+    const drafts = yield* Drafts;
+    const settings = yield* AppSettings.use((stored) => stored.get);
+    const { ffmpeg, ffprobe } = yield* ffmpegTools;
+    const draft = yield* drafts.create({ kind: "song", path: source.folder });
+    return yield* Effect.gen(function* () {
+      const stems = yield* separateStems(
+        {
+          ffmpeg,
+          ffprobe,
+          audio: audio.path!,
+          folder: draft.folder,
+          format: settings.audio.format,
+          bitrate: settings.audio.bitrate,
+        },
+        onProgress,
+      );
+      yield* drafts.setMedia(draft.id, {
+        audio: audio.path!,
+        video: null,
+        videoProblem: null,
+        cover: null,
+        ...stems,
+      });
+      return draft.id;
+    }).pipe(Effect.onError(() => drafts.discard(draft.id)));
+  });
 }
 
 /**
@@ -242,10 +344,35 @@ export function importSong(
     const problem = mainAudioProblem(audio);
     if (problem) return yield* new MissingMainAudio({ message: problem });
 
-    const files = source.media.filter(
-      (file): file is SourceMedia & { path: string } =>
-        file.found && file.path !== undefined && (options.includeVideo || file.role !== "video"),
-    );
+    const paths = yield* Path.Path;
+    const separated = options.stems;
+    const base = songFileName(source.document.metadata.ARTIST ?? "", source.document.metadata.TITLE ?? "");
+    const files: { path: string; role: MediaRole; fileName: string; size?: number; source: MediaSource }[] = [
+      ...source.media
+        .filter(
+          (file): file is SourceMedia & { path: string } =>
+            file.found &&
+            file.path !== undefined &&
+            (options.includeVideo || file.role !== "video") &&
+            // Separated ones take the place of the folder's.
+            !(separated && (file.role === "vocals" || file.role === "instrumental")),
+        )
+        .map((file) => ({
+          path: file.path,
+          role: file.role,
+          fileName: file.fileName,
+          size: file.size,
+          source: "imported" as const,
+        })),
+      ...(separated
+        ? (["vocals", "instrumental"] as const).map((role) => ({
+            path: separated[role],
+            role,
+            fileName: `${base} ${role === "vocals" ? "[VOC]" : "[INSTR]"}${paths.extname(separated[role])}`,
+            source: "generated" as const,
+          }))
+        : []),
+    ];
     const total = files.reduce((sum, file) => sum + (file.size ?? 0), 0);
     const { chart, warnings: mappingWarnings } = yield* Effect.try({
       try: () => chartToProject(source.document),
@@ -258,7 +385,6 @@ export function importSong(
     const warnings = [...source.warnings, ...mappingWarnings];
 
     const fs = yield* FileSystem.FileSystem;
-    const paths = yield* Path.Path;
     return yield* projects.create(options.target, (db) =>
       Effect.gen(function* () {
         yield* onProgress({ step: `Reading ${source.chart}`, done: 0, total });
@@ -278,7 +404,7 @@ export function importSong(
           const before = done;
           yield* writeMedia(
             db,
-            { path: file.path, role: file.role, fileName: file.fileName, source: "imported" },
+            { path: file.path, role: file.role, fileName: file.fileName, source: file.source },
             (written) => onProgress({ step: `Copying ${file.fileName}`, done: before + written, total }),
           ).pipe(Effect.provideService(FileSystem.FileSystem, fs));
           done += file.size ?? 0;

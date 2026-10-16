@@ -183,12 +183,29 @@ export function SongDetailsDialog(props: {
               <Field
                 label="YouTube video"
                 value={props.song.youtubeId ? watchUrl(props.song.youtubeId) : ""}
-                placeholder="A link to the song's video on YouTube"
                 testid="song-youtube"
                 save={(text) => {
                   // A link that isn't a video leaves the field as it was.
                   const id = text.trim() ? parseYoutubeVideoId(text) : null;
-                  if (id !== null || !text.trim()) change("Change YouTube video", { youtubeId: id });
+                  if (id !== null || !text.trim()) {
+                    change("Change YouTube video", {
+                      youtubeId: id,
+                      ...(id && id === props.song.youtubeAudioId ? { youtubeAudioId: null } : {}),
+                    });
+                  }
+                }}
+              />
+            </div>
+            <div class="col-span-2">
+              <Field
+                label="YouTube audio"
+                value={props.song.youtubeAudioId ? watchUrl(props.song.youtubeAudioId) : ""}
+                testid="song-youtube-audio"
+                save={(text) => {
+                  const id = text.trim() ? parseYoutubeVideoId(text) : null;
+                  if (id !== null || !text.trim()) {
+                    change("Change YouTube audio", { youtubeAudioId: id === props.song.youtubeId ? null : id });
+                  }
                 }}
               />
             </div>

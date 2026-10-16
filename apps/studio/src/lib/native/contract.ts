@@ -79,6 +79,8 @@ export const ImportInput = Schema.Struct({
   includeVideo: Schema.Boolean,
   /** The `.tunestudio` file to write, from `dialogs.chooseProjectLocation`. */
   target: Schema.String,
+  /** The draft `song.separate` put the vocals and music in, taken in place of the folder's. */
+  draftId: Schema.optional(Schema.String),
 });
 
 export const SaveLocationInput = Schema.Struct({ name: Schema.String });
@@ -243,7 +245,8 @@ export const SongFields = Schema.Struct({
   medleyEnd: Schema.optional(Schema.NullOr(Schema.Number)),
   /** Kept in the song's `#TAGS` header. */
   tags: Schema.optional(Schema.Array(Schema.String)),
-  youtubeId: Schema.optional(Schema.NullOr(Schema.String)),
+  youtubeId: Schema.optional(Schema.NullOr(Schema.String.check(Schema.isPattern(/^[\w-]{11}$/)))),
+  youtubeAudioId: Schema.optional(Schema.NullOr(Schema.String.check(Schema.isPattern(/^[\w-]{11}$/)))),
 });
 export type SongFields = typeof SongFields.Type;
 
@@ -335,6 +338,8 @@ export class NativeRpcs extends RpcGroup.make(
   /** Reads a song folder (or chart) and reports what an import would bring in. */
   call("song.inspect", SongInput, SongInspection),
   /** Imports a song into a new project file, reporting progress, and opens it. */
+  /** Separates the vocals and music from the song's audio into a new draft, reporting progress. */
+  withProgress("song.separate", SongInput, ImportProgress, DraftInput),
   withProgress("song.import", ImportInput, ImportProgress, OpenedProject),
 
   call("project.open", PathInput, OpenedProject),

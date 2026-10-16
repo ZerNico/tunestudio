@@ -38,8 +38,10 @@ export const song = sqliteTable("song", {
   medleyEnd: real("medley_end"),
   /** JSON list of `[name, value]` pairs in file order (`ExtraHeaders`). */
   extraHeaders: text("extra_headers").notNull().default("[]"),
-  /** The song's YouTube video (its id), where its audio and video can be had: for USDB and usdb_syncer. */
+  /** YouTube video ID; also supplies the audio unless a separate source is set. */
   youtubeId: text("youtube_id"),
+  /** A separate YouTube audio source, or the only source for an audio-only song. */
+  youtubeAudioId: text("youtube_audio_id"),
 });
 
 /** Duet voices; a solo chart has one singer. */

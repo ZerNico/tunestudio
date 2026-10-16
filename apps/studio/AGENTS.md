@@ -276,16 +276,12 @@ resources/icons/          # App icon (icon.svg is the source of icon.png)
   focus (no Dock icon), pages still render for screenshots. `TUNESTUDIO_E2E_SHOW=1` shows it when debugging. Take
   screenshots only when a visual check is actually needed
 
-## Known base-ui-solid Issues (0.3.0)
+## base-ui-solid
 
-Repros live in `.repro/` (gitignored): run `bunx vite`, open `http://localhost:1430/.repro/<name>.html`, or run
-`node .repro/run.mjs` with the dev server up.
-
-- **Modal Dialog focus doesn't wrap** (`focus-guard`): Tab from the last tabbable lands on a focus guard instead of
-  the first tabbable (still so in 0.3.0). `ui/dialog.tsx` keeps the spike's temporary `wrapFocus` workaround
-- **Dialog dev diagnostics**: in the app, Dialog's store logs EFFECT_RELAY_TEAR warnings in development (from
-  `useSyncedValues` relaying props into the store from an effect), still in 0.3.0; the `dialog` repro no longer shows
-  them. Harmless for behaviour; `bun run shots` in dev mode prints them
+Repros of suspected bugs live in `.repro/` (gitignored): run `bunx vite`, open
+`http://localhost:1430/.repro/<name>.html`, or run `node .repro/run.mjs` with the dev server up. Compare with upstream
+`@base-ui/react` before reporting one: focus guards, for one, hand focus on a frame later in both. No known issues in
+0.3.0.
 
 ## Common Gotchas
 

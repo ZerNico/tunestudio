@@ -6,7 +6,6 @@ import XIcon from "~icons/lucide/x";
 import { cn, stateClass } from "~/lib/utils";
 
 import { Button } from "./button";
-import { wrapFocus } from "./dialog";
 
 /**
  * shadcn/ui Sheet (Base UI variant): a modal side panel on base-ui-solid's Dialog
@@ -48,7 +47,7 @@ export type SheetContentProps = SheetPrimitive.Popup.Props & {
 };
 
 export function SheetContent(props: SheetContentProps) {
-  const rest = omit(props, "class", "children", "side", "showCloseButton", "closeLabel", "onKeyDown");
+  const rest = omit(props, "class", "children", "side", "showCloseButton", "closeLabel");
   return (
     <SheetPortal>
       <SheetOverlay />
@@ -66,10 +65,6 @@ export function SheetContent(props: SheetContentProps) {
           )
         }
         {...rest}
-        onKeyDown={(event) => {
-          (props.onKeyDown as ((e: KeyboardEvent) => void) | undefined)?.(event);
-          wrapFocus(event);
-        }}
       >
         <Show when={props.showCloseButton !== false}>
           <SheetPrimitive.Close

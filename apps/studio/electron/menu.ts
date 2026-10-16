@@ -8,7 +8,12 @@ import {
   type WebContents,
 } from "electron";
 
-import { EDIT_COMMAND_CHANNEL, type EditCommand } from "../src/lib/native/channel";
+import {
+  EDIT_COMMAND_CHANNEL,
+  type EditCommand,
+  MENU_COMMAND_CHANNEL,
+  type MenuCommand,
+} from "../src/lib/native/channel";
 import { COPYRIGHT } from "./identity";
 
 /**
@@ -28,12 +33,47 @@ export async function sendEditCommand(command: EditCommand, window?: BaseWindow)
   target.webContents.send(EDIT_COMMAND_CHANNEL, command, text);
 }
 
+/** The File menu's items that act on the project in front (enabled only while one is). */
+const PROJECT_ITEMS: { id: MenuCommand; label: string; accelerator?: string }[] = [
+  { id: "export-games", label: "Export for Games", accelerator: "CmdOrCtrl+E" },
+  { id: "export-usdb", label: "Export for USDB", accelerator: "Shift+CmdOrCtrl+E" },
+  { id: "song-details", label: "Song Details", accelerator: "CmdOrCtrl+I" },
+  { id: "close-project", label: "Close Project" },
+];
+
+/** Hands a File menu command to the page of the window it is for. */
+function sendMenuCommand(command: MenuCommand, window?: BaseWindow) {
+  const target = window instanceof BrowserWindow ? window : BrowserWindow.getFocusedWindow();
+  target?.webContents.send(MENU_COMMAND_CHANNEL, command);
+}
+
+/** A project item as the menu shows it: off until a project is in front. */
+function projectItem(item: (typeof PROJECT_ITEMS)[number]): MenuItemConstructorOptions {
+  return {
+    id: item.id,
+    label: item.label,
+    accelerator: item.accelerator,
+    enabled: false,
+    click: (_menuItem, window) => sendMenuCommand(item.id, window),
+  };
+}
+
+/** Enables the File menu's project items while the window in front shows a project (macOS). */
+export function setProjectItemsEnabled(enabled: boolean) {
+  const menu = Menu.getApplicationMenu();
+  for (const item of PROJECT_ITEMS) {
+    const entry = menu?.getMenuItemById(item.id);
+    if (entry) entry.enabled = enabled;
+  }
+}
+
 /**
- * On macOS a minimal menu: the app menu, File with New Window (`onNewWindow`, also in the Dock's menu), Edit (which
- * makes copy and paste work in text fields), View with full screen, and Window. Windows and Linux get no menu bar
- * (the page takes Ctrl+Shift+N for a new window). Reload and the developer tools are only there in development.
+ * On macOS a minimal menu: the app menu; File with New Window (`onNewWindow`, also in the Dock's menu), Open Project
+ * (`onOpenProject`), the project's exports, song details and closing it; Edit (which makes copy and paste work in text
+ * fields); View with full screen; and Window. Windows and Linux get no menu bar (the page takes Ctrl+Shift+N for a
+ * new window, and has the rest on screen). Reload and the developer tools are only there in development.
  */
-export function setApplicationMenu(onNewWindow: () => void) {
+export function setApplicationMenu(onNewWindow: () => void, onOpenProject: () => void) {
   const development = !app.isPackaged;
   const developmentItems: MenuItemConstructorOptions[] = development
     ? [{ type: "separator" }, { role: "reload" }, { role: "toggleDevTools" }]
@@ -72,7 +112,11 @@ export function setApplicationMenu(onNewWindow: () => void) {
         label: "File",
         submenu: [
           { label: "New Window", accelerator: "Shift+CmdOrCtrl+N", click: () => onNewWindow() },
+          { label: "Open Project", accelerator: "CmdOrCtrl+O", click: () => onOpenProject() },
           { type: "separator" },
+          ...PROJECT_ITEMS.slice(0, 3).map(projectItem),
+          { type: "separator" },
+          projectItem(PROJECT_ITEMS[3]!),
           { role: "close" },
         ],
       },

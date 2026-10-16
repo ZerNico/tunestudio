@@ -1,4 +1,3 @@
-import type { JSX } from "@solidjs/web";
 import { createSignal, Show } from "solid-js";
 
 import { Note } from "~/components/home/song-import-flow";
@@ -13,6 +12,7 @@ import type { Stage } from "./flow-runner";
 import { LyricsReview } from "./lyrics-review";
 import type { NewProject } from "./new-project";
 import { follow, percentOf, progressBarClass } from "./progress";
+import { SummaryRow } from "./summary";
 
 /** The lyrics the project starts with: found online, heard in the song, or the user's own. */
 export function lyricsStage(project: NewProject): Stage {
@@ -100,16 +100,6 @@ export function chartStage(project: NewProject): Stage {
       </>
     ),
   };
-}
-
-/** One line of the Finish stage's summary. */
-function SummaryRow(props: { label: string; children: JSX.Element; testid: string }) {
-  return (
-    <li class="flex items-baseline gap-3 py-2 text-[11.5px]" data-testid={props.testid}>
-      <span class="w-16 shrink-0 text-[10.5px] text-popover-muted">{props.label}</span>
-      <span class="min-w-0 flex-1 text-popover-foreground">{props.children}</span>
-    </li>
-  );
 }
 
 const lineCount = (count: number) => `${count} ${count === 1 ? "line" : "lines"}`;

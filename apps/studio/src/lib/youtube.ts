@@ -7,12 +7,13 @@ export function watchUrl(videoId: string): string {
 }
 
 /**
- * The video ID of a YouTube watch, share, shorts or embed link, or `null` if `text` isn't one.
+ * The video ID from a bare ID or a YouTube watch, share, shorts or embed link; null for anything else.
  * Accepts links without a scheme, as people paste them from the address bar.
  */
 export function parseYoutubeVideoId(text: string): string | null {
   const trimmed = text.trim();
   if (!trimmed) return null;
+  if (VIDEO_ID.test(trimmed)) return trimmed;
   const url = URL.parse(/^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`);
   if (!url) return null;
 

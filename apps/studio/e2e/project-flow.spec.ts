@@ -30,8 +30,10 @@ test("imports a song folder, exports it, and reopens the project from recents", 
   await page.getByTestId("song-choose").click();
   const dialog = page.getByTestId("flow-dialog");
   await expect(dialog.getByTestId("song-title")).toHaveText("Test Artist · Night Signals");
-  await expect(dialog.getByTestId("song-file")).toHaveCount(2);
-  await dialog.getByTestId("song-create").click();
+  await expect(dialog.getByTestId("song-file")).toHaveCount(4);
+  // Song, then Finish.
+  await dialog.getByTestId("flow-next").click();
+  await dialog.getByRole("button", { name: "Create project" }).click();
 
   // The project opens in the editor: every note in view, each line's text, the transport.
   await expect(page.getByTestId("project")).toBeVisible();
@@ -79,6 +81,8 @@ test("imports a song folder, exports it, and reopens the project from recents", 
   const exported = path.join(exports, "Test Artist - Night Signals");
   expect(fs.readdirSync(exported).toSorted()).toEqual([
     "Test Artist - Night Signals [CO].png",
+    "Test Artist - Night Signals [INSTR].mp3",
+    "Test Artist - Night Signals [VOC].mp3",
     "Test Artist - Night Signals.mp3",
     "Test Artist - Night Signals.txt",
   ]);
@@ -134,12 +138,65 @@ test("imports a song folder, exports it, and reopens the project from recents", 
   expect(studio.problems).toEqual([]);
 });
 
+test("imports both YouTube sources from a sidecar, edits them and keeps them when reopened", async () => {
+  const { app, page } = studio;
+  fs.writeFileSync(
+    path.join(song.folder, "syncer.usdb"),
+    JSON.stringify({
+      version: 1,
+      txt: { fname: "song.txt" },
+      meta_tags: "a=dQw4w9WgXcQ,v=kPBzTxZQG5Q,co=cover.jpg",
+      audio: { resource: "dQw4w9WgXcQ" },
+      video: { resource: "kPBzTxZQG5Q" },
+    }),
+  );
+  const project = path.join(song.dir, "Sources.tunestudio");
+  await answerDialogs(app, song.folder, project);
+  await page.getByTestId("song-choose").click();
+  await page.getByTestId("flow-next").click();
+  await page.getByRole("button", { name: "Create project" }).click();
+  await expect(page.getByTestId("project")).toBeVisible();
+  await page.getByTestId("open-song-details").click();
+  const video = page.getByRole("textbox", { name: "YouTube video" });
+  const audio = page.getByRole("textbox", { name: "YouTube audio" });
+  await expect(video).toHaveValue("https://www.youtube.com/watch?v=kPBzTxZQG5Q");
+  await expect(audio).toHaveValue("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+  await page.getByTestId("song-details").screenshot({ path: test.info().outputPath("youtube-sources.png") });
+  // A bare ID is stored, and rendered as a clean URL.
+  await audio.fill("rl0IjlamWPI");
+  await audio.press("Enter");
+  await expect(audio).toHaveValue("https://www.youtube.com/watch?v=rl0IjlamWPI");
+  await page.keyboard.press("Escape");
+  await page.getByTestId("undo").click();
+  await page.getByTestId("open-song-details").click();
+  await expect(audio).toHaveValue("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+  await page.keyboard.press("Escape");
+  await page.getByTestId("redo").click();
+  await page.getByTestId("close-project").click();
+  await expect(page.getByTestId("home")).toBeVisible();
+  await page.getByTestId("recent-item").click();
+  await expect(page.getByTestId("project")).toBeVisible();
+  await page.getByTestId("open-song-details").click();
+  await expect(video).toHaveValue("https://www.youtube.com/watch?v=kPBzTxZQG5Q");
+  await expect(audio).toHaveValue("https://www.youtube.com/watch?v=rl0IjlamWPI");
+  await page.keyboard.press("Escape");
+  const exported = path.join(song.dir, "Sources.txt");
+  await answerDialogs(app, exported);
+  await page.getByTestId("export-song").click();
+  await page.getByTestId("export-usdb").click();
+  await expect(page.getByText("Exported for USDB")).toBeVisible();
+  expect(fs.readFileSync(exported, "utf8")).toContain("#VIDEO:a=rl0IjlamWPI,v=kPBzTxZQG5Q,co=cover.jpg\r\n");
+  expect(studio.problems).toEqual([]);
+});
+
 test("opens a project with Open project, and drops a missing one from recents", async () => {
   const { app, page } = studio;
   const projectFile = path.join(song.dir, "Night Signals.tunestudio");
   await answerDialogs(app, song.folder, projectFile);
   await page.getByTestId("song-choose").click();
-  await page.getByTestId("song-create").click();
+  // Song, then Finish.
+  await page.getByTestId("flow-next").click();
+  await page.getByRole("button", { name: "Create project" }).click();
   await expect(page.getByTestId("project")).toBeVisible();
   await page.getByTestId("close-project").click();
 
@@ -164,7 +221,7 @@ test("explains a song folder without its audio and creates nothing", async () =>
   await expect(dialog.getByTestId("song-blocker")).toHaveText(
     "The audio file “song.mp3” is missing from the song folder.",
   );
-  await expect(dialog.getByTestId("song-create")).toBeDisabled();
+  await expect(dialog.getByTestId("flow-next")).toBeDisabled();
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
   expect(studio.problems).toEqual([]);

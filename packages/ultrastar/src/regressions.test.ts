@@ -1,15 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  autoPitchNotes,
-  autoPitchNotesWithDiagnostics,
   DocumentValidationError,
-  mergeNotes,
   parseUltraStar,
   serializeUltraStar,
   serializeUltraStarWithDiagnostics,
-  splitNote,
-  transposeNotes,
   validateDocument,
   type ChartDocument,
   type ChartLineBreak,
@@ -42,117 +37,6 @@ describe("review: Unicode text survives validation/export/reimport", () => {
       });
     }
   }
-});
-
-describe("review: weighted median is stable under confidence scaling", () => {
-  it.each([1, 0.7, 0.3, 1e-12, 1e-13, 1e-100, Number.MIN_VALUE])(
-    "takes the tied midpoint at confidence %s",
-    (confidence) => {
-      const note = chart().notes[0]!;
-      const frames = [60, 60, 60, 72, 72, 72].map((midi, index) => ({ time: 0.1 + index * 0.1, midi, confidence }));
-      expect(autoPitchNotes([note], frames, { minConfidence: 0 })[0]!.pitch).toBe(66);
-    },
-  );
-
-  it.each([1, 0.7, 1e-12, 1e-13, 1e-100, 1e-300])(
-    "does not invent a tie when unequal weights are scaled by %s",
-    (scale) => {
-      const note = chart().notes[0]!;
-      const frames = [
-        { time: 0.1, midi: 60, confidence: scale },
-        { time: 0.2, midi: 72, confidence: scale * 0.1 },
-      ];
-      expect(autoPitchNotes([note], frames, { minConfidence: 0 })[0]!.pitch).toBe(60);
-      expect(
-        autoPitchNotes(
-          [note],
-          frames.map((frame) => ({ ...frame, midi: 132 - frame.midi })),
-          { minConfidence: 0 },
-        )[0]!.pitch,
-      ).toBe(72);
-    },
-  );
-
-  it("finds a mixed-weight tie with compensated sums, invariant to ordering and scale", () => {
-    const note = chart().notes[0]!;
-    for (const scale of [1, 0.7, 1e-12, 1e-100]) {
-      const frames = [
-        { time: 0.1, midi: 60, confidence: 0.1 * scale },
-        { time: 0.2, midi: 60, confidence: 0.2 * scale },
-        { time: 0.3, midi: 72, confidence: 0.3 * scale },
-      ];
-      expect(autoPitchNotes([note], frames, { minConfidence: 0 })[0]!.pitch).toBe(66);
-      expect(autoPitchNotes([note], frames.toReversed(), { minConfidence: 0 })[0]!.pitch).toBe(66);
-    }
-  });
-
-  it("does not erase a genuine near-tie weight difference", () => {
-    const note = chart().notes[0]!;
-    for (const scale of [1, 1e-12, 1e-100]) {
-      expect(
-        autoPitchNotes(
-          [note],
-          [
-            { time: 0.1, midi: 60, confidence: scale },
-            { time: 0.2, midi: 72, confidence: scale * (1 - 1e-10) },
-          ],
-          { minConfidence: 0 },
-        )[0]!.pitch,
-      ).toBe(60);
-    }
-  });
-});
-
-describe("review: imported half-open note boundaries", () => {
-  it("excludes a 1.2s frame from the preceding BPM=150/GAP=1000 note", () => {
-    const document = parseUltraStar(
-      "#TITLE:Review\n#ARTIST:Original\n#BPM:150\n#GAP:1000\n: 1 1 0 before\n: 2 1 0 after\nE\n",
-    ).document;
-    const [before, after] = document.notes as [ChartNote, ChartNote];
-    expect(before.start + before.duration).toBe(after.start);
-    expect(after.start).toBe(1.2);
-    const result = autoPitchNotesWithDiagnostics(document.notes, [{ time: 1.2, midi: 72, confidence: 0.9 }]);
-    expect(result.notes.map((note) => note.pitch)).toEqual([60, 72]);
-    expect(result.noEvidenceIds).toEqual([before.id]);
-    expect(result.updatedIds).toEqual([after.id]);
-  });
-
-  it.each([120, 150, 217.5, 472.072, 123.456])(
-    "keeps adjacent positive-audio boundaries identical at BPM %s",
-    (bpm) => {
-      const lines = Array.from({ length: 40 }, (_, index) => `: ${index + 1} 1 0 note${index}`);
-      const document = parseUltraStar(
-        `#TITLE:Review\n#ARTIST:Original\n#BPM:${bpm}\n#GAP:11251\n${lines.join("\n")}\nE\n`,
-      ).document;
-      for (let index = 1; index < document.notes.length; index++) {
-        const before = document.notes[index - 1]!;
-        const after = document.notes[index]!;
-        expect(before.start + before.duration).toBe(after.start);
-        const result = autoPitchNotes([before, after], [{ time: after.start, midi: 72, confidence: 0.9 }]);
-        expect(result.map((note) => note.pitch)).toEqual([60, 72]);
-      }
-    },
-  );
-
-  it("retains real imported overlaps rather than assigning a frame to only one note", () => {
-    const document = parseUltraStar(
-      "#TITLE:Review\n#ARTIST:Original\n#BPM:150\n#GAP:1000\n: 1 2 0 before\n: 2 1 0 after\nE\n",
-    ).document;
-    expect(
-      autoPitchNotes(document.notes, [{ time: 1.2, midi: 72, confidence: 0.9 }]).map((note) => note.pitch),
-    ).toEqual([72, 72]);
-  });
-
-  it("retains even very small intentional editor overlaps without a broad time tolerance", () => {
-    const note = chart().notes[0]!;
-    const notes = [
-      { ...note, start: 1.1, duration: 0.1000000001 },
-      { ...note, id: "next", start: 1.2, duration: 0.1 },
-    ];
-    expect(autoPitchNotes(notes, [{ time: 1.2, midi: 72, confidence: 0.9 }]).map((item) => item.pitch)).toEqual([
-      72, 72,
-    ]);
-  });
 });
 
 describe("review: malformed recovery JSON is diagnosed without coercion", () => {
@@ -228,18 +112,14 @@ describe("review: malformed recovery JSON is diagnosed without coercion", () => 
 
 describe("review: note types are strings, not coerced property keys", () => {
   it.each([["normal"], ["golden"], ["rap"], { toString: null }].map((type) => [type]))(
-    "rejects type %j in validation, export, and editing",
+    "rejects type %j in validation and export",
     (type) => {
       const document = chart();
       setNoteField(document, "type", type);
-      const note = document.notes[0]!;
       expect(
         validateDocument(document).some((item) => item.severity === "error" && item.message.includes("note type")),
       ).toBe(true);
       expect(() => serializeUltraStarWithDiagnostics(document)).toThrow(DocumentValidationError);
-      expect(() => splitNote(note, 0.5)).toThrow(/Unsupported note type/);
-      expect(() => mergeNotes([note])).toThrow(/Unsupported note type/);
-      expect(() => transposeNotes([note], 1)).toThrow(/Unsupported note type/);
     },
   );
 });

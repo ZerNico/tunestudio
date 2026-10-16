@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  createEmptyDocument,
   parseUltraStar,
   serializeUltraStar,
   serializeUltraStarWithDiagnostics,
@@ -10,6 +9,14 @@ import {
   validateDocument,
   type ChartDocument,
 } from "./index";
+
+/** A chart with no notes and valid headers. */
+const createEmptyDocument = (): ChartDocument => ({
+  version: 1,
+  id: "empty",
+  metadata: { TITLE: "Untitled", ARTIST: "Unknown artist", BPM: "120", GAP: "0" },
+  notes: [],
+});
 
 /** Lets a test pass deliberately malformed data where the API expects a typed value. */
 const untyped = <T>(value: unknown): T => value as T;

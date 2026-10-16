@@ -6,10 +6,11 @@ import { afterEach, describe, expect, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
 
 import { AppLog } from "../services/app-log";
+import { Drafts, draftsLayer } from "../services/drafts";
 import { settingsLayer } from "../services/settings";
 import { fakeModels, fakeNative, recordingDesktop, soloChart, syntheticBytes, tempDir, writeSong } from "../testing";
 import { Tools } from "../tools/tools";
-import { importSong, inspectSong } from "../ultrastar/song-import";
+import { importSong, inspectSong, separateSongFolder } from "../ultrastar/song-import";
 import { listMedia, writeMediaToFile } from "./media";
 import { projectsLayer } from "./projects";
 import { removeVideo, replaceSongMedia, separateSong } from "./song-media";
@@ -67,6 +68,7 @@ function setup() {
     recordingDesktop(path.join(dir, "Music")).layer,
     projectsLayer("0.0.0-test"),
     settingsLayer(path.join(dir, "settings.json")),
+    draftsLayer(path.join(dir, "drafts")),
     fakeNative,
     fakeModels,
   ).pipe(Layer.provideMerge(NodeServices.layer));
@@ -87,7 +89,7 @@ function setup() {
     fs.writeFileSync(at, syntheticBytes(2000, seed));
     return at;
   };
-  return { dir, layer, open, file };
+  return { dir, layer, open, file, song };
 }
 
 const roles = (rows: { role: string; fileName: string; source: string }[]) =>
@@ -138,6 +140,29 @@ describe("song media", () => {
         ["vocals", "Test Artist - Night Signals [VOC].m4a", "generated"],
         ["instrumental", "Test Artist - Night Signals [INSTR].m4a", "generated"],
       ]);
+    }).pipe(Effect.provide(layer));
+  });
+});
+
+describe("importing an UltraStar song with its voice separated", () => {
+  it.effect("separates the folder's audio into a draft, and imports the stems with the song", () => {
+    const { dir, layer, song } = setup();
+    return Effect.gen(function* () {
+      const source = yield* inspectSong(song);
+      const draftId = yield* separateSongFolder(source);
+      const draft = yield* Drafts.use((drafts) => drafts.get(draftId));
+      const session = yield* importSong(source, {
+        includeVideo: false,
+        target: path.join(dir, "Separated.tunestudio"),
+        stems: { vocals: draft.media!.vocals!, instrumental: draft.media!.instrumental! },
+      });
+      expect(roles(yield* listMedia(session.db))).toEqual([
+        ["audio", "Test Artist - Night Signals.mp3", "imported"],
+        ["vocals", "Test Artist - Night Signals [VOC].m4a", "generated"],
+        ["instrumental", "Test Artist - Night Signals [INSTR].m4a", "generated"],
+      ]);
+      // The song folder stays as it was.
+      expect(fs.readdirSync(song).toSorted()).toEqual(["Test Artist - Night Signals.mp3", "clip.mp4", "song.txt"]);
     }).pipe(Effect.provide(layer));
   });
 });

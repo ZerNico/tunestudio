@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import type { ProjectChart } from "./chart-mapping";
-import { formatMetaTags, parseMetaTags, readMetaTags, usdbText, youtubeIdOf } from "./usdb";
+import { formatMetaTags, parseMetaTags, youtubeIdOf } from "./meta-tags";
+import { readMetaTags, usdbText } from "./usdb";
 
 const NONE = { audio: null, cover: null, background: null };
 
@@ -28,6 +29,7 @@ function song(change: Partial<ProjectChart["song"]> = {}): ProjectChart {
       medleyEnd: null,
       extraHeaders: [],
       youtubeId: "kPBzTxZQG5Q",
+      youtubeAudioId: null,
       ...change,
     },
     singers: [
@@ -58,10 +60,12 @@ describe("meta tags", () => {
     expect(parseMetaTags("Song.mp4")).toBeNull();
   });
 
-  it("finds the YouTube video in v, else a, as an id or a link", () => {
-    expect(youtubeIdOf([["v", "kPBzTxZQG5Q"]])).toBe("kPBzTxZQG5Q");
-    expect(youtubeIdOf([["a", "https://www.youtube.com/watch?v=dQw4w9WgXcQ"]])).toBe("dQw4w9WgXcQ");
-    expect(youtubeIdOf([["v", "123456789"]])).toBeNull();
+  it("reads each YouTube source separately, as an id or a link", () => {
+    const tags = parseMetaTags("v=kPBzTxZQG5Q,a=https://www.youtube.com/watch?v=dQw4w9WgXcQ")!;
+    expect(youtubeIdOf(tags, "v")).toBe("kPBzTxZQG5Q");
+    expect(youtubeIdOf(tags, "a")).toBe("dQw4w9WgXcQ");
+    expect(youtubeIdOf([["v", "123456789"]], "v")).toBeNull();
+    expect(youtubeIdOf([["a", "dQw4w9WgXcQ"]], "v")).toBeNull();
   });
 });
 
@@ -74,6 +78,37 @@ describe("readMetaTags", () => {
     expect(chart.song.medleyEnd).toBeCloseTo(77.6, 9);
     expect(chart.singers[0]!.name).toBe("Mia");
     expect(chart.song.extraHeaders).toContainEqual(["TAGS", "live, 80s"]);
+  });
+});
+
+describe("YouTube sources", () => {
+  it.each([
+    ["v=kPBzTxZQG5Q", "kPBzTxZQG5Q", null],
+    ["a=dQw4w9WgXcQ", null, "dQw4w9WgXcQ"],
+    ["a=dQw4w9WgXcQ,v=kPBzTxZQG5Q", "kPBzTxZQG5Q", "dQw4w9WgXcQ"],
+    ["a=kPBzTxZQG5Q,v=kPBzTxZQG5Q", "kPBzTxZQG5Q", null],
+  ])("imports and exports %s without confusing audio and video", (value, youtubeId, youtubeAudioId) => {
+    const chart = song({ youtubeId: null, extraHeaders: [["VIDEO", value]] });
+    readMetaTags(chart, parseMetaTags(value)!);
+    expect(chart.song).toMatchObject({ youtubeId, youtubeAudioId });
+    const { text, warnings } = usdbText(chart, NONE);
+    const expected = youtubeAudioId ? `a=${youtubeAudioId}${youtubeId ? `,v=${youtubeId}` : ""}` : `v=${youtubeId}`;
+    expect(text).toContain(`#VIDEO:${expected}\r\n`);
+    expect(warnings).toEqual([]);
+  });
+
+  it("uses edited source IDs and never restores a cleared source from preserved metadata", () => {
+    const chart = song({
+      youtubeAudioId: "rl0IjlamWPI",
+      extraHeaders: [["VIDEO", "a=oldaudio123,v=oldvideo123,co=cover.jpg"]],
+    });
+    expect(usdbText(chart, NONE).text).toContain("#VIDEO:a=rl0IjlamWPI,v=kPBzTxZQG5Q,co=cover.jpg\r\n");
+    chart.song.youtubeAudioId = null;
+    expect(usdbText(chart, NONE).text).toContain("#VIDEO:v=kPBzTxZQG5Q,co=cover.jpg\r\n");
+    chart.song.youtubeId = null;
+    const { text, warnings } = usdbText(chart, NONE);
+    expect(text).toContain("#VIDEO:co=cover.jpg\r\n");
+    expect(warnings).toEqual(["The song has no YouTube source."]);
   });
 });
 
@@ -144,6 +179,6 @@ describe("usdbText", () => {
   it("warns when usdb_syncer can't know where the audio is", () => {
     const { text, warnings } = usdbText(song({ youtubeId: null }), NONE);
     expect(text).not.toContain("#VIDEO");
-    expect(warnings).toContainEqual(expect.stringContaining("no YouTube video"));
+    expect(warnings).toContainEqual(expect.stringContaining("no YouTube source"));
   });
 });

@@ -34,6 +34,8 @@ export function createWindows(options: {
   grant: (path: string) => Promise<void>;
   /** A window went away with its project: the session can end. */
   onClosed: (project: ShownProject) => void;
+  /** Which window shows a project changed. */
+  onChange?: () => void;
 }) {
   const shown = new Map<BrowserWindow, ShownProject>();
   const requests = new Map<BrowserWindow, string>();
@@ -49,6 +51,7 @@ export function createWindows(options: {
       shown.delete(window);
       // Another window may show it too (opened again from its own start screen before this one closed).
       if (project && ![...shown.values()].some((other) => other.id === project.id)) options.onClosed(project);
+      options.onChange?.();
     });
     return window;
   };
@@ -61,7 +64,10 @@ export function createWindows(options: {
     show: (window: BrowserWindow, project: ShownProject | null) => {
       if (project) shown.set(window, project);
       else shown.delete(window);
+      options.onChange?.();
     },
+    /** Whether `window` shows a project. */
+    showsProject: (window: BrowserWindow) => shown.has(window),
     /** The window other than `except` that shows the project at `path`, if there is one. */
     showing: (path: string, except?: BrowserWindow | null): BrowserWindow | null => {
       for (const [window, project] of shown) {

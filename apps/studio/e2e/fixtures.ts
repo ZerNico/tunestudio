@@ -60,7 +60,7 @@ export interface SongFixture {
   cleanup: () => void;
 }
 
-/** A synthetic UltraStar song folder (chart, audio, cover) in a temp folder. */
+/** A synthetic UltraStar song folder (chart, audio, vocals, music, cover) in a temp folder. */
 export function songFixture(): SongFixture {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "tunestudio-e2e-song-")));
   const folder = path.join(dir, "Test Artist - Night Signals");
@@ -72,6 +72,8 @@ export function songFixture(): SongFixture {
     "#LANGUAGE:English",
     "#YEAR:2024",
     "#MP3:song.mp3",
+    "#VOCALS:song [VOC].mp3",
+    "#INSTRUMENTAL:song [INSTR].mp3",
     "#COVER:cover.png",
     "#BPM:240",
     "#GAP:1250",
@@ -87,6 +89,9 @@ export function songFixture(): SongFixture {
   ].join("\n");
   fs.writeFileSync(path.join(folder, "song.txt"), chart);
   fs.writeFileSync(path.join(folder, "song.mp3"), audio);
+  // Its own vocals and music: nothing to separate (tests have no models).
+  fs.writeFileSync(path.join(folder, "song [VOC].mp3"), noise(200_000, 8));
+  fs.writeFileSync(path.join(folder, "song [INSTR].mp3"), noise(200_000, 9));
   fs.writeFileSync(path.join(folder, "cover.png"), PNG);
   return { dir, folder, audio, cover: PNG, cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
 }

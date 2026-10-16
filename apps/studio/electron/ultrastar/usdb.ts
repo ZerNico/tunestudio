@@ -12,45 +12,8 @@ import {
   ticksToSeconds,
 } from "@tunestudio/ultrastar";
 
-import { parseYoutubeVideoId } from "../../src/lib/youtube";
 import { headerNumber, type ProjectChart, projectToChart } from "./chart-mapping";
-
-/** usdb_syncer's meta tags, as `[key, value]` pairs in order. */
-export type MetaTags = [string, string][];
-
-/** The meta tags in a `#VIDEO` value, or null when it is a file name (it has no `=`). */
-export function parseMetaTags(value: string): MetaTags | null {
-  if (!value.includes("=")) return null;
-  return value
-    .split(",")
-    .filter((part) => part.includes("="))
-    .map((part) => {
-      const at = part.indexOf("=");
-      return [
-        part.slice(0, at).trim().toLowerCase(),
-        part
-          .slice(at + 1)
-          .trim()
-          .replaceAll("%2C", ","),
-      ];
-    });
-}
-
-/** Meta tags as a `#VIDEO` value: commas in values written as `%2C`. */
-export function formatMetaTags(tags: MetaTags): string {
-  return tags.map(([key, value]) => `${key}=${value.replaceAll(",", "%2C")}`).join(",");
-}
-
-/** The YouTube video meta tags name for the song (`v`, else the audio-only `a`), as an id; null for none. */
-export function youtubeIdOf(tags: MetaTags): string | null {
-  for (const key of ["v", "a"]) {
-    const value = tags.find(([name]) => name === key)?.[1];
-    if (!value) continue;
-    const id = /^[\w-]{11}$/.test(value) ? value : parseYoutubeVideoId(value);
-    if (id) return id;
-  }
-  return null;
-}
+import { formatMetaTags, type MetaTags, parseMetaTags, sourceMetaTags, youtubeIdOf } from "./meta-tags";
 
 /**
  * What a USDB chart keeps in its meta tags (USDB drops these headers) as the song's own: its YouTube video, preview,
@@ -59,7 +22,9 @@ export function youtubeIdOf(tags: MetaTags): string | null {
 export function readMetaTags(chart: ProjectChart, tags: MetaTags): void {
   const { song } = chart;
   const value = (key: string) => tags.find(([name]) => name === key)?.[1];
-  song.youtubeId ??= youtubeIdOf(tags);
+  song.youtubeId ??= youtubeIdOf(tags, "v");
+  song.youtubeAudioId ??= youtubeIdOf(tags, "a");
+  if (song.youtubeAudioId === song.youtubeId) song.youtubeAudioId = null;
   const preview = Number(value("preview"));
   if (song.previewStart === null && value("preview") && Number.isFinite(preview)) song.previewStart = preview;
   const medley = /^(\d+)-(\d+)$/.exec(value("medley") ?? "");
@@ -126,13 +91,12 @@ export function usdbText(chart: ProjectChart, files: UsdbFiles): { text: string;
   // Meta tags kept from a USDB import (covers, crops); the song's own fields replace theirs.
   const kept = song.extraHeaders.find(([key]) => key === "VIDEO")?.[1];
   const imported = kept ? (parseMetaTags(kept) ?? []) : [];
-  const own = new Set(["a", "v", "preview", "medley", "p1", "p2", "tags"]);
-  const tags: MetaTags = imported.filter(([key]) => !own.has(key));
-  // The song's video gives the audio too (`v`); without one, an audio-only source it came with stays.
-  const audioOnly = imported.find(([key]) => key === "a")?.[1];
-  if (song.youtubeId) tags.push(["v", song.youtubeId]);
-  else if (audioOnly) tags.push(["a", audioOnly]);
-  else warnings.push("The song has no YouTube video.");
+  const own = new Set(["preview", "medley", "p1", "p2", "tags"]);
+  const tags = sourceMetaTags(
+    imported.filter(([key]) => !own.has(key)),
+    song,
+  );
+  if (!song.youtubeId && !song.youtubeAudioId) warnings.push("The song has no YouTube source.");
   for (const singer of chart.singers) if (duet && singer.name) tags.push([`p${singer.index}`, singer.name]);
   if (song.previewStart !== null) tags.push(["preview", headerNumber(Math.round(song.previewStart * 1000) / 1000)]);
   if (song.medleyStart !== null && song.medleyEnd !== null) {

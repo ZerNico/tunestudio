@@ -22,7 +22,7 @@ import { TitleBar } from "~/components/title-bar";
 import { Button } from "~/components/ui/button";
 import { toast } from "~/components/ui/toast";
 import { CHART_STEPS } from "~/lib/chart-steps";
-import { platform, revealLabel } from "~/lib/desktop";
+import { onMenuCommand, platform, revealLabel } from "~/lib/desktop";
 import { isTyping, pasteFromClipboard, runEditCommand, setEditHandler } from "~/lib/edit-commands";
 import { createAutoPitchJob } from "~/lib/editor/auto-pitch-job";
 import { createAutoScroll } from "~/lib/editor/autoscroll";
@@ -531,6 +531,16 @@ export default function ProjectScreen() {
       if (!isAbort(error)) toast.add({ type: "error", title, description: errorMessage(error) });
     },
   };
+
+  // The File menu (macOS): exports, song details and closing, for this window's project.
+  onSettled(() =>
+    onMenuCommand((command) => {
+      if (command === "export-games") void chooseExport();
+      else if (command === "export-usdb") void exportUsdb();
+      else if (command === "song-details") setDetailsOpen(true);
+      else void close();
+    }),
+  );
 
   onSettled(() => {
     playback.load();

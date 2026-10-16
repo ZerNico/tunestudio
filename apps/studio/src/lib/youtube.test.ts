@@ -4,6 +4,8 @@ import { parseYoutubeVideoId, suggestSongDetails } from "./youtube";
 
 describe("parseYoutubeVideoId", () => {
   it.each([
+    ["dQw4w9WgXcQ", "dQw4w9WgXcQ"],
+    ["  kPBzTxZQG5Q  ", "kPBzTxZQG5Q"],
     ["https://www.youtube.com/watch?v=dQw4w9WgXcQ", "dQw4w9WgXcQ"],
     ["https://youtube.com/watch?list=PL1&v=dQw4w9WgXcQ&t=42", "dQw4w9WgXcQ"],
     ["https://m.youtube.com/watch?v=dQw4w9WgXcQ", "dQw4w9WgXcQ"],
