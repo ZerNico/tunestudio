@@ -659,6 +659,7 @@ function tinyChart() {
       medleyStart: null,
       medleyEnd: null,
       extraHeaders: [],
+      youtubeId: null,
     },
     singers: [
       {

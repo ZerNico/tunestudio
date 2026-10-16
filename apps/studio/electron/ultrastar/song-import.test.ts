@@ -168,6 +168,7 @@ describe("importing a song", () => {
       artist: "Test Artist",
       language: ["English", "German"],
       year: 2024,
+      youtubeId: null,
       genre: "Pop",
       edition: null,
       creator: "Tune Studio tests",
@@ -217,7 +218,7 @@ describe("importing a song", () => {
     ]);
   });
 
-  it("leaves the video out when asked, and keeps USDB-style #VIDEO metadata as a header", async () => {
+  it("leaves the video out when asked, and keeps USDB-style #VIDEO metadata as a header, with its YouTube video", async () => {
     const { dir, run } = setup();
     const withVideo = writeSong(dir, "With video", {
       "song.txt": soloChart("#VIDEO:clip.mp4"),
@@ -244,10 +245,12 @@ describe("importing a song", () => {
         const source = yield* inspectSong(metadata);
         expect(source.warnings.filter((warning) => warning.includes("video"))).toEqual([]);
         const session = yield* importSong(source, { includeVideo: true, target: path.join(dir, "b.tunestudio") });
-        return (yield* readChart(session.db)).song.extraHeaders;
+        return (yield* readChart(session.db)).song;
       }),
     );
-    expect(kept).toContainEqual(["VIDEO", "v=dQw4w9WgXcQ,co=cover.jpg"]);
+    expect(kept.extraHeaders).toContainEqual(["VIDEO", "v=dQw4w9WgXcQ,co=cover.jpg"]);
+    // usdb_syncer's video becomes the song's YouTube video.
+    expect(kept.youtubeId).toBe("dQw4w9WgXcQ");
   });
 
   it("imports duets with singer names and keeps import warnings with the project", async () => {

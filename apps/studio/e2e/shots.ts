@@ -139,6 +139,10 @@ try {
       await page.mouse.move(0, 0);
       await shot(studio, "03o-break-selection");
       await page.keyboard.press("Escape");
+      await page.getByTestId("export-song").click();
+      await page.getByTestId("export-menu").waitFor();
+      await shot(studio, "03p-export-menu");
+      await page.keyboard.press("Escape");
       // Toasts: one line (a split with the playhead outside notes), and with a description (auto pitch without vocals).
       await page.keyboard.press("Meta+k");
       await shot(studio, "03g-toast");

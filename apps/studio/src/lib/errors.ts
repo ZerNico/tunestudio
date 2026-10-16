@@ -111,6 +111,11 @@ export class VideoDownloadFailed extends Schema.TaggedError<VideoDownloadFailed>
   message: Schema.String,
 }) {}
 
+/** A picked or dropped audio file can't be read, has no sound, or is too long for a song. */
+export class AudioUnreadable extends Schema.TaggedError<AudioUnreadable>()("AudioUnreadable", {
+  message: Schema.String,
+}) {}
+
 /** A chosen file isn't an image Tune Studio can use. */
 export class ImageUnreadable extends Schema.TaggedError<ImageUnreadable>()("ImageUnreadable", {
   message: Schema.String,

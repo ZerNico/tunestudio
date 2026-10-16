@@ -23,6 +23,7 @@ import { orDiskFull, writeMeta } from "../project/database";
 import { writeMedia } from "../project/media";
 import { type OpenError, Projects, type ProjectSession } from "../project/projects";
 import { chartToProject } from "./chart-mapping";
+import { parseMetaTags, youtubeIdOf } from "./usdb";
 
 /** Charts are text; anything bigger than this isn't one. */
 const MAX_CHART_SIZE = 8 * 1024 * 1024;
@@ -251,6 +252,9 @@ export function importSong(
       catch: (error) => new ChartUnreadable({ message: `Couldn't read ${quoted(source.chart)}: ${String(error)}` }),
     });
     chart.song.extraHeaders.push(...source.keptHeaders);
+    // A USDB chart names its YouTube video in usdb_syncer's meta tags (`#VIDEO:v=…`).
+    const metaTags = source.keptHeaders.find(([key]) => key === "VIDEO")?.[1];
+    chart.song.youtubeId = metaTags ? youtubeIdOf(parseMetaTags(metaTags) ?? []) : null;
     const warnings = [...source.warnings, ...mappingWarnings];
 
     const fs = yield* FileSystem.FileSystem;

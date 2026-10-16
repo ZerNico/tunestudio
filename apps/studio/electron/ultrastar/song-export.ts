@@ -10,6 +10,7 @@ import { readChart } from "../project/chart";
 import { listMedia, type MediaRow, writeMediaToFile } from "../project/media";
 import type { ProjectSession } from "../project/projects";
 import { type MediaHeaders, projectToChart } from "./chart-mapping";
+import { usdbText } from "./usdb";
 
 /** The file name suffix and headers for each media role, as UltraStar song folders name them. */
 const ROLE_FILES: Record<MediaRole, { suffix: string; headers: (keyof MediaHeaders)[] }> = {
@@ -105,5 +106,32 @@ export function exportSong(
 
     const files = [`${base}.txt`, ...media.flatMap((row) => names.get(row.id) ?? [])];
     return { status: "exported", folder: target, files, warnings } satisfies ExportResult;
+  });
+}
+
+/**
+ * Writes the chart's text for USDB to `file` (`usdb.ts`), naming the audio as the song folder export would. Returns
+ * what changed on the way (BPM rounded, no YouTube video).
+ */
+export function exportUsdb(
+  session: ProjectSession,
+  file: string,
+): Effect.Effect<{ warnings: string[] }, ChartUnreadable | ProjectDamaged | FileError, FileSystem.FileSystem> {
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const chart = yield* readChart(session.db);
+    const base = songFileName(chart.song.artist, chart.song.title);
+    const audio = (yield* listMedia(session.db)).find((row) => row.role === "audio");
+    const { text, warnings } = yield* Effect.try({
+      try: () => usdbText(chart, audio ? `${base}${extensionOf(audio.fileName)}` : null),
+      catch: (error) =>
+        new ChartUnreadable({
+          message: `The chart can't be exported: ${
+            error instanceof UltraStarError || error instanceof DocumentValidationError ? error.message : String(error)
+          }`,
+        }),
+    });
+    yield* fs.writeFileString(file, text).pipe(mapFileError(quoted(base), "write"));
+    return { warnings };
   });
 }

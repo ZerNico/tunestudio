@@ -64,6 +64,7 @@ export function readEditorChart(db: Queryable): Effect.Effect<EditorChart, Proje
         previewStart: songRow.previewStart,
         medleyStart: songRow.medleyStart,
         medleyEnd: songRow.medleyEnd,
+        youtubeId: songRow.youtubeId,
       },
       singers: editorSingers,
     };

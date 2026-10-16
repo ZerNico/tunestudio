@@ -57,6 +57,18 @@ describe("song details", () => {
     expect(screen.getByText("#COMMENT")).toBeInTheDocument();
   });
 
+  it("takes a YouTube link as the song's video, and leaves anything else as it was", async () => {
+    const { onChange, enter } = setup();
+    expect(await screen.findByTestId("song-youtube")).toHaveValue("");
+    enter("song-youtube", "https://youtu.be/kPBzTxZQG5Q?si=abc");
+    expect(onChange).toHaveBeenLastCalledWith("Change YouTube video", { youtubeId: "kPBzTxZQG5Q" });
+    onChange.mockClear();
+    enter("song-youtube", "not a video");
+    expect(onChange).not.toHaveBeenCalled();
+    enter("song-youtube", " ");
+    expect(onChange).toHaveBeenLastCalledWith("Change YouTube video", { youtubeId: null });
+  });
+
   it("puts back a title left empty and a year that isn't one", async () => {
     const { onChange, enter } = setup();
     await screen.findByTestId("song-title");

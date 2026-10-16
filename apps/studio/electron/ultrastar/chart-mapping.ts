@@ -34,6 +34,8 @@ export interface SongDetails {
   medleyStart: number | null;
   medleyEnd: number | null;
   extraHeaders: [string, string][];
+  /** The song's YouTube video id (usdb_syncer's `#VIDEO:v=…`), or null. */
+  youtubeId: string | null;
 }
 
 export interface ChartNoteRow {
@@ -119,6 +121,7 @@ export function chartToProject(document: ChartDocument): { chart: ProjectChart; 
     medleyStart: null,
     medleyEnd: null,
     extraHeaders: [],
+    youtubeId: null,
   };
   const singerNames = new Map<number, string>();
   const keep = (key: string, value: string) => song.extraHeaders.push([key, value]);

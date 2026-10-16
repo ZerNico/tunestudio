@@ -77,12 +77,17 @@ export default function HomeScreen() {
     }
   };
 
-  const startFromAudio = (file: File) => {
+  const startFromAudio = async (file: File) => {
     if (!isAudioFile(file.name)) {
       unsupported(file.name, "Choose an audio file, such as MP3, M4A, FLAC, OGG, OPUS or WAV.");
       return;
     }
-    setFlow({ kind: "audio", file: summarizeAudioFile(file) });
+    const picked = await pathForFile(file);
+    if (!picked) {
+      unsupported(file.name, "Tune Studio can't tell where this file is. Choose it with a button instead.");
+      return;
+    }
+    setFlow({ kind: "audio", path: picked.path, file: summarizeAudioFile(file) });
   };
 
   const handleDrop = async (drop: Drop) => {
@@ -272,7 +277,7 @@ export default function HomeScreen() {
         onChange={(event) => {
           const file = event.currentTarget.files?.[0];
           event.currentTarget.value = "";
-          if (file) startFromAudio(file);
+          if (file) void startFromAudio(file);
         }}
       />
 

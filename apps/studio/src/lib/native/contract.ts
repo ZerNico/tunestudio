@@ -5,6 +5,7 @@ import * as Errors from "../errors";
 import { MODEL_FEATURES } from "../models";
 import { Settings } from "../settings";
 import {
+  AudioFileDetails,
   ChosenImage,
   CoverCandidate,
   DownloadedDraft,
@@ -88,6 +89,12 @@ export const ExportInput = Schema.Struct({
   folder: Schema.String,
   /** Replace an existing export folder (after the user confirmed it). */
   replace: Schema.Boolean,
+});
+
+export const UsdbExportInput = Schema.Struct({
+  id: Schema.String,
+  /** The `.txt` to write, from `dialogs.chooseUsdbFile` (replaced if it exists). */
+  path: Schema.String,
 });
 
 export const RecentEntryInput = Schema.Struct({
@@ -225,6 +232,7 @@ export const SongFields = Schema.Struct({
   medleyEnd: Schema.optional(Schema.NullOr(Schema.Number)),
   /** Kept in the song's `#TAGS` header. */
   tags: Schema.optional(Schema.Array(Schema.String)),
+  youtubeId: Schema.optional(Schema.NullOr(Schema.String)),
 });
 export type SongFields = typeof SongFields.Type;
 
@@ -304,6 +312,8 @@ export class NativeRpcs extends RpcGroup.make(
   query("dialogs.chooseCoverImage", nullable(ChosenImage)),
   /** Picks the folder an UltraStar export goes into. */
   query("dialogs.chooseExportFolder", nullable(Schema.String)),
+  /** Asks where to save a chart's text for USDB, suggesting `<name>.txt` in the Music folder. */
+  call("dialogs.chooseUsdbFile", SaveLocationInput, nullable(Schema.String)),
 
   /** Reads a song folder (or chart) and reports what an import would bring in. */
   call("song.inspect", SongInput, SongInspection),
@@ -329,6 +339,8 @@ export class NativeRpcs extends RpcGroup.make(
   withProgress("project.autoPitch", AutoPitchInput, ImportProgress, Schema.Array(NotePitch)),
   /** Writes the project as an UltraStar song folder. */
   call("project.exportSong", ExportInput, ExportResult),
+  /** Writes the chart's text for USDB (`usdb.ts`); returns what changed on the way. */
+  call("project.exportUsdb", UsdbExportInput, Schema.Struct({ warnings: Schema.Array(Schema.String) })),
   /** Replaces (or removes) the cover or background; returns the project's overview with its media as they are now. */
   call("project.setArtwork", ArtworkInput, ProjectOverview),
 
@@ -349,6 +361,11 @@ export class NativeRpcs extends RpcGroup.make(
   call("youtube.findLyrics", SongSearchInput, nullable(FoundLyrics)),
   /** Downloads the song as the settings say into a new draft, reporting progress. */
   withProgress("youtube.download", VideoInput, ImportProgress, DownloadedDraft),
+
+  /** Reads a picked or dropped audio file's length, tags and artwork, installing FFmpeg first if needed. */
+  call("audio.inspect", PathInput, AudioFileDetails),
+  /** Puts the audio file into a new draft as it is and separates the voice, reporting progress. */
+  withProgress("audio.import", PathInput, ImportProgress, DownloadedDraft),
 
   /** What Whisper hears in the draft's vocals, reporting progress. */
   withProgress("drafts.listen", ListenInput, ImportProgress, HeardLyrics),

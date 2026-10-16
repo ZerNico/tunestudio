@@ -4,7 +4,7 @@ import { languageCode } from "../../src/lib/languages";
 import { LONGEST_SONG_SECONDS } from "../../src/lib/native/contract";
 import type { ImportProgress, YoutubeVideo } from "../../src/lib/native/types";
 import type { Settings, VideoFormat } from "../../src/lib/settings";
-import { suggestSongDetails } from "../../src/lib/youtube";
+import { suggestSongDetails, watchUrl } from "../../src/lib/youtube";
 import { VideoDownloadFailed, VideoUnavailable } from "../errors";
 import { AppLog } from "../services/app-log";
 import { THUMBNAIL_HOSTS } from "../tools/downloads";
@@ -20,11 +20,6 @@ import { runTool } from "./run";
  */
 
 const VIDEO_ID = /^[\w-]{11}$/;
-
-/** The canonical link for a video. */
-export function watchUrl(videoId: string): string {
-  return `https://www.youtube.com/watch?v=${videoId}`;
-}
 
 /** The parts of yt-dlp's `--dump-single-json` output Tune Studio uses. */
 const VideoJson = Schema.Struct({

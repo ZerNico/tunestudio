@@ -68,6 +68,8 @@ export const EditorSong = Schema.Struct({
   /** The medley excerpt: from a line's start to a line's end. */
   medleyStart: Schema.NullOr(Schema.Number),
   medleyEnd: Schema.NullOr(Schema.Number),
+  /** The song's YouTube video id, or null. */
+  youtubeId: Schema.NullOr(Schema.String),
 });
 export type EditorSong = typeof EditorSong.Type;
 
@@ -279,6 +281,24 @@ export const YoutubeVideo = Schema.Struct({
   language: Schema.NullOr(Schema.String),
 });
 export type YoutubeVideo = typeof YoutubeVideo.Type;
+
+/** What an audio file says about itself, for a new project from it. */
+export const AudioFileDetails = Schema.Struct({
+  name: Schema.String,
+  /** Bytes. */
+  size: Schema.Number,
+  /** Upper-case extension, e.g. "MP3". */
+  format: Schema.String,
+  /** Seconds, or null when the file doesn't say. */
+  duration: Schema.NullOr(Schema.Number),
+  /** Suggested song details (from the tags, else the file name), which the user can change. */
+  artist: Schema.String,
+  title: Schema.String,
+  year: Schema.NullOr(Schema.Number),
+  /** The embedded artwork as a small JPEG data URL, or null. */
+  artwork: Schema.NullOr(Schema.String),
+});
+export type AudioFileDetails = typeof AudioFileDetails.Type;
 
 /** An album cover found for a song, with what the catalog knows about it. */
 export const CoverCandidate = Schema.Struct({

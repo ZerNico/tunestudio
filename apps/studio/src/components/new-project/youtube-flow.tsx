@@ -164,7 +164,16 @@ function youtubeSongStage(
           </div>
           <CoverPicker
             covers={project.covers()}
-            thumbnail={video()?.thumbnail ?? null}
+            own={{
+              label: "Video thumbnail",
+              hint: "The video's thumbnail, cropped to a square",
+              image: video()?.thumbnail ?? null,
+              placeholder: (
+                <span class="flex size-full items-center justify-center bg-youtube-soft text-youtube">
+                  <YoutubeIcon class="size-5" />
+                </span>
+              ),
+            }}
             custom={project.customCover()}
             selected={project.cover()}
             onSelect={project.setCover}
@@ -224,6 +233,7 @@ export function YoutubeFlow(props: {
         duration: found.duration,
         year: found.year,
         language: found.language,
+        picture: true,
       });
       setLookup({ status: "found", video: found });
     } catch (failure) {

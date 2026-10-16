@@ -242,6 +242,7 @@ test("song details are edited in a dialog from the title bar, exported, and undo
   fs.mkdirSync(exports);
   await answerDialogs(app, exports);
   await page.getByTestId("export-song").click();
+  await page.getByTestId("export-folder").click();
   await expect(page.getByText("Exported the UltraStar song")).toBeVisible();
   const chart = fs.readFileSync(
     path.join(exports, "Test Artist - Day Signals", "Test Artist - Day Signals.txt"),
@@ -290,6 +291,7 @@ test("start, end, preview and medley are set from the dialog and the timeline, a
   fs.mkdirSync(exports);
   await answerDialogs(app, exports);
   await page.getByTestId("export-song").click();
+  await page.getByTestId("export-folder").click();
   await expect(page.getByText("Exported the UltraStar song")).toBeVisible();
   const chart = fs.readFileSync(
     path.join(exports, "Test Artist - Night Signals", "Test Artist - Night Signals.txt"),

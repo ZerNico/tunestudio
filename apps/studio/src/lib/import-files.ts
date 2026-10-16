@@ -5,6 +5,9 @@
 
 const AUDIO_EXTENSIONS = new Set(["mp3", "m4a", "aac", "flac", "ogg", "oga", "opus", "wav", "weba", "webm"]);
 
+/** Importing an audio file's first step, as main reports it. */
+export const COPYING_THE_SONG = "Copying the song";
+
 /** The `accept` list for the audio file picker. */
 export const AUDIO_ACCEPT = [...AUDIO_EXTENSIONS].map((extension) => `.${extension}`).join(",");
 

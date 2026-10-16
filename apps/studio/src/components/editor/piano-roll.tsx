@@ -450,7 +450,7 @@ export function PianoRoll(props: {
           {(field) => (
             <input
               ref={(input) => queueMicrotask(() => input.select())}
-              class="absolute z-40 rounded-[3px] border border-ring bg-field px-1 font-sans text-[11px] text-foreground outline-none"
+              class="absolute z-40 rounded-[3px] border border-ring bg-field px-1 font-sans text-[12px] text-foreground outline-none"
               style={{
                 left: `${field().x}px`,
                 top: `${field().y}px`,

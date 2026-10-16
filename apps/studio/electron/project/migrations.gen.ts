@@ -18,5 +18,11 @@ export const migrations: ReadonlyArray<{ readonly name: string; readonly stateme
       "CREATE INDEX `notes_line` ON `notes` (`line_id`,`position`);",
       "CREATE UNIQUE INDEX `singers_index` ON `singers` (`index`);"
     ]
+  },
+  {
+    "name": "20261016123739_youtube_id",
+    "statements": [
+      "ALTER TABLE `song` ADD `youtube_id` text;"
+    ]
   }
 ];

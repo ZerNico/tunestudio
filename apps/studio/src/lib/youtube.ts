@@ -1,6 +1,11 @@
 const VIDEO_ID = /^[\w-]{11}$/;
 const YOUTUBE_HOSTS = new Set(["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"]);
 
+/** The canonical link for a video. */
+export function watchUrl(videoId: string): string {
+  return `https://www.youtube.com/watch?v=${videoId}`;
+}
+
 /**
  * The video ID of a YouTube watch, share, shorts or embed link, or `null` if `text` isn't one.
  * Accepts links without a scheme, as people paste them from the address bar.

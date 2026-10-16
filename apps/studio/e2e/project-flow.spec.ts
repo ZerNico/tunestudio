@@ -74,6 +74,7 @@ test("imports a song folder, exports it, and reopens the project from recents", 
   fs.mkdirSync(exports);
   await answerDialogs(app, exports);
   await page.getByTestId("export-song").click();
+  await page.getByTestId("export-folder").click();
   await expect(page.getByText("Exported the UltraStar song")).toBeVisible();
   const exported = path.join(exports, "Test Artist - Night Signals");
   expect(fs.readdirSync(exported).toSorted()).toEqual([
@@ -88,11 +89,28 @@ test("imports a song folder, exports it, and reopens the project from recents", 
 
   await answerDialogs(app, exports);
   await page.getByTestId("export-song").click();
+  await page.getByTestId("export-folder").click();
   const replace = page.getByTestId("replace-export");
   await expect(replace).toBeVisible();
   await replace.getByTestId("confirm-replace").click();
   await expect(replace).toBeHidden();
   await expect(page.getByText("Exported the UltraStar song")).toHaveCount(2);
+
+  // The song's YouTube video goes in Song details; the text for USDB names it for usdb_syncer.
+  await page.getByTestId("open-song-details").click();
+  await page.getByTestId("song-youtube").fill("https://youtu.be/dQw4w9WgXcQ");
+  await page.getByTestId("song-youtube").press("Enter");
+  await expect(page.getByTestId("song-youtube")).toHaveValue("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+  await page.keyboard.press("Escape");
+  const usdb = path.join(exports, "For USDB.txt");
+  await answerDialogs(app, usdb);
+  await page.getByTestId("export-song").click();
+  await page.getByTestId("export-usdb").click();
+  await expect(page.getByText("Exported the text for USDB")).toBeVisible();
+  const text = fs.readFileSync(usdb, "utf8");
+  expect(text).toContain("#ARTIST:Test Artist\r\n#TITLE:Night Signals\r\n#MP3:Test Artist - Night Signals.mp3\r\n");
+  expect(text).toContain("#VIDEO:v=dQw4w9WgXcQ\r\n");
+  expect(text).not.toContain("#VERSION");
 
   // Close, and the project is in recents with its cover thumbnail.
   await page.getByTestId("close-project").click();

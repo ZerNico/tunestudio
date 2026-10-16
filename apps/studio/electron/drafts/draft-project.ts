@@ -9,6 +9,7 @@ import { songFileName } from "../../src/lib/file-names";
 import { languageName } from "../../src/lib/languages";
 import type { DraftProjectInput } from "../../src/lib/native/contract";
 import type { ImportProgress, MadeChart } from "../../src/lib/native/types";
+import { watchUrl } from "../../src/lib/youtube";
 import { chartFromFiles, chartLanguage } from "../charting/generate";
 import type { ChartSongDetails } from "../charting/project-chart";
 import { ChartFailed, ChartOutdated, DraftGone, mapFileError, VideoDownloadFailed } from "../errors";
@@ -24,7 +25,6 @@ import { Projects } from "../project/projects";
 import { type Draft, type DraftSource, Drafts } from "../services/drafts";
 import { AppSettings } from "../services/settings";
 import { Tools } from "../tools/tools";
-import { watchUrl } from "../youtube/youtube";
 
 /** A chart has to name a tempo; this one gives 50 ms beats until the chart is made. */
 const DEFAULT_BPM = 300;
@@ -40,9 +40,11 @@ const PLACEHOLDER_DETAILS: ChartSongDetails = {
   creator: null,
 };
 
-/** What a project records about where its song came from. */
-function sourceDetails(source: DraftSource): { media: MediaSource; importedFrom: string } {
-  return { media: "youtube", importedFrom: watchUrl(source.videoId) };
+/** What a project records about where its song came from, and what the source's own picture is called. */
+function sourceDetails(source: DraftSource): { media: MediaSource; importedFrom: string; picture: string } {
+  return source.kind === "youtube"
+    ? { media: "youtube", importedFrom: watchUrl(source.videoId), picture: "the video's thumbnail" }
+    : { media: "imported", importedFrom: source.path, picture: "the file's artwork" };
 }
 
 /** A draft whose song is in it. */
@@ -180,7 +182,11 @@ export function createDraftProject(
         cover = yield* downloadCover(input.cover.url, folder);
         if (!cover) {
           cover = media.cover;
-          warnings.push("The chosen cover couldn't be downloaded, so the video's thumbnail is the cover.");
+          warnings.push(
+            media.cover
+              ? `The chosen cover couldn't be downloaded, so ${source.picture} is the cover.`
+              : "The chosen cover couldn't be downloaded, so the project has none.",
+          );
         }
       }
       if (cover) {
@@ -200,6 +206,8 @@ export function createDraftProject(
         genre: input.genre?.trim() || null,
         edition: null,
         creator: null,
+        // The video the song came from, for USDB and usdb_syncer.
+        youtubeId: draft.source.kind === "youtube" ? draft.source.videoId : null,
       };
       const chart = made
         ? { ...made, song: { ...made.song, ...details } }

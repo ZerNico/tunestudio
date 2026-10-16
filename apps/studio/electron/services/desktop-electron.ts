@@ -48,6 +48,17 @@ export const desktopLayer = Layer.sync(Desktop, () => ({
       properties: ["openFile"],
       filters: [{ name: "Image", extensions: ["jpg", "jpeg", "png"] }],
     }),
+  chooseTextFile: (window, defaultPath) =>
+    Effect.promise(async () => {
+      const options = {
+        title: "Export for USDB",
+        buttonLabel: "Export",
+        defaultPath,
+        filters: [{ name: "UltraStar chart", extensions: ["txt"] }],
+      };
+      const result = window ? await dialog.showSaveDialog(window, options) : await dialog.showSaveDialog(options);
+      return result.canceled || !result.filePath ? null : result.filePath;
+    }),
   chooseExportFolder: (window, defaultPath) =>
     openDialog(window, {
       title: "Export UltraStar song",

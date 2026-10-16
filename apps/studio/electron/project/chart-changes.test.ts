@@ -37,6 +37,7 @@ const chart: ProjectChart = {
     medleyStart: null,
     medleyEnd: null,
     extraHeaders: [],
+    youtubeId: null,
   },
   singers: [
     {

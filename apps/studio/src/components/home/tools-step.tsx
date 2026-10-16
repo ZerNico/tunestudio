@@ -32,16 +32,21 @@ export function describeToolProgress(progress: ToolProgress | null): string {
     : `Downloading ${label}… ${received}`;
 }
 
+/** Names as a sentence lists them: "A", "A and B", "A, B and C". */
+function listOf(names: readonly string[]): string {
+  return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : (names[0] ?? "");
+}
+
 /** A quick update check stays invisible; anything slower than this shows its progress. */
 const SHOW_AFTER_MS = 600;
 
 /**
- * Makes sure yt-dlp, QuickJS and FFmpeg are installed and current before a YouTube project
- * starts. The first time they are downloaded (about 100 MB); afterwards this is instant unless
- * an update is due. Shows nothing unless it downloads, takes a while or fails. `onReady` runs
- * once the tools are ready.
+ * Makes sure the tools a new project needs are installed and current before it starts: yt-dlp, QuickJS and FFmpeg for
+ * a YouTube project (about 100 MB the first time), or `tools`. Afterwards this is instant unless an update is due.
+ * Shows nothing unless it downloads, takes a while or fails. `onReady` runs once the tools are ready.
  */
-export function ToolsStep(props: { onReady?: () => void }) {
+export function ToolsStep(props: { tools?: ToolName[]; onReady?: () => void }) {
+  const tools = () => props.tools ?? YOUTUBE_TOOLS;
   const [state, setState] = createSignal<State>({ step: "preparing", progress: null });
   const [slow, setSlow] = createSignal(false);
   let controller: AbortController | undefined;
@@ -53,7 +58,7 @@ export function ToolsStep(props: { onReady?: () => void }) {
     setState({ step: "preparing", progress: null });
     const timer = setTimeout(() => setSlow(true), SHOW_AFTER_MS);
     try {
-      const iterator = await native.tools.prepare({ tools: YOUTUBE_TOOLS }, { signal: current.signal });
+      const iterator = await native.tools.prepare({ tools: tools() }, { signal: current.signal });
       for (;;) {
         const next = await iterator.next();
         if (next.done) break;
@@ -103,7 +108,8 @@ export function ToolsStep(props: { onReady?: () => void }) {
               class="h-1.5 w-full appearance-none overflow-hidden rounded-full [&::-webkit-progress-bar]:bg-sage-22 [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-primary [&::-webkit-progress-value]:transition-[width] [&::-webkit-progress-value]:duration-150"
             />
             <p class="m-0 text-[10.5px] text-popover-muted">
-              Tune Studio downloads yt-dlp, QuickJS and FFmpeg once and keeps them up to date.
+              Tune Studio downloads {listOf(tools().map((tool) => LABELS[tool]))} once and keeps{" "}
+              {tools().length > 1 ? "them" : "it"} up to date.
             </p>
           </div>
         )}

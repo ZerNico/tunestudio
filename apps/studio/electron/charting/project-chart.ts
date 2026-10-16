@@ -32,6 +32,7 @@ export function toProjectChart(result: ChartResult, details: ChartSongDetails): 
       medleyStart: null,
       medleyEnd: null,
       extraHeaders: [],
+      youtubeId: null,
     },
     singers: [
       {

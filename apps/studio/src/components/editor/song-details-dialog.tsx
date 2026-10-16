@@ -21,6 +21,7 @@ import { Label } from "~/components/ui/label";
 import { formatNumber, formatSeconds } from "~/lib/format";
 import type { SongFields } from "~/lib/native/contract";
 import type { EditorSong, LyricsLine } from "~/lib/native/types";
+import { parseYoutubeVideoId, watchUrl } from "~/lib/youtube";
 
 import { LyricsList } from "./song-lyrics";
 
@@ -178,6 +179,19 @@ export function SongDetailsDialog(props: {
               testid="song-tags"
               save={(text) => change("Change tags", { tags: listFrom(text) })}
             />
+            <div class="col-span-2">
+              <Field
+                label="YouTube video"
+                value={props.song.youtubeId ? watchUrl(props.song.youtubeId) : ""}
+                placeholder="The song's video on YouTube, for USDB and usdb_syncer"
+                testid="song-youtube"
+                save={(text) => {
+                  // A link that isn't a video leaves the field as it was.
+                  const id = text.trim() ? parseYoutubeVideoId(text) : null;
+                  if (id !== null || !text.trim()) change("Change YouTube video", { youtubeId: id });
+                }}
+              />
+            </div>
             <Show when={props.singers.length > 1}>
               {/* Keyed by id: every edit makes new singer objects, and the fields (with their focus) must stay. */}
               <For each={props.singers} keyed={(singer) => singer.id}>

@@ -1,16 +1,14 @@
 import type { JSX } from "@solidjs/web";
 import { createEffect, createMemo, createSignal, For, Match, Show, Switch } from "solid-js";
 import AudioLinesIcon from "~icons/lucide/audio-lines";
-import ConstructionIcon from "~icons/lucide/construction";
-import FileAudioIcon from "~icons/lucide/file-audio";
 import FolderOpenIcon from "~icons/lucide/folder-open";
 import YoutubeIcon from "~icons/lucide/youtube";
 
+import { AUDIO_STAGES, AudioFlow } from "~/components/new-project/audio-flow";
 import { YOUTUBE_STAGES, YoutubeFlow } from "~/components/new-project/youtube-flow";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
-  DialogBody,
   DialogClose,
   DialogContent,
   DialogDescription,
@@ -18,11 +16,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog";
-import { Input } from "~/components/ui/input";
-import { Label } from "~/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
-import { Switch as Toggle } from "~/components/ui/switch";
-import { formatFileSize } from "~/lib/format";
 import type { AudioFileSummary } from "~/lib/import-files";
 import type { OpenedProject } from "~/lib/native/types";
 
@@ -31,17 +24,16 @@ import { SongImportFlow } from "./song-import-flow";
 /** The next step of a "start a new project" option, opened from the start screen. */
 export type Flow =
   | { kind: "youtube"; url: string; videoId: string }
-  | { kind: "audio"; file: AudioFileSummary }
+  /** An audio file the user picked or dropped (main has allowed its path). */
+  | { kind: "audio"; path: string; file: AudioFileSummary }
   /** A song folder or `.txt` chart the user picked or dropped (main has allowed its path). */
   | { kind: "song"; path: string };
 
 const STEPS: Record<Flow["kind"], string[]> = {
   youtube: YOUTUBE_STAGES,
-  audio: ["Import audio", "Split vocals", "Generate chart", "Edit"],
+  audio: AUDIO_STAGES,
   song: ["Check song", "Choose location", "Copy into project"],
 };
-
-const LANGUAGES = ["English", "German", "French", "Spanish", "Italian", "Japanese", "Other"];
 
 const DISCARD_TEXT: Record<Flow["kind"], string> = {
   youtube: "The link and anything fetched so far are lost.",
@@ -72,6 +64,10 @@ export function FlowDialog(props: {
   });
   const youtubeFlows = createMemo(() => {
     const flow = ofKind("youtube");
+    return flow ? [flow] : [];
+  });
+  const audioFlows = createMemo(() => {
+    const flow = ofKind("audio");
     return flow ? [flow] : [];
   });
 
@@ -132,7 +128,28 @@ export function FlowDialog(props: {
               )}
             </For>
           </Match>
-          <Match when={ofKind("audio")}>{(flow) => <AudioFlow file={flow().file} />}</Match>
+          <Match when={ofKind("audio")}>
+            <For each={audioFlows()}>
+              {(flow) => (
+                <AudioFlow
+                  path={flow.path}
+                  file={flow.file}
+                  open={props.flow !== null}
+                  onOpened={props.onOpened}
+                  onLockedChange={setLocked}
+                  header={(step) => (
+                    <FlowHeader
+                      kind="audio"
+                      icon={<AudioLinesIcon />}
+                      title="New project from audio"
+                      description="Check the song and its lyrics, and let Tune Studio separate the voice and make the chart."
+                      current={step}
+                    />
+                  )}
+                />
+              )}
+            </For>
+          </Match>
           <Match when={ofKind("song")}>
             <For each={songFlows()}>
               {(flow) => (
@@ -230,94 +247,5 @@ function FlowHeader(props: {
         </For>
       </ol>
     </DialogHeader>
-  );
-}
-
-/** Says plainly that the flow ends here for now. */
-function NotImplemented(props: { children: JSX.Element }) {
-  return (
-    <div
-      role="note"
-      class="flex gap-3 rounded-[9px] border border-amber-33 bg-warning-soft px-3.5 py-3 text-[11px] leading-[1.6] text-amber-73"
-      data-testid="not-implemented"
-    >
-      <ConstructionIcon class="mt-0.5 size-4 shrink-0 text-warning" />
-      <p class="m-0">
-        <span class="font-semibold text-warning">Not implemented yet.</span> {props.children}
-      </p>
-    </div>
-  );
-}
-
-function FlowFooter(props: { action: string }) {
-  return (
-    <DialogFooter class="items-center">
-      <span class="mr-auto text-[10.5px] text-popover-muted">Preview of the next step</span>
-      <DialogClose
-        render={(closeProps: JSX.HTMLAttributes<HTMLButtonElement>) => <Button variant="outline" {...closeProps} />}
-      >
-        Cancel
-      </DialogClose>
-      <Button disabled>{props.action}</Button>
-    </DialogFooter>
-  );
-}
-
-function AudioFlow(props: { file: AudioFileSummary }) {
-  return (
-    <>
-      <FlowHeader
-        kind="audio"
-        icon={<AudioLinesIcon />}
-        title="New project from audio"
-        description="Check the song details, then Tune Studio drafts a chart from the recording."
-      />
-      <DialogBody>
-        <div class="flex items-center gap-3 rounded-[10px] border border-popover-line bg-popover-well/50 p-3">
-          <span class="flex size-10 items-center justify-center rounded-lg bg-primary-soft text-primary">
-            <FileAudioIcon class="size-5" />
-          </span>
-          <div class="flex min-w-0 flex-col gap-0.5">
-            <span class="truncate text-[12.5px] font-medium text-foreground" data-testid="audio-file-name">
-              {props.file.name}
-            </span>
-            <span class="font-mono text-[10.5px] text-popover-muted">
-              {props.file.format || "Audio"} · {formatFileSize(props.file.size)}
-            </span>
-          </div>
-        </div>
-        <div class="grid grid-cols-2 gap-3">
-          <Label layout="stacked">
-            Artist
-            <Input value={props.file.artist} placeholder="Unknown artist" />
-          </Label>
-          <Label layout="stacked">
-            Title
-            <Input value={props.file.title} />
-          </Label>
-        </div>
-        <div class="grid grid-cols-2 items-end gap-3">
-          <div class="flex flex-col gap-1.5">
-            <span id="audio-language" class="text-[10px] leading-none text-sage-68">
-              Language
-            </span>
-            <Select defaultValue="English">
-              <SelectTrigger class="w-full" aria-labelledby="audio-language">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <For each={LANGUAGES}>{(language) => <SelectItem value={language}>{language}</SelectItem>}</For>
-              </SelectContent>
-            </Select>
-          </div>
-          <div class="flex h-7 items-center justify-between rounded-lg border border-input bg-field px-2.5">
-            <Label for="split-vocals">Split vocals first</Label>
-            <Toggle id="split-vocals" defaultChecked size="sm" />
-          </div>
-        </div>
-        <NotImplemented>Importing and charting audio arrive in a later step. The file wasn't read.</NotImplemented>
-      </DialogBody>
-      <FlowFooter action="Create project" />
-    </>
   );
 }

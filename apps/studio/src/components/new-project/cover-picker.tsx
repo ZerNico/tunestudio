@@ -3,12 +3,11 @@ import { For, omit, Show } from "solid-js";
 import BanIcon from "~icons/lucide/ban";
 import ImagePlusIcon from "~icons/lucide/image-plus";
 import LoaderCircleIcon from "~icons/lucide/loader-circle";
-import YoutubeIcon from "~icons/lucide/youtube";
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import type { ChosenImage, CoverCandidate } from "~/lib/native/types";
 
-/** The project's cover: a found one, an image the user picked, the video's thumbnail, or none. */
+/** The project's cover: a found one, an image the user picked, the source's own picture, or none. */
 export type CoverSelection =
   | { kind: "found"; url: string }
   | { kind: "file"; image: ChosenImage }
@@ -93,14 +92,23 @@ export function CoverOption(props: {
   );
 }
 
+/** The source's own picture, as the cover picker offers it: the video's thumbnail or the file's artwork. */
+export interface OwnPicture {
+  label: string;
+  hint: string;
+  /** A preview, or null when it can't be shown. */
+  image: string | null;
+  /** Fills the tile without a preview. */
+  placeholder: JSX.Element;
+}
+
 /**
- * Choosing the project's cover: album covers found for the song, best first, then the video's
- * thumbnail (cropped to a square), an image the user picked, and no cover. `covers` is null
- * while searching.
+ * Choosing the project's cover: album covers found for the song, best first, then the source's own picture (`own`;
+ * none when it has none), an image the user picked, and no cover. `covers` is null while searching.
  */
 export function CoverPicker(props: {
   covers: readonly CoverCandidate[] | null;
-  thumbnail: string | null;
+  own: OwnPicture | null;
   /** The image the user picked, offered as an option once there is one. */
   custom: ChosenImage | null;
   selected: CoverSelection;
@@ -145,25 +153,22 @@ export function CoverPicker(props: {
             <span class="sr-only">Looking for covers</span>
           </span>
         </Show>
-        <CoverOption
-          label="Video thumbnail"
-          hint="The video's thumbnail, cropped to a square"
-          checked={selected().kind === "thumbnail"}
-          disabled={props.disabled}
-          testid="cover-thumbnail"
-          onSelect={() => props.onSelect({ kind: "thumbnail" })}
-        >
-          <Show
-            when={props.thumbnail}
-            fallback={
-              <span class="flex size-full items-center justify-center bg-youtube-soft text-youtube">
-                <YoutubeIcon class="size-5" />
-              </span>
-            }
-          >
-            {(thumbnail) => <img src={thumbnail()} alt="" class="size-full object-cover" />}
-          </Show>
-        </CoverOption>
+        <Show when={props.own}>
+          {(own) => (
+            <CoverOption
+              label={own().label}
+              hint={own().hint}
+              checked={selected().kind === "thumbnail"}
+              disabled={props.disabled}
+              testid="cover-thumbnail"
+              onSelect={() => props.onSelect({ kind: "thumbnail" })}
+            >
+              <Show when={own().image} fallback={own().placeholder}>
+                {(image) => <img src={image()} alt="" class="size-full object-cover" />}
+              </Show>
+            </CoverOption>
+          )}
+        </Show>
         <Show when={props.custom}>
           {(image) => (
             <CoverOption

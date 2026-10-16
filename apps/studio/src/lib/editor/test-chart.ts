@@ -17,6 +17,7 @@ export const testSong: EditorSong = {
   previewStart: null,
   medleyStart: null,
   medleyEnd: null,
+  youtubeId: null,
 };
 
 /** A note for test charts: E4, normal, not edited, 0.3 s unless said. */

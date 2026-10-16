@@ -32,6 +32,8 @@ export interface SongBasis {
   year: number | null;
   /** The language the source says it is in (ISO 639-1), or null. */
   language: string | null;
+  /** Whether the source has a picture of its own (a video's thumbnail, a file's artwork) to be the cover. */
+  picture: boolean;
 }
 
 /**
@@ -48,8 +50,10 @@ export function createNewProject() {
   const [models, setModels] = createSignal<ModelStatus | null>(null);
   /** Found covers, or null while searching. */
   const [covers, setCovers] = createSignal<readonly CoverCandidate[] | null>(null);
-  /** The chosen cover: the source's own picture until the user picks another. */
+  /** The chosen cover: the source's own picture (none without one) until the user picks another. */
   const [cover, setCover] = createSignal<CoverSelection>({ kind: "thumbnail" });
+  /** The cover when nothing else is chosen. */
+  const ownCover = (): CoverSelection => (basis()?.picture === false ? { kind: "none" } : { kind: "thumbnail" });
   /** An image the user picked from their files. */
   const [customCover, setCustomCover] = createSignal<ChosenImage | null>(null);
   /** The language the user chose (null: "don't know"); undefined while the suggested one stands. */
@@ -103,7 +107,7 @@ export function createNewProject() {
     // offers falls back to it.
     const selection = cover();
     if (selection.kind === "found" && !results.some((candidate) => candidate.url === selection.url)) {
-      setCover({ kind: "thumbnail" });
+      setCover(ownCover());
     }
   };
 
@@ -235,7 +239,7 @@ export function createNewProject() {
   const coverChoice = (): CoverChoice => {
     const selection = cover();
     if (selection.kind === "found" && !covers()?.some((candidate) => candidate.url === selection.url)) {
-      return { kind: "thumbnail" };
+      return ownCover().kind === "none" ? { kind: "none" } : { kind: "thumbnail" };
     }
     return selection.kind === "file" ? { kind: "file", path: selection.image.path } : selection;
   };
@@ -266,6 +270,7 @@ export function createNewProject() {
     /** The source found the song: its details become the starting point, and covers are searched for them. */
     setBasis: (song: SongBasis) => {
       setBasis(song);
+      if (!song.picture && cover().kind === "thumbnail") setCover({ kind: "none" });
       setArtist(song.artist);
       setTitle(song.title);
       // Signals written just now still read their old value, so the search gets the details directly.

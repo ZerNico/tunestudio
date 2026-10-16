@@ -1,6 +1,5 @@
 import { getRouteApi, useNavigate, useRouter } from "@tanstack/solid-router";
 import { createEffect, createMemo, createSignal, flush, onSettled, Show } from "solid-js";
-import DownloadIcon from "~icons/lucide/download";
 import LoaderCircleIcon from "~icons/lucide/loader-circle";
 import Redo2Icon from "~icons/lucide/redo-2";
 import Undo2Icon from "~icons/lucide/undo-2";
@@ -15,6 +14,7 @@ import type { ArtworkActions } from "~/components/editor/song-artwork";
 import { SongDetails } from "~/components/editor/song-details";
 import { Transport } from "~/components/editor/transport";
 import { follow as followProgress, percentOf, progressBarClass } from "~/components/new-project/progress";
+import { ExportMenu } from "~/components/project/export-menu";
 import { ReplaceExportDialog } from "~/components/project/replace-export-dialog";
 import { TitleBar } from "~/components/title-bar";
 import { Button } from "~/components/ui/button";
@@ -62,6 +62,7 @@ import {
   visibleSeconds,
   zoomAt,
 } from "~/lib/editor/view";
+import { songFileName } from "~/lib/file-names";
 import type { EditCommand } from "~/lib/native/channel";
 import { native } from "~/lib/native/client";
 import { errorMessage, isAbort } from "~/lib/native/errors";
@@ -90,6 +91,8 @@ const LINE_LEAD = 0.1;
 const NOTE_LEAD = 0.25;
 /** A line that would fill more than this share of the screen is fitted to it instead. */
 const FIT_SHARE = 0.9;
+/** How long a click on empty space waits for a second one (ms): a double-click adds a note there. */
+const DOUBLE_CLICK_MS = 300;
 
 /**
  * An open project: the chart editor. The editing area shows the song at a glance (overview), the notes against time
@@ -282,6 +285,15 @@ export default function ProjectScreen() {
   const seek = (seconds: number) => {
     scrolledAway = false;
     playback.seek(Math.min(length(), Math.max(0, seconds)));
+  };
+  /**
+   * A click on empty space in the roll moves the playhead once it can't be the start of a double-click (which adds a
+   * note there and leaves the playhead be).
+   */
+  let clickSeek: ReturnType<typeof setTimeout> | undefined;
+  const seekSoon = (seconds: number) => {
+    clearTimeout(clickSeek);
+    clickSeek = setTimeout(() => seek(seconds), DOUBLE_CLICK_MS);
   };
   const changeView = (next: TimeView) => {
     if (playback.playing()) scrolledAway = true;
@@ -538,6 +550,7 @@ export default function ProjectScreen() {
       },
     });
     return () => {
+      clearTimeout(clickSeek);
       stopEditing();
       cancelGestures();
       autoScroll.end();
@@ -593,6 +606,27 @@ export default function ProjectScreen() {
     }
   };
 
+  /** Asks where to save the chart's text for USDB, and writes it there. */
+  const exportUsdb = async () => {
+    setExporting(true);
+    try {
+      const song = chart().song;
+      const path = await native.dialogs.chooseUsdbFile({ name: songFileName(song.artist, song.title) });
+      if (!path) return;
+      const { warnings } = await native.project.exportUsdb({ id: overview().id, path });
+      toast.add({
+        type: "success",
+        title: "Exported the text for USDB",
+        description: [`Paste it into USDB's form. ${path}`, ...warnings.slice(0, 1)].join(" "),
+        actionProps: { children: revealLabel, onClick: () => reveal(path) },
+      });
+    } catch (error) {
+      toast.add({ type: "error", title: "Couldn't export the text for USDB", description: errorMessage(error) });
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div class="flex h-dvh min-h-0 flex-col overflow-hidden bg-background" data-testid="project">
       <TitleBar
@@ -627,18 +661,12 @@ export default function ProjectScreen() {
           <span class="truncate text-muted-foreground">· {chart().song.artist || "Unknown artist"}</span>
         </button>
 
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => void chooseExport()}
-          disabled={exporting()}
-          data-testid="export-song"
-        >
-          <Show when={exporting()} fallback={<DownloadIcon />}>
-            <LoaderCircleIcon class="animate-spin" />
-          </Show>
-          Export…
-        </Button>
+        <ExportMenu
+          busy={exporting()}
+          onSongFolder={() => void chooseExport()}
+          onUsdb={() => void exportUsdb()}
+          noVideoLink={chart().song.youtubeId === null}
+        />
         <Button variant="ghost" size="sm" onClick={() => void close()} data-testid="close-project">
           <XIcon />
           Close
@@ -699,13 +727,16 @@ export default function ProjectScreen() {
                   drag={editing.drag()}
                   onEmptyClick={(seconds) => {
                     editing.emptyClick();
-                    seek(seconds);
+                    seekSoon(seconds);
                   }}
                   onBox={(area, add) => editing.box(area, add)}
                   tool={tools.tool()}
                   onDrawDown={(at, event, scale) => editing.drawDown(event, at, scale)}
                   drawing={editing.drawing()}
-                  onEmptyDoubleClick={(at) => editing.emptyDoubleClick(at)}
+                  onEmptyDoubleClick={(at) => {
+                    clearTimeout(clickSeek);
+                    editing.emptyDoubleClick(at);
+                  }}
                   cut={editing.cut()}
                   onHover={(note, seconds) => editing.hover(note, seconds)}
                   onSplit={(note, seconds, every) => editing.splitAt(note, seconds, every)}

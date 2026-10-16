@@ -8,6 +8,7 @@ import type { BrowserWindow } from "electron";
 import { safeFileName } from "../../src/lib/file-names";
 import { NativeRpcs } from "../../src/lib/native/contract";
 import type { ChosenImage, OpenedProject, RecentProjectEntry } from "../../src/lib/native/types";
+import { audioFileIntoDraft, inspectAudioFile } from "../audio-file/audio-file";
 import { autoPitchNotes } from "../charting/project-auto-pitch";
 import { createDraftProject, listenToDraft, makeDraftChart } from "../drafts/draft-project";
 import { ImageUnreadable } from "../errors";
@@ -27,7 +28,7 @@ import { normalizePath, notAllowed, PathGrants } from "../services/path-grants";
 import { Recents } from "../services/recents";
 import { AppSettings } from "../services/settings";
 import { Tools } from "../tools/tools";
-import { exportSong } from "../ultrastar/song-export";
+import { exportSong, exportUsdb } from "../ultrastar/song-export";
 import { describeSong, importSong, inspectSong } from "../ultrastar/song-import";
 import { findCovers } from "../youtube/covers";
 import { findLyrics } from "../youtube/lyrics";
@@ -147,6 +148,17 @@ export const nativeHandlers = NativeRpcs.toLayer({
       if (!chosen) return null;
       return yield* grant(chosen.toLowerCase().endsWith(".tunestudio") ? chosen : `${chosen}.tunestudio`);
     }),
+  "dialogs.chooseUsdbFile": (input, { client }) =>
+    Effect.gen(function* () {
+      const desktop = yield* Desktop;
+      const paths = yield* Path.Path;
+      const chosen = yield* desktop.chooseTextFile(
+        yield* windowOf(client),
+        paths.join(desktop.musicFolder, `${safeFileName(input.name)}.txt`),
+      );
+      if (!chosen) return null;
+      return yield* grant(chosen.toLowerCase().endsWith(".txt") ? chosen : `${chosen}.txt`);
+    }),
   "dialogs.chooseExportFolder": (_, { client }) =>
     Effect.gen(function* () {
       const desktop = yield* Desktop;
@@ -197,6 +209,11 @@ export const nativeHandlers = NativeRpcs.toLayer({
       Effect.flatMap(project(input.id), (session) => autoPitchNotes(session, input.notes, onProgress)),
     ),
   "project.chart": (input) => Effect.flatMap(project(input.id), (session) => readEditorChart(session.db)),
+  "project.exportUsdb": (input) =>
+    Effect.gen(function* () {
+      const path = yield* allowedPath(input.path);
+      return yield* exportUsdb(yield* project(input.id), path);
+    }),
   "project.exportSong": (input) =>
     Effect.gen(function* () {
       const folder = yield* allowedPath(input.folder);
@@ -227,6 +244,14 @@ export const nativeHandlers = NativeRpcs.toLayer({
   "youtube.download": (input) =>
     progressStream(
       (onProgress) => downloadIntoDraft(input.videoId, onProgress),
+      // Cancelled just as it finished: the renderer won't hear of this draft to discard it.
+      (draft) => Drafts.use((drafts) => drafts.discard(draft.draftId)).pipe(Effect.ignore),
+    ),
+
+  "audio.inspect": (input) => Effect.flatMap(allowedPath(input.path), inspectAudioFile),
+  "audio.import": (input) =>
+    progressStream(
+      (onProgress) => Effect.flatMap(allowedPath(input.path), (path) => audioFileIntoDraft(path, onProgress)),
       // Cancelled just as it finished: the renderer won't hear of this draft to discard it.
       (draft) => Drafts.use((drafts) => drafts.discard(draft.draftId)).pipe(Effect.ignore),
     ),
