@@ -1,6 +1,6 @@
 /**
  * The piano roll's right-click menu. On a note it is for the selection (the note joins it unless it is in it already):
- * every action the keys have, with its key, so the menu also teaches them. On empty space: Paste and Select all.
+ * every action the keys have, with its key, so the menu also teaches them. On empty space: Chart range, Paste and Select all.
  */
 import type { JSX } from "@solidjs/web";
 import { createSignal, For, Show } from "solid-js";
@@ -23,6 +23,8 @@ export interface NoteMenuActions {
   open: () => boolean;
   canAutoPitch: () => boolean;
   autoPitch: () => void;
+  canChartRange: () => boolean;
+  chartRange: () => void;
   canSplitAtPlayhead: () => boolean;
   splitAtPlayhead: () => void;
   canMerge: () => boolean;
@@ -50,6 +52,9 @@ export function NoteMenu(props: { actions: NoteMenuActions; children: JSX.Elemen
         {props.children}
       </ContextMenuTrigger>
       <ContextMenuContent class="min-w-[200px]" data-testid="note-menu">
+        <ContextMenuItem disabled={!props.actions.canChartRange()} onClick={() => props.actions.chartRange()}>
+          Chart range
+        </ContextMenuItem>
         <Show
           when={onNote()}
           fallback={

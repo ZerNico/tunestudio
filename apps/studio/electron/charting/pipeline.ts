@@ -5,6 +5,7 @@ import { isWord, type WordTiming } from "./align";
  * stage the ports in this folder; the models run in the native addon behind `ChartEngines`.
  */
 import { AlignFailed, alignStage, type LineTimingFit, type LyricLine } from "./align-stage";
+import { splitWords } from "./aligner-text";
 import { beatTimes } from "./beats";
 import { assign } from "./boundary";
 import { fitGrid, makeGrid, toSec, type Grid } from "./grid";
@@ -68,6 +69,8 @@ export interface ChartInput {
   mix22k: Float32Array;
   lines: LyricLine[];
   language: ChartLanguage;
+  /** Editor passage: keep its grid and lyric lines, with acoustic context outside this local window. */
+  passage?: { start: number; end: number; grid: Grid; songMidi: Float32Array };
 }
 
 /** The stages, for progress. */
@@ -118,11 +121,23 @@ export async function makeChart(
   const track: FullPitchTrack = pitchTrack(await engines.trackPitch(input.vocals16k), input.vocals16k);
   signal?.throwIfAborted();
 
-  onStep("beat", 0);
-  const logits = await engines.beatLogits(input.mix22k);
-  signal?.throwIfAborted();
-  const { beats, downbeats } = beatTimes(logits.beat, logits.downbeat);
-  const { bpm, t0 } = fitGrid(beats, downbeats);
+  let fitted: { bpm: number; t0: number } | undefined;
+  if (!input.passage) {
+    onStep("beat", 0);
+    const logits = await engines.beatLogits(input.mix22k);
+    signal?.throwIfAborted();
+    const { beats, downbeats } = beatTimes(logits.beat, logits.downbeat);
+    fitted = fitGrid(beats, downbeats);
+  }
+
+  if (input.passage) {
+    const from = Math.ceil(input.passage.start * 100);
+    const to = Math.min(track.midi.length, Math.floor(input.passage.end * 100));
+    let voiced = 0;
+    for (let i = from; i < to; i++) if (Number.isFinite(track.midi[i]) && track.rms[i]! > -45) voiced++;
+    if (voiced < Math.min(10, Math.ceil((to - from) * 0.2)) || voiced === 0)
+      throw new AlignFailed("Nothing is sung in this range.");
+  }
 
   onStep("timing", 0);
   const aligner = await engines.alignerOutputs(input.vocals16k, (percent) => onStep("timing", percent));
@@ -132,11 +147,19 @@ export async function makeChart(
     try {
       return await engines.forcedAlign(aligner.emissions, ALIGNER_CLASSES, from, to, ids);
     } catch (error) {
-      throw new AlignFailed(error instanceof Error ? error.message : String(error));
+      signal?.throwIfAborted();
+      throw new AlignFailed(
+        input.passage && error instanceof Error && error.message === "The text is too long for this part of the song."
+          ? "The lyrics don't fit in this range. Choose more time or fewer words."
+          : error instanceof Error
+            ? error.message
+            : String(error),
+      );
     }
   };
   const { aligned, fit } = await alignStage({
-    lines: dropBacking(input.lines),
+    lines: input.passage ? input.lines : dropBacking(input.lines),
+    window: input.passage ? { start: input.passage.start, end: input.passage.end } : undefined,
     language: input.language.code,
     frames: aligner.frames,
     forcedAlign,
@@ -148,10 +171,18 @@ export async function makeChart(
   if (!first) throw new AlignFailed("None of the lyrics could be found in the vocals.");
 
   onStep("notes", 0);
-  const grid = makeGrid(bpm, t0, first.start);
-  const tuning = tuningOffset(track.midi);
-  const scale = estimateScale(track.midi, tuning);
-  const lines = linesWithWords(aligned, input.language, aligner.syllableStarts);
+  const grid = input.passage?.grid ?? makeGrid(fitted!.bpm, fitted!.t0, first.start);
+  const songMidi = input.passage?.songMidi;
+  const midi = songMidi?.some(Number.isFinite) ? songMidi : track.midi;
+  const tuning = tuningOffset(midi);
+  const scale = estimateScale(midi, tuning);
+  const lines = linesWithWords(
+    aligned,
+    input.language,
+    aligner.syllableStarts,
+    input.passage,
+    input.passage ? input.lines : undefined,
+  );
   const requests = lines.map(({ spans }) => gameRequest(spans, input.vocals44k.length, GAME_SAMPLE_RATE));
   const wanted = requests.flatMap((request) => (request ? [request] : []));
   const raw = await engines.transcribeNotes(
@@ -163,11 +194,21 @@ export async function makeChart(
   signal?.throwIfAborted();
   const byRequest = splitGameNotes(raw);
   let next = 0;
+  // Every line without sung notes for all its syllables, so one retry can fix them all (1-based, as the user typed).
+  const unsung: number[] = [];
   const outLines: { notes: Note[]; trace: TraceEntry[] }[] = lines.map(({ spans }, i) => {
     const request = requests[i];
     if (!request) return { notes: [], trace: [] };
-    return notesFromGame(spans, byRequest[next++]!, request, grid, { scale });
+    const line = notesFromGame(spans, byRequest[next++]!, request, grid, { scale });
+    if (input.passage && (!line.trace.length || line.trace.some((entry) => entry.parts === 0))) unsung.push(i + 1);
+    return line;
   });
+  if (unsung.length)
+    throw new AlignFailed(
+      unsung.length === 1
+        ? `Not all syllables have sung notes in line ${unsung[0]}. Check its words and the range.`
+        : `Not all syllables have sung notes in lines ${unsung.join(", ")}. Check their words and the range.`,
+    );
 
   // The learned corrections, line by line (their features look at a line's neighbouring notes), in one model run each.
   const pitchFeatures = outLines.flatMap(({ notes, trace }) => noteFeatures(notes, trace, track, tuning, scale));
@@ -198,22 +239,48 @@ export async function makeChart(
     input.vocals44k,
     sung.map((n) => ({ start: toSec(grid, n.start), end: toSec(grid, n.start + n.length), midi: n.pitch + 60 })),
   );
+  signal?.throwIfAborted();
   fixOctaves(noteLines, grid, track, tuning, harmonicPairs(ratios));
-  markGolden(noteLines, grid, track, tuning);
-  const finished = finishLines(splitLines(noteLines, grid), grid);
+  if (!input.passage) markGolden(noteLines, grid, track, tuning);
+  const finished = finishLines(input.passage ? noteLines : splitLines(noteLines, grid), grid);
   return { grid, lines: finished.lines, breaks: finished.breaks, fit, track };
 }
 
 /** Each aligned line's syllable spans, with their starts moved to the syllable-start head's peaks. */
-function linesWithWords(aligned: WordTiming[][], language: ChartLanguage, syllableStarts: Float32Array) {
+function linesWithWords(
+  aligned: WordTiming[][],
+  language: ChartLanguage,
+  syllableStarts: Float32Array,
+  window?: { start: number; end: number },
+  supplied?: readonly LyricLine[],
+) {
   return aligned.flatMap((words, li) => {
-    if (!words.length) return [];
-    const nextLine = aligned.slice(li + 1).find((ws) => ws.length)?.[0]?.start ?? null;
-    const spans = syllableSpans(
-      words,
-      words.map((w) => syllabify(w.text, language.name)),
-      nextLine,
-    );
+    if (!words.length) {
+      if (window) throw new AlignFailed("A lyric line could not be aligned.");
+      return [];
+    }
+    const nextLine = aligned.slice(li + 1).find((ws) => ws.length)?.[0]?.start ?? window?.end ?? null;
+    const syllables = words.map((w) => syllabify(w.text, language.name));
+    const spans = syllableSpans(words, syllables, nextLine);
+    if (supplied) {
+      // The aligner ignores standalone punctuation. Keep it on the adjacent word, without making a note for it.
+      let word = -1;
+      let prefix = "";
+      for (const token of splitWords(supplied[li]!.text)) {
+        if (isWord(token)) word++;
+        else if (word < 0) prefix += `${token} `;
+        else {
+          const parts = syllables[word]!;
+          parts[parts.length - 1] += ` ${token}`;
+        }
+      }
+      syllables[0]![0] = prefix + syllables[0]![0];
+      // Restore text only after timing: punctuation must not change character-based boundaries.
+      const labels = syllables.flatMap((parts) => parts.map((part, i) => part + (i === parts.length - 1 ? " " : "")));
+      spans.forEach((span, i) => {
+        span.text = labels[i]!;
+      });
+    }
     // One-to-one within ±0.3 s, cost 0.5: the PoC's defaults.
     const starts = assign(
       spans.map((span) => span.start),
@@ -222,7 +289,10 @@ function linesWithWords(aligned: WordTiming[][], language: ChartLanguage, syllab
       0.3,
       0.5,
     );
-    spans.forEach((span, i) => (span.start = starts[i]!));
+    spans.forEach((span, i) => {
+      span.start = window ? Math.max(window.start, Math.min(window.end, starts[i]!)) : starts[i]!;
+      if (window) span.end = Math.min(window.end, span.end);
+    });
     for (let i = 0; i + 1 < spans.length; i++) spans[i]!.end = Math.min(spans[i]!.end, spans[i + 1]!.start);
     return [{ spans }];
   });

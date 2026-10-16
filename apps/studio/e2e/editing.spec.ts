@@ -154,6 +154,50 @@ test("the note menu acts on the selection, pastes on empty space, and auto pitch
   await expect(autoPitch).toBeVisible();
 });
 
+test("charts lyrics for a reviewed ruler range and leaves notes intact on failure", async () => {
+  await openSong();
+  const { page } = studio;
+  const button = page.getByTestId("chart-range");
+  const dialog = page.getByTestId("chart-range-dialog");
+  // Nothing to chart yet: it says how to choose a range.
+  await button.click();
+  await expect(page.getByText("Drag on the time ruler or select notes to chart them.")).toBeVisible();
+  await expect(dialog).toHaveCount(0);
+  await page.getByTestId("roll-note").first().click();
+  await button.click();
+  await expect(dialog.getByRole("textbox", { name: "Lyrics" })).toHaveValue("Hel");
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  const ruler = (await page.getByTestId("time-ruler").boundingBox())!;
+  await page.mouse.move(ruler.x + ruler.width * 0.15, ruler.y + ruler.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(ruler.x + ruler.width * 0.55, ruler.y + ruler.height / 2, { steps: 5 });
+  await page.mouse.up();
+  // With looping off and nothing selected, the faint range left on the ruler doesn't count.
+  await page.getByTestId("loop").click();
+  await expect(page.getByTestId("loop")).toHaveAttribute("aria-pressed", "false");
+  await page.keyboard.press("Escape");
+  await button.click();
+  // The first click's hint may still be showing.
+  await expect(page.getByText("Drag on the time ruler or select notes to chart them.")).toHaveCount(2);
+  await expect(dialog).toHaveCount(0);
+  await page.getByTestId("loop").click();
+  await expect(page.getByTestId("loop")).toHaveAttribute("aria-pressed", "true");
+  await button.click();
+  const lyrics = dialog.getByRole("textbox", { name: "Lyrics" });
+  await expect(lyrics).not.toHaveValue("Hel");
+  await lyrics.fill("Hello world\n(oh) again");
+  await expect(dialog.getByRole("button", { name: "Chart range", exact: true })).toBeEnabled();
+  await page.mouse.move(0, 0);
+  await page.screenshot({ path: test.info().outputPath("chart-range-dialog.png"), animations: "disabled" });
+  await dialog.getByRole("button", { name: "Chart range", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toBeVisible();
+  await expect(lyrics).toHaveValue("Hello world\n(oh) again");
+  await expect(page.getByTestId("roll-note")).toHaveCount(5);
+  await expect(page.getByTestId("undo")).toBeDisabled();
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(dialog).toBeHidden();
+});
+
 test("a drag on the ruler loops a range, L loops the selected notes, a double-click removes the range", async () => {
   await openSong();
   const { page } = studio;

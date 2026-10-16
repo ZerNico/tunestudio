@@ -20,6 +20,7 @@ import {
   OpenedProject,
   ProjectOverview,
   RecentProjectEntry,
+  RangeChart,
   SongInspection,
   SungPitch,
   ToolName,
@@ -280,6 +281,16 @@ export const ChartChangesInput = Schema.Struct({ id: Schema.String, changes: Sch
 
 export const AutoPitchInput = Schema.Struct({ id: Schema.String, notes: Schema.Array(Schema.Number) });
 
+export const ChartRangeInput = Schema.Struct({
+  id: Schema.String,
+  singerId: Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0)),
+  start: Schema.Number.check(Schema.isFinite(), Schema.isGreaterThanOrEqualTo(0)),
+  end: Schema.Number.check(Schema.isFinite(), Schema.isGreaterThan(0)),
+  lines: Schema.Array(Schema.String).check(Schema.isMinLength(1)),
+  language: Schema.Literals(["en", "de"]),
+});
+export type ChartRangeInput = typeof ChartRangeInput.Type;
+
 /** A note's new pitch (MIDI) from auto pitch. */
 export const NotePitch = Schema.Struct({ id: Schema.Number, pitch: Schema.Number });
 
@@ -359,6 +370,8 @@ export class NativeRpcs extends RpcGroup.make(
    * use), reporting progress; notes with nothing sung to go by are left out. Nothing is written.
    */
   withProgress("project.autoPitch", AutoPitchInput, ImportProgress, Schema.Array(NotePitch)),
+  /** Charts supplied lyrics inside a reviewed range, without writing the chart. */
+  withProgress("project.chartRange", ChartRangeInput, ImportProgress, RangeChart),
   /** Writes the project as an UltraStar song folder. */
   call("project.exportSong", ExportInput, ExportResult),
   /** Writes the chart's text for USDB (`usdb.ts`); returns what changed on the way. */

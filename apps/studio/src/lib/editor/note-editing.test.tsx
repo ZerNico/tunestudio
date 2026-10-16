@@ -169,6 +169,23 @@ function setup(playhead = 0, start: EditorChart = chart, viewStart?: () => numbe
 }
 
 describe("note editing", () => {
+  it("reactively releases busy controls after a click without a drag preview", () => {
+    const { editing, drag, pointer } = setup();
+    const { busy, dispose } = createRoot((dispose) => {
+      const busy = createMemo(() => editing.busy());
+      return { busy, dispose };
+    });
+    expect(busy()).toBe(false);
+    drag(100, "body", [], false);
+    expect(busy()).toBe(true);
+    expect(editing.drag()).toBeNull();
+    pointer.dispatchEvent(new Event("pointerup"));
+    expect(editing.busy()).toBe(false);
+    flush();
+    expect(busy()).toBe(false);
+    dispose();
+  });
+
   it("selects with clicks: one, a range with Shift, toggling with Cmd/Ctrl", () => {
     const { click, selection } = setup();
     click(100);

@@ -5,7 +5,14 @@ import Redo2Icon from "~icons/lucide/redo-2";
 import Undo2Icon from "~icons/lucide/undo-2";
 import XIcon from "~icons/lucide/x";
 
-import { AutoPitchButton, HistoryButton, MergeButton, ToolSwitch } from "~/components/editor/edit-controls";
+import { ChartRangeDialog } from "~/components/editor/chart-range-dialog";
+import {
+  AutoPitchButton,
+  ChartRangeButton,
+  HistoryButton,
+  MergeButton,
+  ToolSwitch,
+} from "~/components/editor/edit-controls";
 import { BreakLane, LyricsLane, OverviewBar, TimeRuler } from "~/components/editor/lanes";
 import { NoteMenu, type NoteMenuActions } from "~/components/editor/note-menu";
 import { GUTTER_PX, PianoRoll } from "~/components/editor/piano-roll";
@@ -21,6 +28,7 @@ import { ReplaceExportDialog } from "~/components/project/replace-export-dialog"
 import { TitleBar } from "~/components/title-bar";
 import { Button } from "~/components/ui/button";
 import { toast } from "~/components/ui/toast";
+import type { TimeRange } from "~/lib/chart-range";
 import { CHART_STEPS } from "~/lib/chart-steps";
 import { onMenuCommand, platform, revealLabel } from "~/lib/desktop";
 import { isTyping, pasteFromClipboard, runEditCommand, setEditHandler } from "~/lib/edit-commands";
@@ -40,6 +48,7 @@ import {
   spanOf,
   stepLine,
 } from "~/lib/editor/chart";
+import { createChartRangeJob } from "~/lib/editor/chart-range-job";
 import { type ChartProblem, chartProblems } from "~/lib/editor/checks";
 import { createChartDocument } from "~/lib/editor/document";
 import { overlapping } from "~/lib/editor/edits";
@@ -345,8 +354,39 @@ export default function ProjectScreen() {
     onMessage: ({ title, description, error }) => toast.add({ type: error ? "error" : undefined, title, description }),
   });
 
+  const [chartingRange, setChartingRange] = createSignal<{ range: TimeRange; singerId: number } | null>(null);
+  const rangeJob = createChartRangeJob({
+    doc,
+    project: () => overview().id,
+    media: projectMedia,
+    request: (input, signal, onProgress) =>
+      followProgress(() => native.project.chartRange(input, { signal }), signal, onProgress),
+    onDone: () => setChartingRange(null),
+  });
+  // A range kept with looping off is drawn faintly and easy to miss, so only a looping one counts.
+  const requestedRange = () => (loop.on() ? loop.range() : null) ?? spanOf(selectedNotes());
+  // Without a range the button stays enabled and says what to do, as L does.
+  const canChartRange = () =>
+    !!media("vocals") && !gestureBusy() && !autoPitch.busy() && !chartingRange() && separating() === undefined;
+  const openChartRange = () => {
+    if (!canChartRange()) return;
+    const requested = requestedRange();
+    if (!requested) {
+      toast.add({ title: "Drag on the time ruler or select notes to chart them." });
+      return;
+    }
+    const singerId = editing.activeSinger();
+    if (singerId === null) return;
+    cancelGestures();
+    playback.pause();
+    rangeJob.clearError();
+    setChartingRange({ range: { ...requested }, singerId });
+  };
+
   const editing = createNoteEditing({
-    onAutoPitch: (ids) => autoPitch.run(ids),
+    onAutoPitch: (ids) => {
+      if (!chartingRange()) autoPitch.run(ids);
+    },
     onPitch: (midi) => {
       if (prefs.tones()) tones.preview(midi);
     },
@@ -392,7 +432,9 @@ export default function ProjectScreen() {
       if (note) editing.menuOpen(note);
       return note !== null;
     },
-    canAutoPitch: () => !autoPitch.busy() && selectedIds().size > 0,
+    canChartRange,
+    chartRange: openChartRange,
+    canAutoPitch: () => !chartingRange() && !autoPitch.busy() && selectedIds().size > 0,
     autoPitch: () => editing.commands.autoPitch(),
     canSplitAtPlayhead: () => editing.commands.canSplitAtPlayhead(),
     splitAtPlayhead: () => editing.commands.splitAtPlayhead(),
@@ -653,6 +695,7 @@ export default function ProjectScreen() {
       cancelGestures();
       autoScroll.end();
       autoPitch.stop();
+      rangeJob.stop();
       pitchController.abort();
       separation?.abort();
       observer.disconnect();
@@ -669,6 +712,8 @@ export default function ProjectScreen() {
 
   const close = async () => {
     // What still reads or writes the project stops before it closes.
+    rangeJob.stop();
+    autoPitch.stop();
     separation?.abort();
     pitchController.abort();
     await native.project.close({ id: overview().id }).catch((error: unknown) => console.error(error));
@@ -741,10 +786,11 @@ export default function ProjectScreen() {
             <AutoPitchButton
               status={autoPitch.busy() ? (autoPitch.progress()?.step ?? null) : undefined}
               percent={percentOf(autoPitch.progress() ?? null) ?? null}
-              canStart={selectedIds().size > 0}
+              canStart={!chartingRange() && selectedIds().size > 0}
               onStart={() => editing.commands.autoPitch()}
               onStop={() => autoPitch.stop()}
             />
+            <ChartRangeButton canStart={canChartRange()} onStart={openChartRange} />
             <MergeButton canMerge={editing.commands.canMerge()} onMerge={() => editing.commands.merge()} />
           </>
         }
@@ -884,6 +930,22 @@ export default function ProjectScreen() {
         onVolume={prefs.setVolume}
       />
 
+      <Show when={chartingRange()}>
+        {(chosen) => (
+          <ChartRangeDialog
+            chart={chart()}
+            project={overview().id}
+            range={chosen().range}
+            singerId={chosen().singerId}
+            duration={Math.min(
+              projectMedia().find((item) => item.role === "vocals")?.duration ?? Infinity,
+              playback.duration() || Infinity,
+            )}
+            job={rangeJob}
+            onClose={() => setChartingRange(null)}
+          />
+        )}
+      </Show>
       <SongDetails
         open={detailsOpen()}
         onOpenChange={setDetailsOpen}

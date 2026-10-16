@@ -99,6 +99,8 @@ export interface AlignStageInput {
   rms: Float32Array;
   /** Seconds of the pitch track's last frame. */
   songEnd: number;
+  /** Restricts untimed lyrics to a passage, excluding acoustic context around it. */
+  window?: { start: number; end: number };
   maxOff?: number;
   minScore?: number;
   pad?: number;
@@ -136,7 +138,7 @@ export async function alignStage(
   let timed = lines.every((line) => line.start !== null);
   let aligned: WordTiming[][];
   try {
-    aligned = split(await align({ words: words.flat(), start: null, end: null }), sizes);
+    aligned = split(await align({ words: words.flat(), start: null, end: null, ...input.window }), sizes);
   } catch (error) {
     // With line times, align line by line in their windows instead.
     if (!(error instanceof AlignFailed) || !timed) throw error;

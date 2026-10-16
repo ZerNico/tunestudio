@@ -14,7 +14,7 @@ import { MODELS, Models } from "./models/models";
 import { Native, type NativeAddon } from "./native/native";
 import { AppLog } from "./services/app-log";
 import { Desktop } from "./services/desktop";
-import { studioServices } from "./services/layer";
+import { studioServices, type StudioServicesOptions } from "./services/layer";
 import { downloadsLayer } from "./tools/downloads";
 
 /**
@@ -22,7 +22,7 @@ import { downloadsLayer } from "./tools/downloads";
  * reports progress halfway and at the end. The chart models give a steady A4 every frame, a beat
  * every half second, one confident letter per frame and one GAME note per line.
  */
-const fakeAddon: NativeAddon = {
+export const fakeAddon: NativeAddon = {
   __napiBindingTarget: "native",
   trackPitch: async (_model, samples) => new Float32Array(Math.floor(samples.length / 160) + 1).fill(440),
   beatLogits: async (_logmel, _model, samples) => {
@@ -193,7 +193,7 @@ export function recordingDesktop(musicFolder: string) {
 }
 
 /** A runtime like the app's, in `dir`: real projects, recents and files, recorded desktop and log, no internet. */
-export function testRuntime(dir: string) {
+export function testRuntime(dir: string, overrides: Pick<StudioServicesOptions, "native" | "models" | "tools"> = {}) {
   const { recorded, layer } = recordingDesktop(path.join(dir, "Music"));
   const lines: string[] = [];
   const log = Layer.succeed(AppLog, {
@@ -214,6 +214,7 @@ export function testRuntime(dir: string) {
       downloads: downloadsLayer({ hosts: [] }),
       log,
       desktop: layer,
+      ...overrides,
     }),
   );
   return { runtime, recorded, lines };

@@ -49,6 +49,7 @@ export function createBreakEditing(options: {
 }) {
   const [drag, setDrag] = createSignal<BreakDrag | null>(null);
   let cancelDrag: (() => void) | null = null;
+  const [active, setActive] = createSignal(false);
   const chart = () => options.doc().chart();
 
   /**
@@ -94,7 +95,10 @@ export function createBreakEditing(options: {
   return {
     drag,
     /** Whether a break is being dragged (Esc stops it before anything else). */
-    busy: () => cancelDrag !== null,
+    busy: () => {
+      active();
+      return cancelDrag !== null;
+    },
     /** Stops a drag without changing anything (before undo and redo, and when the editor goes away). */
     cancel: () => cancelDrag?.(),
 
@@ -106,6 +110,7 @@ export function createBreakEditing(options: {
       if (!range) return;
       /** The drag as last shown (the signal is written on the next microtask; a release can come first). */
       let latest: BreakDrag | null = null;
+      setActive(true);
       cancelDrag = followDrag({
         press: { clientX: press.clientX, clientY: 0 },
         target: options.pointerTarget ?? window,
@@ -124,6 +129,7 @@ export function createBreakEditing(options: {
         },
         onStop: () => {
           cancelDrag = null;
+          setActive(false);
           setDrag(null);
         },
         onUp: () => {

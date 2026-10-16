@@ -137,6 +137,28 @@ export const SongInspection = Schema.Struct({
 });
 export type SongInspection = typeof SongInspection.Type;
 
+/** Generated notes for one reviewed passage, in project seconds and MIDI pitches. */
+export const RangeChart = Schema.Struct({
+  lines: Schema.Array(
+    Schema.Struct({
+      notes: Schema.Array(
+        Schema.Struct({
+          start: Schema.Number,
+          duration: Schema.Number,
+          pitch: Schema.Number,
+          lyric: Schema.String,
+          type: Schema.Literal("normal"),
+        }),
+      ),
+    }),
+  ),
+  breaks: Schema.Array(Schema.Number),
+  bpm: Schema.Number,
+  gap: Schema.Number,
+  vocals: Schema.String,
+});
+export type RangeChart = typeof RangeChart.Type;
+
 /** Progress while a project is written. */
 export const ImportProgress = Schema.Struct({
   /** What is being written, for the progress label. */

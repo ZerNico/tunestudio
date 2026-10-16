@@ -220,6 +220,8 @@ export function createNoteEditing(options: {
   const clickLength = () => lastLength ?? defaultLength(chart());
   /** Ends the drag in progress without changing anything. */
   let cancelDrag: (() => void) | null = null;
+  // Notify controls on press/release even when a click never creates a drag preview.
+  const [active, setActive] = createSignal(false);
 
   /** The selected notes that are there. */
   const selected = () => {
@@ -500,6 +502,7 @@ export function createNoteEditing(options: {
       latest = { ids, plan, part, time: seconds, pitch: semitones, anchor: { note: note.id }, label };
       setDrag(latest);
     };
+    setActive(true);
     cancelDrag = followDrag({
       press,
       target: options.pointerTarget ?? window,
@@ -510,6 +513,7 @@ export function createNoteEditing(options: {
       onStop: () => {
         leaveEdge();
         cancelDrag = null;
+        setActive(false);
         setDrag(null);
       },
       onUp: (dragged) => {
@@ -527,6 +531,7 @@ export function createNoteEditing(options: {
     const unit = gridStep(current);
     /** The preview as last set (the signal is written on the next microtask; a release can come first). */
     let latest: DragPreview | null = null;
+    setActive(true);
     cancelDrag = followDrag({
       press,
       target: options.pointerTarget ?? window,
@@ -541,6 +546,7 @@ export function createNoteEditing(options: {
       },
       onStop: () => {
         cancelDrag = null;
+        setActive(false);
         setDrag(null);
       },
       onUp: (dragged) => {
@@ -556,7 +562,10 @@ export function createNoteEditing(options: {
     /** The singer (id) new notes and line breaks go to: the one whose note was touched last, else the first. */
     activeSinger: () => singerFor(),
     /** Whether a drag or a drawing is in progress (Esc stops it before anything else). */
-    busy: () => cancelDrag !== null,
+    busy: () => {
+      active();
+      return cancelDrag !== null;
+    },
     /**
      * Stops a drag or drawing without changing anything: before undo and redo (its limits were worked out for the
      * chart as it was) and when the editor goes away (its listeners are on the window).
@@ -575,6 +584,7 @@ export function createNoteEditing(options: {
       /** The note as last drawn (the signal is written on the next microtask; a release can come first). */
       let drawn: { start: number; duration: number; pitch: number } | null = null;
       options.onPitch?.(at.pitch);
+      setActive(true);
       cancelDrag = followDrag({
         press,
         target: options.pointerTarget ?? window,
@@ -588,6 +598,7 @@ export function createNoteEditing(options: {
         },
         onStop: () => {
           cancelDrag = null;
+          setActive(false);
           setDrawing(null);
         },
         onUp: (dragged) => {

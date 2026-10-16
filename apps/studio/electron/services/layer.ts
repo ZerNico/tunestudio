@@ -6,7 +6,7 @@ import { Native, nativeLayer } from "../native/native";
 import { projectsLayer } from "../project/projects";
 import type { Downloads } from "../tools/downloads";
 import type { Platform } from "../tools/sources";
-import { toolsLayer } from "../tools/tools";
+import { Tools, toolsLayer } from "../tools/tools";
 import type { AppLog } from "./app-log";
 import type { Desktop } from "./desktop";
 import { draftsLayer } from "./drafts";
@@ -34,6 +34,7 @@ export interface StudioServicesOptions {
   /** Tests pass a fake engine and models; the app loads the addon and downloads the models. */
   native?: Layer.Layer<Native>;
   models?: Layer.Layer<Models>;
+  tools?: Layer.Layer<Tools>;
   platform?: Platform;
   /** The app downloads for real from the tool hosts; tests from a fake internet, or nowhere. */
   downloads: Layer.Layer<Downloads>;
@@ -51,10 +52,11 @@ export function studioServices(options: StudioServicesOptions) {
     settingsLayer(options.settingsFile),
     draftsLayer(options.draftsFolder),
     pathGrantsLayer,
-    toolsLayer({
-      folder: options.toolsFolder,
-      platform: options.platform ?? { os: process.platform, arch: process.arch },
-    }).pipe(Layer.provide(Layer.mergeAll(downloads, options.log))),
+    options.tools ??
+      toolsLayer({
+        folder: options.toolsFolder,
+        platform: options.platform ?? { os: process.platform, arch: process.arch },
+      }).pipe(Layer.provide(Layer.mergeAll(downloads, options.log))),
     options.models ??
       modelsLayer({ folder: options.modelsFolder }).pipe(Layer.provide(Layer.mergeAll(downloads, options.log))),
     options.native ?? nativeLayer(options.nativeFolder),

@@ -127,6 +127,8 @@ export function createChartDocument<Selection>(options: {
   const history = createHistory<Selection>();
   /** Bumped on every step, so undo and redo labels update. */
   const [version, setVersion] = createSignal(0);
+  let revision = 0;
+  const advance = () => setVersion(++revision);
   /** New rows get ids above every existing one, never reused within the session. */
   let nextId =
     Math.max(
@@ -151,7 +153,7 @@ export function createChartDocument<Selection>(options: {
       } catch (error) {
         failed = true;
         history.clear();
-        setVersion((v) => v + 1);
+        advance();
         options.onFailed(error);
       }
     });
@@ -251,7 +253,7 @@ export function createChartDocument<Selection>(options: {
     const after = chosen ?? before;
     if (chosen !== undefined) options.setSelection(chosen);
     history.push({ label, changes, selection: { before, after }, merge: edit.merge, at: Date.now() });
-    setVersion((v) => v + 1);
+    advance();
     return true;
   };
 
@@ -259,20 +261,22 @@ export function createChartDocument<Selection>(options: {
     /** The chart as drawn; follows every edit. */
     chart,
     rows,
+    /** Synchronous revision, including edits undone again and failed saves. */
+    revision: () => revision,
     edit,
     undo: () => {
       const step = failed ? undefined : history.undo();
       if (!step) return;
       commit(invert(step.changes));
       options.setSelection(step.selection.before);
-      setVersion((v) => v + 1);
+      advance();
     },
     redo: () => {
       const step = failed ? undefined : history.redo();
       if (!step) return;
       commit(step.changes);
       options.setSelection(step.selection.after);
-      setVersion((v) => v + 1);
+      advance();
     },
     /** What undo and redo would do ("Move 3 notes"), or null. */
     undoLabel: () => (version(), history.undoLabel()),

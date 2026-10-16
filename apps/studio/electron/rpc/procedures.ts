@@ -10,6 +10,7 @@ import { NativeRpcs } from "../../src/lib/native/contract";
 import type { ChosenImage, OpenedProject, RecentProjectEntry } from "../../src/lib/native/types";
 import { audioFileIntoDraft, inspectAudioFile } from "../audio-file/audio-file";
 import { autoPitchNotes } from "../charting/project-auto-pitch";
+import { chartProjectRange } from "../charting/project-range-chart";
 import { createDraftProject, listenToDraft, makeDraftChart } from "../drafts/draft-project";
 import { ImageUnreadable } from "../errors";
 import { downloadFeature, modelFeatures, removeFeature } from "../models/features";
@@ -281,6 +282,10 @@ export const nativeHandlers = NativeRpcs.toLayer({
   "project.autoPitch": (input) =>
     progressStream((onProgress) =>
       Effect.flatMap(project(input.id), (session) => autoPitchNotes(session, input.notes, onProgress)),
+    ),
+  "project.chartRange": (input) =>
+    progressStream((onProgress) =>
+      Effect.flatMap(project(input.id), (session) => chartProjectRange(session, input, onProgress)),
     ),
   "project.chart": (input) => Effect.flatMap(project(input.id), (session) => readEditorChart(session.db)),
   "project.exportUsdb": (input) =>

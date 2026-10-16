@@ -78,6 +78,7 @@ export function createSongMarkers(options: {
    * where the press was, and whether it has moved enough to be a drag.
    */
   let dragging: { marker: SongMarker; time: number; pressed: number; x: number; moved: boolean } | null = null;
+  const [active, setActive] = createSignal(false);
 
   /** Where `marker` may go for `time`, given the others. */
   const place = (marker: SongMarker, time: number): number => {
@@ -123,11 +124,15 @@ export function createSongMarkers(options: {
       return current?.marker === marker ? current.time : options.song()[FIELDS[marker]];
     },
     /** A marker is being dragged. */
-    busy: () => dragging !== null,
+    busy: () => {
+      active();
+      return dragging !== null;
+    },
     /** A press on a marker at `time` (`x` px; for an edge in the overview bar, leave `x` out: it drags at once). */
     down(marker: SongMarker, time?: number, x?: number) {
       const at = options.song()[FIELDS[marker]] ?? (marker === "end" ? options.length() : 0);
       dragging = { marker, time: at, pressed: time ?? at, x: x ?? 0, moved: x === undefined };
+      setActive(true);
     },
     move(time: number, x?: number) {
       if (!dragging) return;
@@ -138,6 +143,7 @@ export function createSongMarkers(options: {
     up() {
       const done = dragging;
       dragging = null;
+      setActive(false);
       setDraft(null);
       if (!done) return;
       if (!done.moved) {
@@ -148,6 +154,7 @@ export function createSongMarkers(options: {
     },
     cancel() {
       dragging = null;
+      setActive(false);
       setDraft(null);
     },
 

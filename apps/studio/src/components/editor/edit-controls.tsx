@@ -2,6 +2,7 @@
 import type { JSX } from "@solidjs/web";
 import { For, Show } from "solid-js";
 import FoldHorizontalIcon from "~icons/lucide/fold-horizontal";
+import ListMusicIcon from "~icons/lucide/list-music";
 import LoaderCircleIcon from "~icons/lucide/loader-circle";
 import MousePointer2Icon from "~icons/lucide/mouse-pointer-2";
 import PencilIcon from "~icons/lucide/pencil";
@@ -141,6 +142,21 @@ export function AutoPitchButton(props: {
         <TooltipContent>Stop auto pitch</TooltipContent>
       </Tooltip>
     </Show>
+  );
+}
+
+/** Align and pitch supplied lyrics in the selected passage. */
+export function ChartRangeButton(props: { canStart: boolean; onStart: () => void }) {
+  return (
+    <IconButton
+      label="Chart range"
+      tooltip="Chart a range from lyrics"
+      disabled={!props.canStart}
+      onClick={() => props.onStart()}
+      testid="chart-range"
+    >
+      <ListMusicIcon />
+    </IconButton>
   );
 }
 

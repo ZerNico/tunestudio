@@ -40,6 +40,7 @@ export function createLoop(options: {
   /** The range as a drag in progress has it. */
   const [draft, setDraft] = createSignal<LoopRange | null>(null);
   let gesture: { fixed: number; at: number; x: number; moved: boolean } | null = null;
+  const [activeGesture, setActiveGesture] = createSignal(false);
 
   /** A time on the grid and inside the song. */
   const clamp = (seconds: number) => Math.min(options.length(), Math.max(0, options.snap(seconds)));
@@ -56,7 +57,10 @@ export function createLoop(options: {
     range: () => draft() ?? range(),
     on,
     /** A drag on the ruler is in progress. */
-    busy: () => gesture !== null,
+    busy: () => {
+      activeGesture();
+      return gesture !== null;
+    },
 
     /**
      * L: looping off, or on (with notes selected, over them). Returns false when there is nothing to loop.
@@ -84,6 +88,7 @@ export function createLoop(options: {
 
     /** A press on the ruler at `time` (`x` px), on one of the range's edges or not. */
     down(time: number, x: number, edge: "start" | "end" | null) {
+      setActiveGesture(true);
       const current = range();
       if (edge && current) {
         // An edge moves; the other stays.
@@ -102,6 +107,7 @@ export function createLoop(options: {
       if (!gesture) return;
       const done = gesture;
       gesture = null;
+      setActiveGesture(false);
       const next = draft();
       setDraft(null);
       if (!done.moved) {
@@ -116,6 +122,7 @@ export function createLoop(options: {
     },
     cancel() {
       gesture = null;
+      setActiveGesture(false);
       setDraft(null);
     },
 
