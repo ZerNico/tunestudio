@@ -1,6 +1,5 @@
 import { createMemo, createSignal, For, onSettled, Show, untrack } from "solid-js";
 
-import { percentOf, progressBarClass } from "~/components/new-project/progress";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
@@ -12,12 +11,14 @@ import {
   DialogTitle,
 } from "~/components/ui/dialog";
 import { Label } from "~/components/ui/label";
+import { ProgressBar } from "~/components/ui/progress-bar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import { Textarea } from "~/components/ui/textarea";
 import { lyricLines, rangeProblem, type TimeRange } from "~/lib/chart-range";
 import { rangeScope } from "~/lib/editor/chart-range";
 import type { ChartRangeJob } from "~/lib/editor/chart-range-job";
 import { formatTime } from "~/lib/editor/view";
+import { percentOf } from "~/lib/native/progress";
 import type { EditorChart } from "~/lib/native/types";
 
 /** Reviews the whole-note replacement scope before charting the supplied lyric lines. */
@@ -145,12 +146,7 @@ export function ChartRangeDialog(props: {
           <Show when={props.job.busy()}>
             <output class="block space-y-2">
               <p class="m-0 text-xs text-popover-foreground">{props.job.progress()?.step ?? "Preparing the range…"}</p>
-              <progress
-                aria-label="Chart range progress"
-                max="100"
-                value={percentOf(props.job.progress() ?? null)}
-                class={progressBarClass}
-              />
+              <ProgressBar label="Chart range progress" value={percentOf(props.job.progress() ?? null)} />
             </output>
           </Show>
           <Show when={!props.job.busy() && (props.job.error() || problem())}>

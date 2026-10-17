@@ -10,7 +10,10 @@ import { replaceRange, validRangeChart } from "./chart-range";
 import type { ChartDocument } from "./document";
 import { notesOnly, type Selection } from "./selection";
 
-/** One cancellable request, applied only to the exact document and media that were reviewed. */
+/**
+ * Charting a range from typed lyrics, one run at a time: its result replaces the range only if nothing changed while
+ * it ran (no edit, no new media).
+ */
 export function createChartRangeJob(options: {
   doc: () => ChartDocument<Selection>;
   project: () => string;
@@ -41,17 +44,14 @@ export function createChartRangeJob(options: {
     controller = mine;
     const doc = options.doc();
     const revision = doc.revision();
-    const snapshot = JSON.stringify(doc.chart());
     const media = options.media();
-    const source = JSON.stringify(media);
     const current = () => controller === mine && !mine.signal.aborted;
+    // Every edit, undo and redo advances the revision; changed media are a new list.
     const unchanged = () =>
       options.doc() === doc &&
       options.project() === input.id &&
       doc.revision() === revision &&
-      JSON.stringify(doc.chart()) === snapshot &&
-      options.media() === media &&
-      JSON.stringify(options.media()) === source;
+      options.media() === media;
     setError(null);
     setProgress(null);
     try {

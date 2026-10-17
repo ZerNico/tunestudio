@@ -3,15 +3,16 @@ import { createSignal, Match, Show, Switch } from "solid-js";
 import FileAudioIcon from "~icons/lucide/file-audio";
 import LoaderCircleIcon from "~icons/lucide/loader-circle";
 
-import { Note } from "~/components/home/song-import-flow";
 import { ToolsStep } from "~/components/home/tools-step";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
+import { Note } from "~/components/ui/note";
 import { formatDuration, formatFileSize } from "~/lib/format";
 import { type AudioFileSummary, COPYING_THE_SONG } from "~/lib/import-files";
 import { native } from "~/lib/native/client";
 import { errorMessage } from "~/lib/native/errors";
+import { follow } from "~/lib/native/progress";
 import type { AudioFileDetails, ImportProgress, ModelStatus, OpenedProject } from "~/lib/native/types";
 
 import { Checklist } from "./checklist";
@@ -19,7 +20,6 @@ import { CoverPicker } from "./cover-picker";
 import { createFlow, FlowView, type Stage } from "./flow-runner";
 import { LanguageSelect } from "./language-select";
 import { createNewProject, type NewProject } from "./new-project";
-import { follow } from "./progress";
 import { chartStage, finishStage, lyricsStage } from "./stages";
 
 /** The stages a project from an audio file goes through, as the dialog's header lists them. */

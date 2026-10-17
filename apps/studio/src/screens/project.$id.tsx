@@ -23,21 +23,19 @@ import { NoteMenu, type NoteMenuActions } from "~/components/editor/note-menu";
 import { GUTTER_PX, PianoRoll } from "~/components/editor/piano-roll";
 import { Playhead } from "~/components/editor/playhead";
 import { SingerSwitch } from "~/components/editor/singer-switch";
-import type { ArtworkActions } from "~/components/editor/song-artwork";
 import { SongDetails } from "~/components/editor/song-details";
-import type { MediaActions } from "~/components/editor/song-files";
 import { Transport } from "~/components/editor/transport";
 import { VideoPreview } from "~/components/editor/video-preview";
-import { follow as followProgress, percentOf, progressBarClass } from "~/components/new-project/progress";
 import { ExportMenu } from "~/components/project/export-menu";
 import { ProblemsMenu } from "~/components/project/problems-menu";
 import { ReplaceExportDialog } from "~/components/project/replace-export-dialog";
 import { TitleBar } from "~/components/title-bar";
 import { Button } from "~/components/ui/button";
-import { toast } from "~/components/ui/toast";
+import { ProgressBar } from "~/components/ui/progress-bar";
+import { toast, toastError } from "~/components/ui/toast";
 import type { TimeRange } from "~/lib/chart-range";
 import { CHART_STEPS } from "~/lib/chart-steps";
-import { onMenuCommand, platform, revealLabel } from "~/lib/desktop";
+import { onMenuCommand, platform } from "~/lib/desktop";
 import {
   controlKey,
   inMenu,
@@ -73,11 +71,13 @@ import { createLoop } from "~/lib/editor/loop";
 import { createNoteEditing, previewChart } from "~/lib/editor/note-editing";
 import { createPlayback } from "~/lib/editor/playback";
 import { createEditorPrefs } from "~/lib/editor/prefs";
+import { createProjectMedia } from "~/lib/editor/project-media";
 import { breaksOnly, NOTHING, notesOnly, type Selection } from "~/lib/editor/selection";
 import { keyOf } from "~/lib/editor/shortcuts";
 import { createSingAlong, microphoneProblem } from "~/lib/editor/sing-along";
 import { addSinger, removeSinger, singerLabel, singerOf } from "~/lib/editor/singers";
 import { createSingersView } from "~/lib/editor/singers-view";
+import { createSongExport } from "~/lib/editor/song-export";
 import { createSongMarkers } from "~/lib/editor/song-markers";
 import { createTones } from "~/lib/editor/tones";
 import { createTools } from "~/lib/editor/tools";
@@ -95,13 +95,13 @@ import {
   visibleSeconds,
   zoomAt,
 } from "~/lib/editor/view";
-import { songFileName } from "~/lib/file-names";
 import { codeOfLanguage } from "~/lib/languages";
 import { createLatest } from "~/lib/latest";
 import type { EditCommand } from "~/lib/native/channel";
 import { native } from "~/lib/native/client";
-import { errorMessage, isAbort } from "~/lib/native/errors";
-import type { ImportProgress, ProjectOverview, SungPitch, Waveform } from "~/lib/native/types";
+import { errorMessage } from "~/lib/native/errors";
+import { follow as followProgress, percentOf } from "~/lib/native/progress";
+import type { ImportProgress, SungPitch, Waveform } from "~/lib/native/types";
 
 const route = getRouteApi("/project/$id");
 
@@ -111,12 +111,6 @@ function undoKey(event: KeyboardEvent): EditCommand | null {
   if (key === "z") return event.shiftKey ? "redo" : "undo";
   if (key === "y" && !event.shiftKey) return "redo";
   return null;
-}
-
-function reveal(path: string) {
-  native.files.reveal({ path }).catch((error: unknown) => {
-    toast.add({ type: "error", title: "Couldn't show the file", description: errorMessage(error) });
-  });
 }
 
 /** How much of the song the view shows at first. */
@@ -140,8 +134,6 @@ export default function ProjectScreen() {
   const navigate = useNavigate();
   const router = useRouter();
   const overview = () => data().overview;
-  const [exporting, setExporting] = createSignal(false);
-  const [replacing, setReplacing] = createSignal<{ folder: string; existing: string } | null>(null);
 
   /** The selected notes and line breaks; undo and redo bring back the selection that went with a step. */
   const [selection, setSelection] = createSignal<Selection>(NOTHING);
@@ -171,28 +163,9 @@ export default function ProjectScreen() {
   /** In a duet: the singer edits go to, and the singers hidden from view (not saved: hidden notes are left alone). */
   const singersView = createSingersView(chart);
   const sungShown = (item: { singer: number }) => !singersView.isHidden(item.singer);
-  /**
-   * The media as changed since the project opened (a new cover or background), if they were: the overview is only
-   * read when the project opens, and reading it again would start the editor over.
-   */
-  const [changedMedia, setChangedMedia] = createSignal<ProjectOverview["media"] | null>(null);
-  const projectMedia = () => changedMedia() ?? overview().media;
-  const artworkActions: ArtworkActions = {
-    set: async (role, choice) => {
-      const updated = await native.project.setArtwork({ id: overview().id, role, choice });
-      setChangedMedia(updated.media);
-    },
-    findCovers: () =>
-      native.youtube.findCovers({
-        artist: chart().song.artist,
-        title: chart().song.title,
-        duration: playback.duration() || null,
-      }),
-    chooseImage: () => native.dialogs.chooseCoverImage(),
-    onError: (title, error) => {
-      if (!isAbort(error)) toast.add({ type: "error", title, description: errorMessage(error) });
-    },
-  };
+  const mediaFiles = createProjectMedia({ overview, song: () => chart().song, duration: () => playback.duration() });
+  const projectMedia = mediaFiles.media;
+  const separating = mediaFiles.separating;
   const [detailsOpen, setDetailsOpen] = createSignal(false);
   const [helpOpen, setHelpOpen] = createSignal(false);
   /** Help opens over the editor: a drag under way stops first. */
@@ -628,8 +601,7 @@ export default function ProjectScreen() {
     chart,
     syllabify: (words) => native.lyrics.syllabify({ language: codeOfLanguage(chart().song.language[0]), words }),
     onRefused: (message) => toast.add({ title: message }),
-    onError: (error) =>
-      toast.add({ type: "error", title: "Couldn't change the lyrics", description: errorMessage(error) }),
+    onError: (error) => toastError("Couldn't change the lyrics", error),
     beforeEdit: cancelGestures,
   });
 
@@ -654,8 +626,7 @@ export default function ProjectScreen() {
       );
       if (!signal.aborted) setPitch(result);
     } catch (error) {
-      if (!signal.aborted)
-        toast.add({ type: "error", title: "Couldn't follow the melody", description: errorMessage(error) });
+      if (!signal.aborted) toastError("Couldn't follow the melody", error);
     } finally {
       clearTimeout(shown);
       if (opening && !signal.aborted) setOpening(undefined);
@@ -693,58 +664,11 @@ export default function ProjectScreen() {
     if (urls.vocals !== previous.vocals || urls.audio !== previous.audio) loadWaveform();
   });
 
-  /** Separating the voice from the song again, while it runs. */
-  const [separating, setSeparating] = createSignal<ImportProgress | null | undefined>(undefined);
-  let separation: AbortController | undefined;
-  const songMediaActions: MediaActions = {
-    chooseFile: (kind) => native.dialogs.chooseMediaFile({ kind }),
-    replace: async (role, path) => {
-      const updated = await native.project.replaceMedia({ id: overview().id, role, path });
-      setChangedMedia(updated.media);
-    },
-    removeVideo: async () => {
-      const updated = await native.project.removeVideo({ id: overview().id });
-      setChangedMedia(updated.media);
-    },
-    separating,
-    separate: () => {
-      if (separating() !== undefined) return;
-      const controller = new AbortController();
-      separation = controller;
-      setSeparating(null);
-      followProgress(
-        () => native.project.separate({ id: overview().id }, { signal: controller.signal }),
-        controller.signal,
-        setSeparating,
-        // Stopped just as it finished: the new files are in, so the editor plays them.
-        (late) => setChangedMedia(late.media),
-      )
-        .then((updated) => {
-          if (!updated) return;
-          setChangedMedia(updated.media);
-          toast.add({ type: "success", title: "Separated the voice from the song" });
-        })
-        .catch((error: unknown) =>
-          toast.add({ type: "error", title: "Couldn't separate the voice", description: errorMessage(error) }),
-        )
-        .finally(() => {
-          if (separation === controller) setSeparating(undefined);
-        });
-    },
-    stopSeparating: () => {
-      separation?.abort();
-      setSeparating(undefined);
-    },
-    onError: (title, error) => {
-      if (!isAbort(error)) toast.add({ type: "error", title, description: errorMessage(error) });
-    },
-  };
-
   // The File menu (macOS): exports, song details and closing, for this window's project.
   onSettled(() =>
     onMenuCommand((command) => {
-      if (command === "export-games") void chooseExport();
-      else if (command === "export-usdb") void exportUsdb();
+      if (command === "export-games") void songExport.forGames();
+      else if (command === "export-usdb") void songExport.forUsdb();
       else if (command === "song-details") setDetailsOpen(true);
       else void close();
     }),
@@ -916,10 +840,16 @@ export default function ProjectScreen() {
   const stopWork = () => {
     rangeJob.stop();
     autoPitch.stop();
-    separation?.abort();
+    mediaFiles.stopSeparating();
     pitchRun.abort();
     waveformRun.abort();
   };
+
+  const songExport = createSongExport({
+    project: () => overview().id,
+    song: () => chart().song,
+    saved: () => doc().saved(),
+  });
 
   const close = async () => {
     // What still reads or writes the project stops before it closes, and the last edits are saved.
@@ -929,60 +859,6 @@ export default function ProjectScreen() {
       .catch(() => {});
     await native.project.close({ id: overview().id }).catch((error: unknown) => console.error(error));
     void navigate({ to: "/" });
-  };
-
-  const exportTo = async (folder: string, replace: boolean) => {
-    setExporting(true);
-    try {
-      // The file has the latest edits, saved first.
-      await doc().saved();
-      const result = await native.project.exportSong({ id: overview().id, folder, replace });
-      if (result.status === "exists") {
-        setReplacing({ folder, existing: result.folder });
-        return;
-      }
-      toast.add({
-        type: "success",
-        title: "Exported for games",
-        description: [result.folder, ...result.warnings].join(" "),
-        actionProps: { children: revealLabel, onClick: () => reveal(result.folder) },
-      });
-    } catch (error) {
-      toast.add({ type: "error", title: "Couldn't export the song", description: errorMessage(error) });
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  const chooseExport = async () => {
-    try {
-      const folder = await native.dialogs.chooseExportFolder();
-      if (folder) await exportTo(folder, false);
-    } catch (error) {
-      toast.add({ type: "error", title: "Couldn't export the song", description: errorMessage(error) });
-    }
-  };
-
-  /** Asks where to save the chart's text for USDB, and writes it there. */
-  const exportUsdb = async () => {
-    setExporting(true);
-    try {
-      const song = chart().song;
-      const path = await native.dialogs.chooseUsdbFile({ name: songFileName(song.artist, song.title) });
-      if (!path) return;
-      await doc().saved();
-      const { warnings } = await native.project.exportUsdb({ id: overview().id, path });
-      toast.add({
-        type: "success",
-        title: "Exported for USDB",
-        description: [path, ...warnings].join(" "),
-        actionProps: { children: revealLabel, onClick: () => reveal(path) },
-      });
-    } catch (error) {
-      toast.add({ type: "error", title: "Couldn't export the text for USDB", description: errorMessage(error) });
-    } finally {
-      setExporting(false);
-    }
   };
 
   return (
@@ -1046,7 +922,11 @@ export default function ProjectScreen() {
         <IconButton label="Help" shortcut={keyOf("help")} onClick={openHelp} testid="help-open">
           <CircleHelpIcon />
         </IconButton>
-        <ExportMenu busy={exporting()} onSongFolder={() => void chooseExport()} onUsdb={() => void exportUsdb()} />
+        <ExportMenu
+          busy={songExport.exporting()}
+          onSongFolder={() => void songExport.forGames()}
+          onUsdb={() => void songExport.forUsdb()}
+        />
         <Button variant="ghost" size="sm" onClick={() => void close()} data-testid="close-project">
           <XIcon />
           Close
@@ -1242,8 +1122,8 @@ export default function ProjectScreen() {
         doc={doc()}
         chart={chart()}
         media={projectMedia()}
-        artwork={artworkActions}
-        songMedia={songMediaActions}
+        artwork={mediaFiles.artwork}
+        songMedia={mediaFiles.files}
         markers={songMarkers}
         selectedLines={() => {
           const chosen = new Set(selectedNotes().map((note) => note.lineId));
@@ -1259,12 +1139,9 @@ export default function ProjectScreen() {
       />
 
       <ReplaceExportDialog
-        target={replacing()}
-        onCancel={() => setReplacing(null)}
-        onReplace={(folder) => {
-          setReplacing(null);
-          void exportTo(folder, true);
-        }}
+        target={songExport.replacing()}
+        onCancel={songExport.cancelReplace}
+        onReplace={(folder) => songExport.replace(folder)}
       />
     </div>
   );
@@ -1284,7 +1161,7 @@ function OpeningOverlay(props: { progress: ImportProgress | null }) {
       </span>
       <span class="text-[11.5px] text-muted-foreground">{props.progress?.step ?? CHART_STEPS.melody}</span>
       <div class="w-56">
-        <progress aria-label="Opening progress" max="100" value={percentOf(props.progress)} class={progressBarClass} />
+        <ProgressBar label="Opening progress" value={percentOf(props.progress)} />
       </div>
     </div>
   );

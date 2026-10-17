@@ -1,17 +1,18 @@
 import { createSignal, Show } from "solid-js";
 
-import { Note } from "~/components/home/song-import-flow";
+import { Note } from "~/components/ui/note";
+import { ProgressBar } from "~/components/ui/progress-bar";
 import { formatFileSize } from "~/lib/format";
 import { languageName } from "~/lib/languages";
 import { native } from "~/lib/native/client";
 import { errorMessage } from "~/lib/native/errors";
+import { follow, percentOf } from "~/lib/native/progress";
 import type { ImportProgress, OpenedProject } from "~/lib/native/types";
 
 import { ChartChoice } from "./chart-choice";
 import type { Stage } from "./flow-runner";
 import { LyricsReview } from "./lyrics-review";
 import type { NewProject } from "./new-project";
-import { follow, percentOf, progressBarClass } from "./progress";
 import { SummaryRow } from "./summary";
 
 /** The lyrics the project starts with: found online, heard in the song, or the user's own. */
@@ -240,12 +241,7 @@ export function finishStage(
               <span class="text-[11px] text-popover-foreground" aria-live="polite">
                 {saving()?.step ?? "Saving the project"}…
               </span>
-              <progress
-                aria-label="Saving progress"
-                max="100"
-                value={percentOf(saving() ?? null)}
-                class={progressBarClass}
-              />
+              <ProgressBar label="Saving progress" value={percentOf(saving() ?? null)} />
             </div>
           </Show>
           <Show when={error()}>
@@ -260,6 +256,3 @@ export function finishStage(
     },
   };
 }
-
-/** Stage tags, for a header that lists them. */
-export const stageTags = (stages: readonly Stage[]) => stages.map((stage) => stage.tag);

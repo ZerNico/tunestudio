@@ -1,12 +1,5 @@
 import { gridFromMetadata, quantizeNoteTiming, secondsToTicks, ticksToSeconds, type ChartGrid } from "./grid";
-import {
-  breaksLine,
-  DocumentValidationError,
-  NOTE_TYPE_SYMBOLS,
-  type ChartDocument,
-  type ChartNote,
-  type Diagnostic,
-} from "./types";
+import { breaksLine, NOTE_TYPE_SYMBOLS, type ChartDocument, type ChartNote, type Diagnostic } from "./types";
 
 /** An empty `#RELATIVE:` counts as absent, as every empty header does in the v1 format. */
 export function isRelativeModeUnsupported(metadata: Record<string, string>): boolean {
@@ -227,9 +220,4 @@ export function validateDocument(document: ChartDocument): Diagnostic[] {
     }
   }
   return result;
-}
-
-export function assertValidDocument(document: ChartDocument): void {
-  const diagnostics = validateDocument(document);
-  if (diagnostics.some((item) => item.severity === "error")) throw new DocumentValidationError(diagnostics);
 }

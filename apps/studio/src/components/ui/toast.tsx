@@ -6,6 +6,7 @@ import InfoIcon from "~icons/lucide/info";
 import TriangleAlertIcon from "~icons/lucide/triangle-alert";
 import XIcon from "~icons/lucide/x";
 
+import { errorMessage, isAbort } from "~/lib/native/errors";
 import { cn } from "~/lib/utils";
 
 import { buttonVariants } from "./button";
@@ -16,6 +17,11 @@ import { buttonVariants } from "./button";
  * `type` is "success", "info" (default) or "error".
  */
 export const toast = ToastPrimitive.createToastManager();
+
+/** An error as a toast: `title` says what failed, the error why. A stopped request (an abort) isn't one. */
+export function toastError(title: string, error: unknown) {
+  if (!isAbort(error)) toast.add({ type: "error", title, description: errorMessage(error) });
+}
 
 export function Toaster(props: { children?: JSX.Element }) {
   return (

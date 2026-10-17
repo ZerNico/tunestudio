@@ -100,5 +100,3 @@ export function createHistory<Selection>(limit = 500) {
     redoLabel: () => future.at(-1)?.label ?? null,
   };
 }
-
-export type History<Selection> = ReturnType<typeof createHistory<Selection>>;

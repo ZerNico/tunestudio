@@ -1,14 +1,16 @@
 import { For, Match, Show, Switch } from "solid-js";
 import LoaderCircleIcon from "~icons/lucide/loader-circle";
 
-import { Note } from "~/components/home/song-import-flow";
 import { Button } from "~/components/ui/button";
+import { Note } from "~/components/ui/note";
+import { ProgressBar } from "~/components/ui/progress-bar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import { Textarea } from "~/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
 import { formatFileSize } from "~/lib/format";
 import { LANGUAGES, languageName } from "~/lib/languages";
 import { guessLyricsLanguage } from "~/lib/lyrics-language";
+import { percentOf } from "~/lib/native/progress";
 import type { FoundLyrics, HeardLyrics, ImportProgress } from "~/lib/native/types";
 
 /** The lyrics search: still running, done with what was found, or the lyrics service couldn't be reached. */
@@ -90,8 +92,7 @@ function describeListening(progress: ImportProgress | null): string {
   if (progress?.step === "Getting the listening model") {
     return `Getting the listening model (first time only)… ${formatFileSize(progress.done)} of ${formatFileSize(progress.total)}`;
   }
-  const percent = progress && progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
-  return `Listening to the song… ${percent}%`;
+  return `Listening to the song… ${percentOf(progress) ?? 0}%`;
 }
 
 /** The line under the source switch: what the chosen lyrics are, in plain words. */
@@ -190,8 +191,7 @@ export function LyricsReview(props: {
   };
   const listeningProgress = () => {
     if (props.listening.status !== "listening") return undefined;
-    const progress = props.listening.progress;
-    return progress && progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : undefined;
+    return percentOf(props.listening.progress);
   };
   return (
     <div class="flex flex-col gap-2" data-testid="lyrics-review">
@@ -331,12 +331,7 @@ export function LyricsReview(props: {
                   fallback="Choose “Your own” to paste or write the lyrics."
                 >
                   <LoaderCircleIcon class="size-4 animate-spin text-primary" />
-                  <progress
-                    aria-label="Listening progress"
-                    max="100"
-                    value={listeningProgress()}
-                    class="h-1.5 w-48 appearance-none overflow-hidden rounded-full [&::-webkit-progress-bar]:bg-sage-22 [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-primary"
-                  />
+                  <ProgressBar label="Listening progress" value={listeningProgress()} class="w-48" />
                   Writing down what is sung in the song. This takes a moment.
                 </Show>
               </Match>

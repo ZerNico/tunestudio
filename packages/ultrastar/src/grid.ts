@@ -56,12 +56,6 @@ export function secondsToTicks(seconds: number, grid: ChartGrid): number {
   return ticks;
 }
 
-/** Snap around GAP, not audio zero. stepTicks=4 is one musical beat. */
-export function snapToGrid(seconds: number, grid: ChartGrid, stepTicks = 1): number {
-  if (!Number.isFinite(stepTicks) || stepTicks <= 0) throw new RangeError("Grid step must be positive.");
-  return ticksToSeconds(Math.round(secondsToTicks(seconds, grid) / stepTicks) * stepTicks, grid);
-}
-
 export interface QuantizedTiming {
   start: number;
   duration: number;
@@ -77,12 +71,6 @@ export function quantizeNoteTiming(start: number, duration: number, grid: ChartG
     throw new RangeError("Note timing exceeds the safe integer range of the UltraStar grid.");
   }
   return { start: Object.is(startTick, -0) ? 0 : startTick, duration: length };
-}
-
-export function midiToPitchName(midi: number): string {
-  if (!Number.isSafeInteger(midi)) throw new RangeError("MIDI pitch must be an integer.");
-  const names = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"];
-  return `${names[((midi % 12) + 12) % 12]}${Math.floor(midi / 12) - 1}`;
 }
 
 /**

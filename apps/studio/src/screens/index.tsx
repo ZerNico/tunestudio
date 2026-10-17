@@ -11,11 +11,10 @@ import { SongOption } from "~/components/home/song-option";
 import { YoutubeOption } from "~/components/home/youtube-option";
 import { TitleBar } from "~/components/title-bar";
 import { Button } from "~/components/ui/button";
-import { toast } from "~/components/ui/toast";
+import { toast, toastError } from "~/components/ui/toast";
 import { onOpenRequest, pathForFile } from "~/lib/desktop";
 import { AUDIO_ACCEPT, dropKind, isAudioFile, summarizeAudioFile } from "~/lib/import-files";
 import { native } from "~/lib/native/client";
-import { errorMessage } from "~/lib/native/errors";
 import type { OpenedProject } from "~/lib/native/types";
 import { type RecentProject, toEntry } from "~/lib/recent-projects";
 import { sectionReached } from "~/lib/scroll-spy";
@@ -55,7 +54,7 @@ export default function HomeScreen() {
     try {
       showProject(await native.project.open({ path }));
     } catch (error) {
-      toast.add({ type: "error", title: "Couldn't open the project", description: errorMessage(error) });
+      toastError("Couldn't open the project", error);
       // A file that is gone also drops out of the list.
       void router.invalidate();
     }
@@ -66,7 +65,7 @@ export default function HomeScreen() {
       const path = await native.dialogs.chooseProject();
       if (path) await openProject(path);
     } catch (error) {
-      toast.add({ type: "error", title: "Couldn't open the project", description: errorMessage(error) });
+      toastError("Couldn't open the project", error);
     }
   };
 
@@ -75,7 +74,7 @@ export default function HomeScreen() {
       const path = await native.dialogs.chooseSong();
       if (path) setFlow({ kind: "song", path });
     } catch (error) {
-      toast.add({ type: "error", title: "Couldn't import the song", description: errorMessage(error) });
+      toastError("Couldn't import the song", error);
     }
   };
 
@@ -115,7 +114,7 @@ export default function HomeScreen() {
     onOpen: (project: RecentProject) => void openProject(project.path),
     onReveal: (project: RecentProject) => {
       native.files.reveal({ path: project.path }).catch((error: unknown) => {
-        toast.add({ type: "error", title: "Couldn't show the project", description: errorMessage(error) });
+        toastError("Couldn't show the project", error);
       });
     },
     onRemove: (project: RecentProject) => {
@@ -139,14 +138,14 @@ export default function HomeScreen() {
                 show(true);
                 native.recents.restore(toEntry(project)).catch((error: unknown) => {
                   show(false);
-                  toast.add({ type: "error", title: "Couldn't put it back", description: errorMessage(error) });
+                  toastError("Couldn't put it back", error);
                 });
               },
             },
           }),
         (error: unknown) => {
           show(true);
-          toast.add({ type: "error", title: "Couldn't remove it from recents", description: errorMessage(error) });
+          toastError("Couldn't remove it from recents", error);
         },
       );
     },

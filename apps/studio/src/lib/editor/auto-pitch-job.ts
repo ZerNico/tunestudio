@@ -81,5 +81,3 @@ export function createAutoPitchJob(options: {
     stop: () => controller?.abort(),
   };
 }
-
-export type AutoPitchJob = ReturnType<typeof createAutoPitchJob>;

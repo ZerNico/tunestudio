@@ -4,20 +4,21 @@ import CheckIcon from "~icons/lucide/check";
 import CircleDashedIcon from "~icons/lucide/circle-dashed";
 import FileMusicIcon from "~icons/lucide/file-music";
 import LoaderCircleIcon from "~icons/lucide/loader-circle";
-import OctagonAlertIcon from "~icons/lucide/octagon-alert";
 import TriangleAlertIcon from "~icons/lucide/triangle-alert";
 
 import { Checklist } from "~/components/new-project/checklist";
 import { createFlow, FlowView, type Stage } from "~/components/new-project/flow-runner";
-import { follow } from "~/components/new-project/progress";
 import { SummaryRow } from "~/components/new-project/summary";
 import { Button } from "~/components/ui/button";
 import { Label } from "~/components/ui/label";
+import { Note } from "~/components/ui/note";
+import { ProgressBar } from "~/components/ui/progress-bar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import { Switch as Toggle } from "~/components/ui/switch";
 import { formatFileSize } from "~/lib/format";
 import { native } from "~/lib/native/client";
 import { errorMessage } from "~/lib/native/errors";
+import { follow, percentOf } from "~/lib/native/progress";
 import type { ImportProgress, MediaRole, ModelStatus, OpenedProject, SongInspection } from "~/lib/native/types";
 
 /** Labels for media roles, in the order the dialog lists them. */
@@ -437,11 +438,7 @@ function SongSummary(props: {
 }
 
 function ImportProgressBar(props: { progress: ImportProgress | null }) {
-  const percent = () => {
-    const progress = props.progress;
-    if (!progress || progress.total === 0) return 0;
-    return Math.min(100, Math.round((progress.done / progress.total) * 100));
-  };
+  const percent = () => percentOf(props.progress) ?? 0;
   return (
     <div class="flex flex-col gap-2" data-testid="song-import-progress">
       <div class="flex items-center justify-between text-[11px]">
@@ -450,29 +447,7 @@ function ImportProgressBar(props: { progress: ImportProgress | null }) {
         </span>
         <span class="font-mono text-[10.5px] text-popover-muted tabular-nums">{percent()}%</span>
       </div>
-      <progress
-        aria-label="Import progress"
-        max="100"
-        value={percent()}
-        class="h-1.5 w-full appearance-none overflow-hidden rounded-full [&::-webkit-progress-bar]:bg-sage-22 [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-primary [&::-webkit-progress-value]:transition-[width] [&::-webkit-progress-value]:duration-150"
-      />
-    </div>
-  );
-}
-
-/** A warning or error note inside the dialog. */
-export function Note(props: { tone: "warning" | "error"; testid: string; children: JSX.Element }) {
-  return (
-    <div
-      role={props.tone === "error" ? "alert" : "note"}
-      data-tone={props.tone}
-      data-testid={props.testid}
-      class="flex gap-3 rounded-[9px] border px-3.5 py-3 text-[11px] leading-[1.6] data-[tone=error]:border-stone-39 data-[tone=error]:bg-stone-19 data-[tone=error]:text-stone-85 data-[tone=warning]:border-amber-33 data-[tone=warning]:bg-warning-soft data-[tone=warning]:text-amber-73"
-    >
-      <Show when={props.tone === "error"} fallback={<TriangleAlertIcon class="mt-0.5 size-4 shrink-0 text-warning" />}>
-        <OctagonAlertIcon class="mt-0.5 size-4 shrink-0 text-destructive" />
-      </Show>
-      <div class="min-w-0 flex-1">{props.children}</div>
+      <ProgressBar label="Import progress" value={percent()} />
     </div>
   );
 }

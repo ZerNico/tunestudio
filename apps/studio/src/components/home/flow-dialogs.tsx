@@ -5,6 +5,7 @@ import FolderOpenIcon from "~icons/lucide/folder-open";
 import YoutubeIcon from "~icons/lucide/youtube";
 
 import { AUDIO_STAGES, AudioFlow } from "~/components/new-project/audio-flow";
+import { SONG_STAGES, SongImportFlow } from "~/components/new-project/song-import-flow";
 import { YOUTUBE_STAGES, YoutubeFlow } from "~/components/new-project/youtube-flow";
 import { Button } from "~/components/ui/button";
 import {
@@ -18,8 +19,6 @@ import {
 } from "~/components/ui/dialog";
 import type { AudioFileSummary } from "~/lib/import-files";
 import type { OpenedProject } from "~/lib/native/types";
-
-import { SONG_STAGES, SongImportFlow } from "./song-import-flow";
 
 /** The next step of a "start a new project" option, opened from the start screen. */
 export type Flow =

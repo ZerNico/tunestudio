@@ -3,15 +3,16 @@ import { createSignal, Match, Show, Switch } from "solid-js";
 import LoaderCircleIcon from "~icons/lucide/loader-circle";
 import YoutubeIcon from "~icons/lucide/youtube";
 
-import { Note } from "~/components/home/song-import-flow";
 import { ToolsStep } from "~/components/home/tools-step";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
+import { Note } from "~/components/ui/note";
 import { formatDuration } from "~/lib/format";
 import { native } from "~/lib/native/client";
 import { LONGEST_SONG_SECONDS } from "~/lib/native/contract";
 import { errorMessage } from "~/lib/native/errors";
+import { follow } from "~/lib/native/progress";
 import type { ImportProgress, ModelStatus, OpenedProject, YoutubeVideo } from "~/lib/native/types";
 import { AUDIO_FORMAT_LABELS, encodesAudio, type Settings, VIDEO_FORMAT_LABELS } from "~/lib/settings";
 
@@ -20,7 +21,6 @@ import { CoverPicker } from "./cover-picker";
 import { createFlow, FlowView, type Stage } from "./flow-runner";
 import { LanguageSelect } from "./language-select";
 import { createNewProject, type NewProject } from "./new-project";
-import { follow } from "./progress";
 import { chartStage, finishStage, lyricsStage } from "./stages";
 
 /** The stages a YouTube project goes through, as the dialog's header lists them. */

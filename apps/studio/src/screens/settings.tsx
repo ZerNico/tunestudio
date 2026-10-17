@@ -7,13 +7,14 @@ import { NavRail, type RailItem } from "~/components/home/nav-rail";
 import { describeToolProgress } from "~/components/home/tools-step";
 import { TitleBar } from "~/components/title-bar";
 import { Button } from "~/components/ui/button";
+import { ProgressBar } from "~/components/ui/progress-bar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import { Switch } from "~/components/ui/switch";
-import { toast } from "~/components/ui/toast";
+import { toastError } from "~/components/ui/toast";
 import { formatFileSize, formatRelativeTime } from "~/lib/format";
 import { MODEL_FEATURE_INFO, type ModelFeature } from "~/lib/models";
 import { native } from "~/lib/native/client";
-import { errorMessage, isAbort } from "~/lib/native/errors";
+import { isAbort } from "~/lib/native/errors";
 import type { ImportProgress, ModelFeatureStatus, ToolName, ToolProgress, ToolStatus } from "~/lib/native/types";
 import {
   AUDIO_BITRATES,
@@ -64,7 +65,7 @@ export default function SettingsScreen() {
     const previous = settings();
     setSettings(next);
     native.settings.set(next).catch(async (error: unknown) => {
-      toast.add({ type: "error", title: "Couldn't save the settings", description: errorMessage(error) });
+      toastError("Couldn't save the settings", error);
       setSettings(await native.settings.get().catch(() => previous));
     });
   };
@@ -269,7 +270,7 @@ function ToolsSection(props: { initial: readonly ToolStatus[] }) {
     try {
       setStatus(await native.tools.remove({ tool }));
     } catch (error) {
-      toast.add({ type: "error", title: "Couldn't remove the tool", description: errorMessage(error) });
+      toastError("Couldn't remove the tool", error);
     } finally {
       setRemoving(null);
     }
@@ -295,7 +296,7 @@ function ToolsSection(props: { initial: readonly ToolStatus[] }) {
       }
     } catch (error) {
       if (isAbort(error)) return;
-      toast.add({ type: "error", title: "Couldn't update the download tools", description: errorMessage(error) });
+      toastError("Couldn't update the download tools", error);
       setStatus(await native.tools.status().catch(() => status()));
     } finally {
       setChecking(false);
@@ -412,7 +413,7 @@ function ModelsSection(props: { initial: readonly ModelFeatureStatus[] }) {
       }
     } catch (error) {
       if (isAbort(error)) return;
-      toast.add({ type: "error", title: "Couldn't download the models", description: errorMessage(error) });
+      toastError("Couldn't download the models", error);
       setStatus(await native.models.list().catch(() => status()));
     } finally {
       setBusy(null);
@@ -424,7 +425,7 @@ function ModelsSection(props: { initial: readonly ModelFeatureStatus[] }) {
     try {
       setStatus(await native.models.remove({ feature }));
     } catch (error) {
-      toast.add({ type: "error", title: "Couldn't remove the models", description: errorMessage(error) });
+      toastError("Couldn't remove the models", error);
     } finally {
       setBusy(null);
     }
@@ -508,11 +509,11 @@ function ModelsSection(props: { initial: readonly ModelFeatureStatus[] }) {
                 <Show when={progress()}>
                   {(current) => (
                     <div class="flex items-center gap-3" aria-live="polite">
-                      <progress
-                        aria-label={`${info.label} download`}
+                      <ProgressBar
+                        label={`${info.label} download`}
                         max={current().total}
                         value={current().done}
-                        class="h-1.5 flex-1 appearance-none overflow-hidden rounded-full [&::-webkit-progress-bar]:bg-sage-22 [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-primary"
+                        class="flex-1"
                       />
                       <span class="font-mono text-[10.5px] text-muted-foreground tabular-nums">
                         {formatFileSize(current().done)} of {formatFileSize(current().total)}

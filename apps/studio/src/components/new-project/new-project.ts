@@ -1,6 +1,6 @@
 import { createSignal, onSettled } from "solid-js";
 
-import { toast } from "~/components/ui/toast";
+import { toastError } from "~/components/ui/toast";
 import { chartInputsKey } from "~/lib/chart-inputs";
 import { guessLyricsLanguage } from "~/lib/lyrics-language";
 import { native } from "~/lib/native/client";
@@ -294,7 +294,7 @@ export function createNewProject() {
         setCustomCover(image);
         setCover({ kind: "file", image });
       } catch (error) {
-        toast.add({ type: "error", title: "Couldn't use this image", description: errorMessage(error) });
+        toastError("Couldn't use this image", error);
       }
     },
     /** Looks the lyrics up again, but only when artist or title changed since the last time. */

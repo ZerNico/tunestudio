@@ -2,10 +2,10 @@ import { For, Match, Show, Switch } from "solid-js";
 import CheckIcon from "~icons/lucide/check";
 import LoaderCircleIcon from "~icons/lucide/loader-circle";
 
+import { ProgressBar } from "~/components/ui/progress-bar";
 import { formatFileSize } from "~/lib/format";
+import { percentOf } from "~/lib/native/progress";
 import type { ImportProgress } from "~/lib/native/types";
-
-import { percentOf, progressBarClass } from "./progress";
 
 /** How far the current task is, in words: a percentage, or bytes of a download. Nothing before it has started. */
 function figure(progress: ImportProgress | null): string | null {
@@ -65,7 +65,7 @@ export function Checklist(props: {
                   </Show>
                 </span>
                 <Show when={index() === current()}>
-                  <progress aria-label={`${task} progress`} max="100" value={value()} class={progressBarClass} />
+                  <ProgressBar label={`${task} progress`} value={value()} />
                 </Show>
               </div>
             </li>

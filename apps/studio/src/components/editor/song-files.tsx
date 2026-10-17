@@ -12,7 +12,6 @@ import FileVideoIcon from "~icons/lucide/file-video";
 import ImageIcon from "~icons/lucide/image";
 import LoaderCircleIcon from "~icons/lucide/loader-circle";
 
-import { percentOf, progressBarClass } from "~/components/new-project/progress";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
@@ -23,9 +22,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog";
+import { ProgressBar } from "~/components/ui/progress-bar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import { formatDuration, formatFileSize } from "~/lib/format";
 import type { SongMediaRole } from "~/lib/native/contract";
+import { percentOf } from "~/lib/native/progress";
 import type { ImportProgress, MediaRole, ProjectMedia } from "~/lib/native/types";
 
 import type { ArtworkActions, ArtworkRole } from "./song-artwork";
@@ -279,12 +280,7 @@ export function SongFiles(props: {
             <span class="text-[11px] text-popover-foreground" aria-live="polite">
               {props.songMedia.separating()?.step ?? "Separating the voice"}…
             </span>
-            <progress
-              aria-label="Separating progress"
-              max="100"
-              value={percentOf(props.songMedia.separating() ?? null)}
-              class={progressBarClass}
-            />
+            <ProgressBar label="Separating progress" value={percentOf(props.songMedia.separating() ?? null)} />
           </div>
           <Button
             variant="ghost"

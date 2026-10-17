@@ -1,9 +1,9 @@
-import { isAbort } from "~/lib/native/errors";
-import type { ImportProgress } from "~/lib/native/types";
-
-/** A thin progress bar in the dialog. */
-export const progressBarClass =
-  "h-1.5 w-full appearance-none overflow-hidden rounded-full [&::-webkit-progress-bar]:bg-sage-22 [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-primary [&::-webkit-progress-value]:transition-[width] [&::-webkit-progress-value]:duration-150";
+/**
+ * Main's long calls (downloads, separation, charting) as the renderer follows them: their progress in percent, and
+ * running one to its end or until it is stopped.
+ */
+import { isAbort } from "./errors";
+import type { ImportProgress } from "./types";
 
 /** How far a step is, in percent, or undefined when it can't say. */
 export const percentOf = (progress: ImportProgress | null) =>

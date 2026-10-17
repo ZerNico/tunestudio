@@ -2,12 +2,12 @@ import { createSignal, Match, onSettled, Switch } from "solid-js";
 import LoaderCircleIcon from "~icons/lucide/loader-circle";
 
 import { Button } from "~/components/ui/button";
+import { Note } from "~/components/ui/note";
+import { ProgressBar } from "~/components/ui/progress-bar";
 import { formatFileSize } from "~/lib/format";
 import { native } from "~/lib/native/client";
 import { errorMessage, isAbort } from "~/lib/native/errors";
 import type { ToolName, ToolProgress } from "~/lib/native/types";
-
-import { Note } from "./song-import-flow";
 
 const LABELS: Record<ToolName, string> = { "yt-dlp": "yt-dlp", quickjs: "QuickJS", ffmpeg: "FFmpeg" };
 
@@ -101,12 +101,7 @@ export function ToolsStep(props: { tools?: ToolName[]; onReady?: () => void }) {
               <LoaderCircleIcon class="size-4 animate-spin text-primary" />
               {describeToolProgress(preparing().progress)}
             </p>
-            <progress
-              aria-label="Download tools progress"
-              max="100"
-              value={percent()}
-              class="h-1.5 w-full appearance-none overflow-hidden rounded-full [&::-webkit-progress-bar]:bg-sage-22 [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-primary [&::-webkit-progress-value]:transition-[width] [&::-webkit-progress-value]:duration-150"
-            />
+            <ProgressBar label="Download tools progress" value={percent()} />
             <p class="m-0 text-[10.5px] text-popover-muted">
               Tune Studio downloads {listOf(tools().map((tool) => LABELS[tool]))} once and keeps{" "}
               {tools().length > 1 ? "them" : "it"} up to date.

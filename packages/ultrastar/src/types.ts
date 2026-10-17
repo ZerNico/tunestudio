@@ -30,11 +30,6 @@ export interface ChartDocument {
   lineBreaks?: ChartLineBreak[];
 }
 
-export interface PitchFrame {
-  time: number;
-  midi: number;
-  confidence: number;
-}
 export interface ParseResult {
   document: ChartDocument;
   warnings: string[];
