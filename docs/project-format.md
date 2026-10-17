@@ -50,10 +50,17 @@ Drizzle tables and decoded on read; a value that doesn't decode is a typed error
 From a song folder or its `.txt`:
 
 1. Decode the chart: BOM, `#ENCODING`, UTF-8, and the Windows-1252 fallback for undeclared legacy
-   charts. Unsupported or conflicting declarations fail with a clear message.
-2. Parse it: headers, notes, line breaks, duets (`P1`/`P2`). A part for both singers (`P3`) is
-   copied into P1 and P2, and its `#P3` name is dropped. Relative-timing charts, `P4` and up, and a
-   `P3` line overlapping a singer's line fail explicitly. Unknown headers go to `extra_headers`.
+   charts. Unsupported or conflicting declarations fail with a clear message. A `#VERSION:1.x`
+   chart is always UTF-8, as the v1 format and USDX have it: its `#ENCODING` is ignored.
+2. Parse it: headers, notes, line breaks, duets (`P1`/`P2`). In a chart before `#VERSION:1.0.0`,
+   a part for both singers (`P3`) is copied into P1 and P2, and its `#P3` name is dropped; in a v1
+   chart `P3` is a third singer, which is refused. Relative-timing charts, `P4` and up, and a `P3`
+   line overlapping a singer's line fail explicitly. As in USDX, what follows `E` and body records
+   it doesn't know (such as `B` tempo changes) are skipped, and a zero-length note becomes a
+   freestyle note one beat long, each with a warning. An empty header value counts as no header.
+   `#AUTHOR` becomes the creator when there is no `#CREATOR`; `#NOTESGAP` (ignored by USDX 1.0 and
+   later, and never moving notes) and `#RESOLUTION` are dropped. Unknown headers go to
+   `extra_headers`.
 3. Copy the media the chart references (`#AUDIO`/`#MP3`, `#VOCALS`, `#INSTRUMENTAL`, `#COVER`,
    `#BACKGROUND`, and `#VIDEO` when "Include video" is on) from the song folder into `media`.
    Only files inside that folder are read. A referenced file that is missing is a warning,
@@ -81,8 +88,12 @@ these fields, so edits and clearing a field override the imported metadata.
 Writes `<Artist> - <Title>/` into a folder the user picks:
 
 - `<Artist> - <Title>.txt`, UTF-8, `#VERSION:1.2.0`, all modelled headers plus `extra_headers`,
-  integer-beat notes on the chart's BPM grid, duets as `P1`/`P2`. A singer without notes is left
-  out (the song exports as a solo chart, with a warning), and so is a lone P2's `#P2` name.
+  integer-beat notes on the chart's BPM grid, duets as `P1`/`P2` with both `#P1` and `#P2` names
+  (`P1`/`P2` for an unnamed singer). A singer without notes is left out (the song exports as a
+  solo chart, with a warning), and so is a lone P2's `#P2` name. `#END` is whole milliseconds,
+  and `#MEDLEYSTARTBEAT`/`#MEDLEYENDBEAT` are written only together. Line breaks are v1's
+  `- <beat>` (a two-point break keeps its first time, with a warning), only between lines, and
+  never inside the last note of their line.
 - The media, byte-for-byte as stored, with their headers pointing at them: the audio as
   `<Artist> - <Title>.<ext>` (`#AUDIO` and `#MP3`), `[VOC]` / `[INSTR]` stems (`#VOCALS`,
   `#INSTRUMENTAL`), `[CO]` cover, `[BG]` background, video as `<Artist> - <Title>.<ext>`.

@@ -47,7 +47,7 @@ const duetChart = [
   "#COMMENT:kept",
   "P1",
   ": 0 4 0 one ",
-  "- 6 7",
+  "- 6",
   ": 8 4 2 two",
   "P2",
   ": 2 4 7 thr",
@@ -123,7 +123,7 @@ describe("exporting an UltraStar song", () => {
       "#COMMENT:kept",
       "P1",
       ": 0 4 0 one ",
-      "- 6 7",
+      "- 6",
       ": 8 4 2 two",
       "P2",
     ]);

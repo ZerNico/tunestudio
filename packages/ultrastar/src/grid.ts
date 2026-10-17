@@ -16,7 +16,8 @@ export function parseDecimal(value: string | undefined, name = "Number"): number
 
 export function gridFromMetadata(metadata: Record<string, string>): ChartGrid {
   const bpm = parseDecimal(metadata.BPM, "BPM");
-  const gap = metadata.GAP === undefined ? 0 : parseDecimal(metadata.GAP, "GAP");
+  // An empty `#GAP:` is no GAP, as the v1 format says of every empty header.
+  const gap = metadata.GAP?.trim() ? parseDecimal(metadata.GAP, "GAP") : 0;
   const grid = { bpm, gap };
   assertGrid(grid);
   return grid;

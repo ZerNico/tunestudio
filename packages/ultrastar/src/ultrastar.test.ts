@@ -89,12 +89,14 @@ describe("UltraStar parsing", () => {
     expect(semantic(parseUltraStar(serializeUltraStar(document)).document)).toEqual(semantic(document));
   });
 
-  it("retains ordinary, double-time and trailing display breaks", () => {
-    const text = headers + ": 0 4 0 first\n- 5 7\n: 8 4 3 next\n- 16\nE\n";
-    const document = parseUltraStar(text).document;
+  it("reads ordinary, two-point and trailing breaks, and writes v1 breaks between lines only", () => {
+    const document = parse(": 0 4 0 first\n- 5 7\n: 8 4 3 next\n- 16\nE\n");
     expect(document.lineBreaks).toHaveLength(2);
+    expect(document.lineBreaks![0]!.end).toBe(1 + 7 / 8);
     expect(document.notes[0]!.lineId).not.toBe(document.notes[1]!.lineId);
-    expect(serializeUltraStar(document)).toBe(text);
+    const result = serializeUltraStarWithDiagnostics(document);
+    expect(result.text).toBe(headers + ": 0 4 0 first\n- 5\n: 8 4 3 next\nE\n");
+    expect(result.warnings.join(" ")).toContain("first time only");
   });
 
   it("warns when unrepresentable empty display lines are omitted", () => {
@@ -192,22 +194,31 @@ describe("UltraStar parsing", () => {
     ]);
   });
 
+  it("refuses P3 in a #VERSION:1.x file, where it is a third singer", () => {
+    const v1 = (body: string) => parseUltraStar(`#VERSION:1.2.0\n${headers}${body}`);
+    expect(() => v1("P1\n: 0 4 0 a\nP2\n: 8 4 0 b\nP3\n: 16 4 0 c\nE")).toThrow(
+      expect.objectContaining({ code: "UNSUPPORTED_PLAYER", message: expect.stringMatching(/third singer \(P3\)/) }),
+    );
+    expect(() => v1("P4\n: 0 4 0 a\nE")).toThrow(/Only P1 and P2 are supported/);
+    expect(v1("P1\n: 0 4 0 a\nP2\n: 8 4 0 b\nE").document.notes.map((item) => item.player)).toEqual([1, 2]);
+    expect(parseUltraStar(`#VERSION:0.3.0\n${headers}P3\n: 0 4 0 c\nE`).document.notes).toHaveLength(2);
+  });
+
   it("refuses a P3 part that overlaps a line of one singer", () => {
     expect(() => parse("P1\n: 0 8 0 long\nP3\n: 4 4 0 both\nE")).toThrow(/P3\) overlaps the lines of P1/);
   });
 
-  it.each(["YES", "yes", "1", "TRUE", "maybe", ""])("rejects relative mode %j", (mode) => {
+  it.each(["YES", "yes", "1", "TRUE", "maybe"])("rejects relative mode %j", (mode) => {
     expect(() => parseUltraStar(headers + `#RELATIVE:${mode}\n: 0 4 0 a\nE`)).toThrow(/relative timing/);
   });
 
-  it.each(["NO", "false", "0"])("retains explicit absolute mode %s", (mode) => {
+  it.each(["NO", "false", "0", "", " "])("retains explicit or empty absolute mode %j", (mode) => {
     const result = parseUltraStar(headers + `#RELATIVE:${mode}\n: 0 4 0 a\nE`);
     expect(result.document.metadata.RELATIVE).toBe(mode);
   });
 
   it.each([
-    [": 0 0 0 zero", /has no length/],
-    [": 0 -2 0 negative", /has no length/],
+    [": 0 -2 0 negative", /negative length/],
     [": 0 1.5 0 fraction", /malformed/],
     [": 0 1 0.5 fractional pitch", /malformed/],
     [": 0 1 NaN bad", /malformed/],
@@ -215,8 +226,8 @@ describe("UltraStar parsing", () => {
     [": 9007199254740992 1 0 huge", /safe integer/],
     ["- 5 4", /ends before it starts/],
     ["- 1 2 3", /line break isn't written/],
-    ["B 0 120", /Unsupported/],
-    ["S 0 4 0 sleep", /Unsupported/],
+    [": zero", /malformed/],
+    ["Garbage", /malformed/],
     ["#BPM", /header isn't written/],
     ["#BAD KEY:x", /Invalid header/],
     [": 0 4 0 bad\u0000", /isn't a text file/],
@@ -226,7 +237,7 @@ describe("UltraStar parsing", () => {
 
   it("reports source line on malformed input", () => {
     try {
-      parse(": 0 0 0 x\nE");
+      parse(": 0 -1 0 x\nE");
       throw new Error("expected failure");
     } catch (error) {
       expect(error).toBeInstanceOf(UltraStarError);
@@ -271,9 +282,39 @@ describe("UltraStar parsing", () => {
     expect(parseUltraStar(headers + "#BPM:120\nE").warnings.join(" ")).toContain("duplicate #BPM");
   });
 
-  it("rejects headers in the body and nonempty content after E", () => {
+  it("rejects headers in the body, and ignores what follows E with a warning", () => {
     expect(() => parse(": 0 4 0 a\n#TITLE:new\nE")).toThrow(/Headers must precede/);
-    expect(() => parse("E\nP2\n: 0 4 0 a")).toThrow(/after the end marker/);
+    const result = parseUltraStar(headers + ": 0 4 0 a\nE\nP4\n: 0 x\n#TITLE:new\n\u0000");
+    expect(result.document.notes).toHaveLength(1);
+    expect(result.warnings).toContain("Line 6: the text after the end marker (E) was left out.");
+    expect(parseUltraStar(headers + ": 0 4 0 a\nE\n\n  \n").warnings.join(" ")).not.toContain("after the end");
+  });
+
+  it("skips tempo changes (B) and other records it doesn't know, as USDX does", () => {
+    const result = parseUltraStar(headers + ": 0 4 0 a\nB 4 240\n: 4 4 0 b\nB 8 120\nS 0 4 0 sleep\nX 1\nE");
+    expect(result.document.notes.map((item) => item.lyric)).toEqual(["a", "b"]);
+    expect(result.warnings).toContain(
+      "Line 6: tempo changes (B) were left out, as UltraStar Deluxe does. Notes after them keep the song's BPM.",
+    );
+    expect(result.warnings).toContain("Line 9: 2 lines that aren't notes, line breaks or singers were left out.");
+  });
+
+  it("imports a zero-length note as a freestyle note one beat long, as USDX sings it", () => {
+    const result = parseUltraStar(headers + ": 0 4 0 a\n* 4 0 2 b\nE");
+    expect(result.document.notes[1]).toMatchObject({ type: "freestyle", start: 1.5, duration: 0.125, pitch: 62 });
+    expect(result.warnings).toContain("Line 6: a note with no length became a freestyle note one beat long.");
+    expect(serializeUltraStar(result.document)).toContain("\nF 4 1 2 b\n");
+    const many = parseUltraStar(headers + ": 0 0 0 a\n: 4 0 0 b\nE").warnings;
+    expect(many).toContain("Line 5: 2 notes with no length became freestyle notes one beat long.");
+  });
+
+  it("treats empty header values as absent", () => {
+    const result = parseUltraStar("#TITLE:x\n#BPM:120\n#GAP: \n#GAP:500\n#END:\n#END:\n: 0 4 0 a\nE");
+    expect(result.document.metadata.GAP).toBe("500");
+    expect(result.document.notes[0]!.start).toBe(0.5);
+    const empty = parseUltraStar("#BPM:120\n#GAP:\n: 0 4 0 a\nE");
+    expect(empty.document.notes[0]!.start).toBe(0);
+    expect(empty.warnings.join(" ")).toContain("no #GAP");
   });
 
   it("warns for missing E and chronological sorting", () => {
@@ -318,11 +359,20 @@ describe("serialization and validation", () => {
   });
 
   it("warns about stale break timing instead of silently rewriting it", () => {
+    const document = parse(": 0 4 0 one\n- 7\n: 8 4 0 two\nE");
+    document.notes[0]!.duration = 0.75;
+    document.lineBreaks![0]!.start = 2.25;
+    const result = serializeUltraStarWithDiagnostics(document);
+    expect(result.warnings.join(" ")).toContain("inside a line");
+    expect(result.text).toContain("- 10\n");
+  });
+
+  it("never writes a stored break inside the last note of its line", () => {
     const document = parse(": 0 4 0 one\n- 4\n: 8 4 0 two\nE");
     document.notes[0]!.duration = 0.75;
     const result = serializeUltraStarWithDiagnostics(document);
-    expect(result.warnings.join(" ")).toContain("inside a line");
-    expect(result.text).toContain("- 4\n");
+    expect(result.warnings.join(" ")).toContain("inside its line");
+    expect(result.text).toContain(": 0 6 0 one\n- 6\n");
   });
 
   it("rejects interleaved lyric lines that cannot survive TXT serialization", () => {
@@ -389,7 +439,7 @@ describe("serialization and validation", () => {
   it("validates stale, orphaned, invalid and duplicate line-break entries", () => {
     const document = parse(": 0 4 0 a\n- 4\n: 8 4 0 b\nE");
     document.lineBreaks![0]!.start = 0;
-    expect(validateDocument(document).some((item) => item.message.includes("inside a line"))).toBe(true);
+    expect(validateDocument(document).some((item) => item.message.includes("inside its line"))).toBe(true);
     document.lineBreaks!.push({ lineId: "deleted", start: 4 });
     expect(serializeUltraStarWithDiagnostics(document).warnings.join(" ")).toContain("has no line");
     document.lineBreaks!.push({ ...document.lineBreaks![0]! });
@@ -452,7 +502,7 @@ describe("serialization and validation", () => {
         const length = Math.floor(random() * 30) + 1;
         lines.push(`: ${tick} ${length} ${Math.floor(random() * 48) - 24} word ${index} `);
         tick += length + Math.floor(random() * 10);
-        if (index % 5 === 4) lines.push(`- ${tick}`);
+        if (index % 5 === 4 && index < 24) lines.push(`- ${tick}`);
       }
       lines.push("E");
       const text = lines.join("\n") + "\n";

@@ -8,8 +8,19 @@ import {
   type Diagnostic,
 } from "./types";
 
+/** An empty `#RELATIVE:` counts as absent, as every empty header does in the v1 format. */
 export function isRelativeModeUnsupported(metadata: Record<string, string>): boolean {
-  return metadata.RELATIVE !== undefined && !/^(?:NO|FALSE|0)$/i.test(metadata.RELATIVE.trim());
+  const value = metadata.RELATIVE?.trim();
+  return Boolean(value) && !/^(?:NO|FALSE|0)$/i.test(value!);
+}
+
+/**
+ * True when `#VERSION` says the file follows the v1 format (1.0.0 or later): UTF-8 only, and `P3` is a third voice.
+ * Without the header the file is in the older, unversioned format.
+ */
+export function isVersion1(version: string | undefined): boolean {
+  const major = /^\s*(\d+)\./.exec(version ?? "")?.[1];
+  return major !== undefined && Number(major) >= 1;
 }
 
 /** Collects diagnostics instead of throwing, including for malformed JSON at runtime. */
@@ -192,11 +203,12 @@ export function validateDocument(document: ChartDocument): Diagnostic[] {
         }
         const lineEnd = lineEnds.get(lineBreak.lineId);
         const nextStart = nextLineStarts.get(lineBreak.lineId);
-        if (
-          lineEnd !== undefined &&
-          (lineBreak.start < lineEnd - 1e-8 ||
-            (nextStart !== undefined && (lineBreak.end ?? lineBreak.start) > nextStart + 1e-8))
-        ) {
+        if (lineEnd !== undefined && nextStart !== undefined && lineBreak.start < lineEnd - 1e-8) {
+          add(
+            "warning",
+            `The line break after line ${lineBreak.lineId} is inside its line. It is saved after the line's last note.`,
+          );
+        } else if (nextStart !== undefined && (lineBreak.end ?? lineBreak.start) > nextStart + 1e-8) {
           add("warning", `The line break after line ${lineBreak.lineId} is inside a line. Its time is kept.`);
         }
         if (grid) {

@@ -75,8 +75,21 @@ describe("decodeChart", () => {
     });
   });
 
-  it.each(["#ENCODING:unknown-encoding\nE", "#ENCODING:\nE"])("rejects the unsupported declaration %j", (text) => {
-    expect(() => decodeChart(bytes(text))).toThrow(expect.objectContaining({ code: "UNSUPPORTED_ENCODING" }));
+  it("rejects an unsupported declaration, and reads an empty one as none", () => {
+    expect(() => decodeChart(bytes("#ENCODING:unknown-encoding\nE"))).toThrow(
+      expect.objectContaining({ code: "UNSUPPORTED_ENCODING" }),
+    );
+    expect(decodeChart(latin1("#ENCODING: \n#TITLE:Caf\xe9"))).toBe("#ENCODING: \n#TITLE:Café");
+  });
+
+  it("reads a #VERSION:1.x file as UTF-8 whatever its #ENCODING says", () => {
+    const text = "#VERSION:1.1.0\n#ENCODING:CP1252\n#TITLE:Grüße\nE\n";
+    expect(decodeChart(bytes(text))).toBe(text);
+    expect(decodeChart(concat(Uint8Array.of(0xef, 0xbb, 0xbf), bytes(text)))).toBe(text);
+    // Bytes that aren't UTF-8 are damaged characters, not a Windows-1252 reading.
+    expect(decodeChart(latin1("#VERSION:1.0.0\n#TITLE:Caf\xe9"))).toBe("#VERSION:1.0.0\n#TITLE:Caf\ufffd");
+    // Before 1.0 the declaration still counts.
+    expect(decodeChart(latin1("#VERSION:0.3.0\n#ENCODING:CP1252\n#TITLE:Caf\xe9"))).toContain("Café");
   });
 
   it("rejects conflicting declarations, invalid declared UTF-8 and UTF-16 without a BOM", () => {

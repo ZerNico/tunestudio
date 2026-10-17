@@ -63,7 +63,8 @@ describe("chartToProject", () => {
     const text = serializeUltraStar(projectToChart(project, {}));
     expect(text).toContain("\n- 8\n");
     expect(text).toContain("\n- 15\n");
-    expect(text).toContain("\n- 24 26\n");
+    // The v1 format has one beat per break.
+    expect(text).toContain("\n- 24\n");
   });
 
   it("prefers #P1 over #DUETSINGERP1 and groups lines per singer", () => {
@@ -87,6 +88,19 @@ describe("chartToProject", () => {
       ["Ben", [["b"], ["c"]]],
     ]);
     expect(project.song.extraHeaders.map(([key]) => key)).not.toContain("P3");
+  });
+
+  it("reads empty headers as absent, #AUTHOR as #CREATOR, and drops deprecated headers", () => {
+    const { chart: project, warnings } = chartToProject(
+      chart(["#BPM:300", "#YEAR:", "#END: ", "#GENRE:", "#NOTESGAP:12", "#RESOLUTION:4", "#AUTHOR: Ann ", ": 0 1 0 a"]),
+    );
+    expect(warnings).toEqual([]);
+    expect(project.song).toMatchObject({ year: null, end: null, genre: null, creator: "Ann", extraHeaders: [] });
+    expect(serializeUltraStar(projectToChart(project, {}))).toContain("\n#CREATOR:Ann\n");
+
+    // Next to a #CREATOR of its own, a different #AUTHOR stays as it is.
+    const both = chartToProject(chart(["#BPM:300", "#AUTHOR:Ann", "#CREATOR:Ben", ": 0 1 0 a"])).chart.song;
+    expect(both).toMatchObject({ creator: "Ben", extraHeaders: [["AUTHOR", "Ann"]] });
   });
 
   it("gives an empty chart one singer", () => {
@@ -119,7 +133,7 @@ describe("projectToChart", () => {
         "#GAP:1000",
         "#X:kept",
         ": 0 2 0 a",
-        "- 3 4",
+        "- 3",
         "* 4 2 1 b",
         "E",
         "",
@@ -156,6 +170,38 @@ describe("projectToChart", () => {
     expect(text).not.toMatch(/^P\d|#P[12]:/m);
     expect(text).toContain("\n: 20 8 0 b\n");
     expect(emptySingerWarnings(project)).toEqual(["Anna has no notes, so the song is exported as a solo chart."]);
+  });
+
+  it("names both singers of a duet, even unnamed ones", () => {
+    const { chart: project } = chartToProject(chart(["#BPM:300", "#P2:Ben", "P1", ": 0 2 0 a", "P2", ": 4 2 0 b"]));
+    const metadata = projectToChart(project, {}).metadata;
+    expect([metadata.P1, metadata.P2]).toEqual(["P1", "Ben"]);
+    project.singers[1]!.name = " ";
+    expect(projectToChart(project, {}).metadata.P2).toBe("P2");
+  });
+
+  it("writes #END in whole milliseconds and the medley headers only as a pair", () => {
+    const { chart: project } = chartToProject(chart(["#BPM:300", ": 0 2 0 a"]));
+    project.song.end = 61.2345;
+    project.song.medleyStart = 1;
+    const only = projectToChart(project, {}).metadata;
+    expect(only.END).toBe("61235");
+    expect(only.MEDLEYSTARTBEAT).toBeUndefined();
+    project.song.medleyEnd = 2;
+    expect(projectToChart(project, {}).metadata).toMatchObject({ MEDLEYSTARTBEAT: "20", MEDLEYENDBEAT: "40" });
+    // USDX drops a medley that ends before it starts.
+    project.song.medleyEnd = 0.5;
+    expect(projectToChart(project, {}).metadata.MEDLEYENDBEAT).toBeUndefined();
+  });
+
+  it("drops deprecated headers an older project kept", () => {
+    const { chart: project } = chartToProject(chart(["#BPM:300", ": 0 2 0 a"]));
+    project.song.extraHeaders = [
+      ["NOTESGAP", "3"],
+      ["RESOLUTION", "4"],
+      ["X", "kept"],
+    ];
+    expect(Object.keys(projectToChart(project, {}).metadata)).toEqual(["VERSION", "BPM", "GAP", "X"]);
   });
 
   it("formats header numbers without float noise", () => {
