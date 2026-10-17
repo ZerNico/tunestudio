@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, within } from "@solidjs/testing-lib
 import { createSignal } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
 
-import type { ImportProgress, ProjectMedia } from "~/lib/native/types";
+import type { Progress, ProjectMedia } from "~/lib/native/types";
 
 import type { ArtworkActions } from "./song-artwork";
 import { type MediaActions, SongFiles } from "./song-files";
@@ -31,7 +31,7 @@ function setup(files: ProjectMedia[] = FILES) {
     chooseImage: vi.fn(async () => ({ path: "/picked/back.jpg", preview: "data:," })),
     onError: vi.fn(),
   };
-  const [separating, setSeparating] = createSignal<ImportProgress | null | undefined>(undefined);
+  const [separating, setSeparating] = createSignal<Progress | null | undefined>(undefined);
   const songMedia: MediaActions = {
     chooseFile: vi.fn(async (kind: "audio" | "video") => (kind === "audio" ? "/picked/new.flac" : "/picked/clip.mp4")),
     replace: vi.fn(async () => {}),

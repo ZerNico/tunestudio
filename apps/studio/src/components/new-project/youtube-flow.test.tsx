@@ -10,7 +10,7 @@ import type {
   DownloadedDraft,
   FoundLyrics,
   HeardLyrics,
-  ImportProgress,
+  Progress,
   OpenedProject,
   ToolProgress,
   ToolStatus,
@@ -97,7 +97,7 @@ const toolsReady = (): AsyncIterator<ToolProgress, ToolStatus[]> => ({
 });
 
 /** Progress, then (once `gate` opens) a result, like main's long calls. */
-async function* steps<R>(progress: ImportProgress[], result: R, gate: Promise<void> = Promise.resolve()) {
+async function* steps<R>(progress: Progress[], result: R, gate: Promise<void> = Promise.resolve()) {
   for (const step of progress) yield step;
   await gate;
   return result;

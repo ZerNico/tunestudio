@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "@effect/vitest";
 import { Effect } from "effect";
 
-import type { ImportProgress } from "../../src/lib/native/types";
+import type { Progress } from "../../src/lib/native/types";
 import { ChartUnreadable, MissingMainAudio, NoChartFound, ProjectNotOpen } from "../errors";
 import { readChart } from "../project/chart";
 import { readMeta } from "../project/database";
@@ -247,7 +247,7 @@ describe("importing a song", () => {
     });
     const target = path.join(dir, "Projects", "Night Signals.tunestudio");
     fs.mkdirSync(path.dirname(target));
-    const progress: ImportProgress[] = [];
+    const progress: Progress[] = [];
 
     const result = await run(
       Effect.gen(function* () {

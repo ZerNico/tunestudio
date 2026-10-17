@@ -1,9 +1,9 @@
 import { Effect, FileSystem, Path, Semaphore } from "effect";
 
 import { intersectsRange, rangeProblem } from "../../src/lib/chart-range";
-import { CHART_STEPS, GETTING_CHART_MODELS, READING_SONG } from "../../src/lib/chart-steps";
 import type { ChartRangeInput } from "../../src/lib/native/contract";
-import type { ImportProgress } from "../../src/lib/native/types";
+import type { Progress } from "../../src/lib/native/types";
+import { CHART_STEPS, GETTING_CHART_MODELS, READING_SONG } from "../../src/lib/steps";
 import { abortable } from "../abortable";
 import { ChartFailed, mapFileError } from "../errors";
 import { Models } from "../models/models";
@@ -15,6 +15,8 @@ import type { ProjectSession } from "../project/projects";
 import { Tools } from "../tools/tools";
 import { AlignFailed } from "./align-stage";
 import { decodeMono } from "./audio";
+import { chartEngines } from "./engines";
+import { CHART_LANGUAGES } from "./generate";
 import { GAME_SAMPLE_RATE } from "./pipeline";
 import { PITCH_SAMPLE_RATE } from "./pitch-track";
 import { chartRange } from "./range-chart";
@@ -32,7 +34,7 @@ const running = new WeakMap<ProjectSession, Promise<unknown>>();
 export function chartProjectRange(
   session: ProjectSession,
   input: ChartRangeInput,
-  onProgress: (progress: ImportProgress) => Effect.Effect<void>,
+  onProgress: (progress: Progress) => Effect.Effect<void>,
 ) {
   let lock = locks.get(session);
   if (!lock) locks.set(session, (lock = Semaphore.makeUnsafe(1)));
@@ -96,20 +98,9 @@ export function chartProjectRange(
             lines: input.lines,
             grid: { bpm: chart.bpm, gap: chart.gap },
             songMidi: Float32Array.from(song?.midi ?? [], (value) => value ?? Number.NaN),
-            language: input.language === "en" ? { name: "english", code: "eng" } : { name: "german", code: "deu" },
+            language: CHART_LANGUAGES[input.language],
           },
-          {
-            trackPitch: (samples) => addon.trackPitch(models.chartPitch, samples),
-            alignerOutputs: (samples, progress) =>
-              addon.alignerOutputs(models.chartAligner, models.chartBoundary, samples, progress, signal),
-            forcedAlign: (emissions, classes, from, to, targets) =>
-              addon.forcedAlignPath(emissions, classes, from, to, targets),
-            transcribeNotes: (samples, requests, language, progress) =>
-              addon.transcribeNotes(models.chartNotes, samples, requests, language, progress, signal),
-            harmonicRatios: (samples, notes) => addon.harmonicRatios(samples, notes),
-            predictPitchShifts: (features) => addon.predictPitchShifts(models.chartPitchFix, features),
-            predictNoteEnds: (features) => addon.predictNoteEnds(models.chartNoteEnds, features),
-          },
+          chartEngines(addon, models, signal),
           (step, done) => Effect.runFork(onProgress({ step: CHART_STEPS[step], done, total: 100, unit: "percent" })),
           signal,
         );

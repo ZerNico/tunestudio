@@ -1,6 +1,6 @@
 import { Effect, FileSystem } from "effect";
 
-import type { DownloadedDraft, ImportProgress } from "../../src/lib/native/types";
+import type { DownloadedDraft, Progress } from "../../src/lib/native/types";
 import { VideoDownloadFailed } from "../errors";
 import { separateStems } from "../separation/separation";
 import { Drafts } from "../services/drafts";
@@ -15,7 +15,7 @@ import { downloadVideo } from "./youtube";
  */
 export function downloadIntoDraft(
   videoId: string,
-  onProgress: (progress: ImportProgress) => Effect.Effect<void> = () => Effect.void,
+  onProgress: (progress: Progress) => Effect.Effect<void> = () => Effect.void,
 ) {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;

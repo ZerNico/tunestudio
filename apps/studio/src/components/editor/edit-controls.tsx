@@ -15,9 +15,9 @@ import { Button } from "~/components/ui/button";
 import { Kbd } from "~/components/ui/kbd";
 import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
-import { FINDING_THE_PITCH } from "~/lib/chart-steps";
 import { keyOf, SHORTCUTS } from "~/lib/editor/shortcuts";
 import { type Tool, TOOLS } from "~/lib/editor/tools";
+import { FINDING_THE_PITCH } from "~/lib/steps";
 
 import { IconButton, KeyHint } from "./icon-button";
 

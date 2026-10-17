@@ -166,16 +166,16 @@ export const RangeChart = Schema.Struct({
 });
 export type RangeChart = typeof RangeChart.Type;
 
-/** Progress while a project is written. */
-export const ImportProgress = Schema.Struct({
-  /** What is being written, for the progress label. */
+/** How far a long call (an import, a download, separating, charting) is. */
+export const Progress = Schema.Struct({
+  /** The step under way, for the progress label (`src/lib/steps.ts`). */
   step: Schema.String,
-  /** Bytes written so far and in total, or a percentage with `unit: "percent"`. */
+  /** Bytes so far and in total, or a percentage with `unit: "percent"`. */
   done: Schema.Number,
   total: Schema.Number,
   unit: Schema.optional(Schema.Literals(["bytes", "percent"])),
 });
-export type ImportProgress = typeof ImportProgress.Type;
+export type Progress = typeof Progress.Type;
 
 /** A project open in the main process. */
 export const OpenedProject = Schema.Struct({

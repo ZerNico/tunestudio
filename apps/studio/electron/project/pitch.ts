@@ -4,8 +4,8 @@
  */
 import { Effect } from "effect";
 
-import { CHART_STEPS } from "../../src/lib/chart-steps";
-import type { ImportProgress, SungPitch } from "../../src/lib/native/types";
+import type { Progress, SungPitch } from "../../src/lib/native/types";
+import { CHART_STEPS } from "../../src/lib/steps";
 import { type FullPitchTrack, HOP_SECONDS, PITCH_SAMPLE_RATE, pitchTrack } from "../charting/pitch-track";
 import { ChartFailed } from "../errors";
 import { Models } from "../models/models";
@@ -47,7 +47,7 @@ function toSungPitch(midi: Float32Array): SungPitch {
  */
 export function sungPitch(
   session: ProjectSession,
-  onProgress: (progress: ImportProgress) => Effect.Effect<void> = () => Effect.void,
+  onProgress: (progress: Progress) => Effect.Effect<void> = () => Effect.void,
 ) {
   return Effect.gen(function* () {
     const db = session.db;

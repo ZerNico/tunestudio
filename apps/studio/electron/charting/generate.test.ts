@@ -5,7 +5,7 @@ import { NodeServices } from "@effect/platform-node";
 import { afterEach, describe, expect, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
 
-import { FINDING_THE_PITCH } from "../../src/lib/chart-steps";
+import { FINDING_THE_PITCH } from "../../src/lib/steps";
 import { readEditorChart } from "../project/editor-chart";
 import { sungPitch } from "../project/pitch";
 import { projectsLayer } from "../project/projects";

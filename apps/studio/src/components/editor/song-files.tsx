@@ -27,7 +27,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip
 import { formatDuration, formatFileSize } from "~/lib/format";
 import type { SongMediaRole } from "~/lib/native/contract";
 import { percentOf } from "~/lib/native/progress";
-import type { ImportProgress, MediaRole, ProjectMedia } from "~/lib/native/types";
+import type { Progress, MediaRole, ProjectMedia } from "~/lib/native/types";
+import { SEPARATING_THE_VOICE } from "~/lib/steps";
 
 import type { ArtworkActions, ArtworkRole } from "./song-artwork";
 
@@ -38,7 +39,7 @@ export interface MediaActions {
   replace: (role: SongMediaRole, path: string) => Promise<void>;
   removeVideo: () => Promise<void>;
   /** Separating the voice from the song: its progress while it runs (null before the first), else undefined. */
-  separating: () => ImportProgress | null | undefined;
+  separating: () => Progress | null | undefined;
   separate: () => void;
   stopSeparating: () => void;
   /** Shows what went wrong. */
@@ -278,7 +279,7 @@ export function SongFiles(props: {
         <div class="flex items-center gap-3" data-testid="separating">
           <div class="flex min-w-0 flex-1 flex-col gap-1.5">
             <span class="text-[11px] text-popover-foreground" aria-live="polite">
-              {props.songMedia.separating()?.step ?? "Separating the voice"}…
+              {props.songMedia.separating()?.step ?? SEPARATING_THE_VOICE}…
             </span>
             <ProgressBar label="Separating progress" value={percentOf(props.songMedia.separating() ?? null)} />
           </div>

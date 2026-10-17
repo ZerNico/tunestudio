@@ -13,7 +13,7 @@ import {
   ExportResult,
   FoundLyrics,
   HeardLyrics,
-  ImportProgress,
+  Progress,
   MadeChart,
   ModelFeatureStatus,
   ModelStatus,
@@ -364,8 +364,8 @@ export class NativeRpcs extends RpcGroup.make(
   call("lyrics.syllabify", SyllabifyInput, Schema.Array(Schema.Array(Schema.String))),
   /** Imports a song into a new project file, reporting progress, and opens it. */
   /** Separates the vocals and music from the song's audio into a new draft, reporting progress. */
-  withProgress("song.separate", SongInput, ImportProgress, DraftInput),
-  withProgress("song.import", ImportInput, ImportProgress, OpenedProject),
+  withProgress("song.separate", SongInput, Progress, DraftInput),
+  withProgress("song.import", ImportInput, Progress, OpenedProject),
 
   call("project.open", PathInput, OpenedProject),
   call("project.overview", ProjectInput, ProjectOverview),
@@ -374,7 +374,7 @@ export class NativeRpcs extends RpcGroup.make(
    * What is sung in the project's vocals (stored, or worked out now, getting the pitch model first if needed),
    * reporting progress; null without vocals.
    */
-  withProgress("project.pitch", ProjectInput, ImportProgress, nullable(SungPitch)),
+  withProgress("project.pitch", ProjectInput, Progress, nullable(SungPitch)),
   /** How loud the project's vocals (or its song) are, for the waveform lane: stored, or worked out now; null without. */
   call("project.waveform", ProjectInput, nullable(Waveform)),
   /** Writes one edit (or its undo) to the project in one transaction; fails, writing nothing, if it is out of step. */
@@ -385,9 +385,9 @@ export class NativeRpcs extends RpcGroup.make(
    * The pitch of these notes, worked out as the chart is made but keeping their timing (the models download on first
    * use), reporting progress; notes with nothing sung to go by are left out. Nothing is written.
    */
-  withProgress("project.autoPitch", AutoPitchInput, ImportProgress, Schema.Array(NotePitch)),
+  withProgress("project.autoPitch", AutoPitchInput, Progress, Schema.Array(NotePitch)),
   /** Charts supplied lyrics inside a reviewed range, without writing the chart. */
-  withProgress("project.chartRange", ChartRangeInput, ImportProgress, RangeChart),
+  withProgress("project.chartRange", ChartRangeInput, Progress, RangeChart),
   /** Writes the project as an UltraStar song folder. */
   call("project.exportSong", ExportInput, ExportResult),
   /** Writes the chart's text for USDB (`usdb.ts`); returns what changed on the way. */
@@ -399,7 +399,7 @@ export class NativeRpcs extends RpcGroup.make(
   /** Removes the video (the song, vocals and music are only replaced); returns the overview as it is now. */
   call("project.removeVideo", ProjectInput, ProjectOverview),
   /** Separates the vocals and music from the song again, reporting progress; returns the overview as it is now. */
-  withProgress("project.separate", ProjectInput, ImportProgress, ProjectOverview),
+  withProgress("project.separate", ProjectInput, Progress, ProjectOverview),
 
   /** The recent projects, newest first; files that no longer exist are dropped. */
   query("recents.list", Schema.Array(RecentProjectEntry)),
@@ -417,26 +417,26 @@ export class NativeRpcs extends RpcGroup.make(
   /** Line-synced lyrics from LRCLIB for the version closest in length, or null. */
   call("youtube.findLyrics", SongSearchInput, nullable(FoundLyrics)),
   /** Downloads the song as the settings say into a new draft, reporting progress. */
-  withProgress("youtube.download", VideoInput, ImportProgress, DownloadedDraft),
+  withProgress("youtube.download", VideoInput, Progress, DownloadedDraft),
 
   /** Reads a picked or dropped audio file's length, tags and artwork, installing FFmpeg first if needed. */
   call("audio.inspect", PathInput, AudioFileDetails),
   /** Puts the audio file into a new draft as it is and separates the voice, reporting progress. */
-  withProgress("audio.import", PathInput, ImportProgress, DownloadedDraft),
+  withProgress("audio.import", PathInput, Progress, DownloadedDraft),
 
   /** What Whisper hears in the draft's vocals, reporting progress. */
-  withProgress("drafts.listen", ListenInput, ImportProgress, HeardLyrics),
+  withProgress("drafts.listen", ListenInput, Progress, HeardLyrics),
   /**
    * Makes the chart from the draft's vocals and these lyrics, reporting progress (the chart models download on first
    * use), and keeps it for `drafts.create`.
    */
-  withProgress("drafts.makeChart", DraftChartInput, ImportProgress, MadeChart),
+  withProgress("drafts.makeChart", DraftChartInput, Progress, MadeChart),
   /** Saves the draft as a new project with the user's choices, reporting progress, and opens it. */
-  withProgress("drafts.create", DraftProjectInput, ImportProgress, OpenedProject),
+  withProgress("drafts.create", DraftProjectInput, Progress, OpenedProject),
   /** The project file the OS asked this window to open (`windows.ts`), once; null for none. */
   query("windows.takeOpenRequest", nullable(Schema.String)),
   /** Opens another window, on the start screen. */
-  query("windows.add", Schema.Void),
+  command("windows.add", Schema.Void),
   /** Throws a new project's draft away (the user cancelled). */
   command("drafts.discard", DraftInput),
 
@@ -456,7 +456,7 @@ export class NativeRpcs extends RpcGroup.make(
   /** How much of each feature's models is downloaded, for the settings screen. */
   query("models.list", Schema.Array(ModelFeatureStatus)),
   /** Downloads a feature's missing models, reporting progress; then how every feature stands. */
-  withProgress("models.download", ModelFeatureInput, ImportProgress, Schema.Array(ModelFeatureStatus)),
+  withProgress("models.download", ModelFeatureInput, Progress, Schema.Array(ModelFeatureStatus)),
   /** Deletes a feature's models to free the space; then how every feature stands. */
   call("models.remove", ModelFeatureInput, Schema.Array(ModelFeatureStatus)),
 ) {}

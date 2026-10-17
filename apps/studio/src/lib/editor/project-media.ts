@@ -10,7 +10,7 @@ import type { MediaActions } from "~/components/editor/song-files";
 import { toast, toastError } from "~/components/ui/toast";
 import { native } from "~/lib/native/client";
 import { follow as followProgress } from "~/lib/native/progress";
-import type { ImportProgress, ProjectOverview } from "~/lib/native/types";
+import type { Progress, ProjectOverview } from "~/lib/native/types";
 
 export function createProjectMedia(options: {
   overview: () => ProjectOverview;
@@ -41,7 +41,7 @@ export function createProjectMedia(options: {
   };
 
   /** Separating the voice from the song again, while it runs. */
-  const [separating, setSeparating] = createSignal<ImportProgress | null | undefined>(undefined);
+  const [separating, setSeparating] = createSignal<Progress | null | undefined>(undefined);
   let separation: AbortController | undefined;
   const stopSeparating = () => {
     separation?.abort();

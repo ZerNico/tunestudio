@@ -3,8 +3,9 @@ import { randomUUID } from "node:crypto";
 import { Effect, FileSystem, Path } from "effect";
 
 import { LONGEST_SONG_SECONDS } from "../../src/lib/native/contract";
-import type { ImportProgress } from "../../src/lib/native/types";
+import type { Progress } from "../../src/lib/native/types";
 import type { AudioFormat } from "../../src/lib/settings";
+import { GETTING_SEPARATION_MODEL, SEPARATING_THE_VOICE } from "../../src/lib/steps";
 import { abortable } from "../abortable";
 import { mapFileError, SeparationFailed } from "../errors";
 import { Models } from "../models/models";
@@ -12,9 +13,6 @@ import { Native } from "../native/native";
 import { AppLog } from "../services/app-log";
 import { decodeF32, lastLine, localInput, PROBE_LOCAL_ONLY, runTool } from "../tools/ffmpeg";
 import { ENCODERS } from "../youtube/loudness";
-
-export const SEPARATING = "Separating the voice";
-export const GETTING_MODEL = "Getting the voice separation model";
 
 const failed = (message: string) => new SeparationFailed({ message: `Couldn't separate the voice: ${message}` });
 
@@ -61,7 +59,7 @@ export function audioBitrate(ffprobe: string, file: string) {
  */
 export function separateStems(
   input: { ffmpeg: string; ffprobe: string; audio: string; folder: string; format: AudioFormat; bitrate: number },
-  onProgress: (progress: ImportProgress) => Effect.Effect<void>,
+  onProgress: (progress: Progress) => Effect.Effect<void>,
 ) {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -71,9 +69,9 @@ export function separateStems(
     const sampleRate = addon.separationSampleRate();
 
     const model = yield* (yield* Models).ensure("separation", (received, total) =>
-      onProgress({ step: GETTING_MODEL, done: received, total }),
+      onProgress({ step: GETTING_SEPARATION_MODEL, done: received, total }),
     );
-    yield* onProgress({ step: SEPARATING, done: 0, total: 100, unit: "percent" });
+    yield* onProgress({ step: SEPARATING_THE_VOICE, done: 0, total: 100, unit: "percent" });
 
     // Its own name: a cancelled separation may still be finishing in the same folder.
     const raw = paths.join(input.folder, `stem-${randomUUID().slice(0, 8)}.f32`);
@@ -129,7 +127,8 @@ export function separateStems(
             left,
             right,
             {},
-            (percent) => Effect.runFork(onProgress({ step: SEPARATING, done: percent, total: 100, unit: "percent" })),
+            (percent) =>
+              Effect.runFork(onProgress({ step: SEPARATING_THE_VOICE, done: percent, total: 100, unit: "percent" })),
             signal,
           ),
         catch: (error) => failed(error instanceof Error ? error.message : String(error)),

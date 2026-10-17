@@ -9,7 +9,7 @@ import { replaceRange } from "../../src/lib/editor/chart-range";
 import { createChartDocument } from "../../src/lib/editor/document";
 import type { ChartRangeInput } from "../../src/lib/native/contract";
 import { errorMessage } from "../../src/lib/native/errors";
-import type { ImportProgress } from "../../src/lib/native/types";
+import type { Progress } from "../../src/lib/native/types";
 import { Native, type NativeAddon } from "../native/native";
 import { listMedia, readChunk } from "../project/media";
 import { Projects } from "../project/projects";
@@ -59,8 +59,8 @@ afterEach(async () => {
   cleanups = [];
 });
 
-async function drain<T>(iterator: AsyncIterator<ImportProgress, T>) {
-  const progress: ImportProgress[] = [];
+async function drain<T>(iterator: AsyncIterator<Progress, T>) {
+  const progress: Progress[] = [];
   for (;;) {
     const next = await iterator.next();
     if (next.done) return { progress, result: next.value };

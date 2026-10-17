@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
 
 import { chartInputsKey } from "../../src/lib/chart-inputs";
-import type { ImportProgress } from "../../src/lib/native/types";
+import type { Progress } from "../../src/lib/native/types";
 import { DEFAULT_SETTINGS, type Settings } from "../../src/lib/settings";
 import { createDraftProject, listenToDraft, makeDraftChart } from "../drafts/draft-project";
 import { projectOverview } from "../project/overview";
@@ -294,7 +294,7 @@ describe("downloadVideo", () => {
   it.effect("downloads the audio as M4A, the video as set, and a square cover", () => {
     const { layer, calls, work } = setup();
     return Effect.gen(function* () {
-      const progress: ImportProgress[] = [];
+      const progress: Progress[] = [];
       const media = yield* downloadVideo("dQw4w9WgXcQ", DEFAULT_SETTINGS, work, (step) =>
         Effect.sync(() => void progress.push(step)),
       );
@@ -419,7 +419,7 @@ describe("downloadVideo's length limit", () => {
 describe("downloadIntoDraft", () => {
   it.effect("separates vocals and instrumental and encodes them like the audio, at no more than its bitrate", () => {
     const { layer, calls } = setup();
-    const progress: ImportProgress[] = [];
+    const progress: Progress[] = [];
     return Effect.gen(function* () {
       yield* AppSettings.use((stored) => stored.set(settings({ audio: { format: "mp3", bitrate: 192 } })));
       const { draftId } = yield* downloadIntoDraft("dQw4w9WgXcQ", (step) =>
@@ -461,7 +461,7 @@ describe("downloadIntoDraft", () => {
 describe("listenToDraft", () => {
   it.effect("hears only where something is sung in the vocals, without made-up captions", () => {
     const { layer, calls } = setup();
-    const progress: ImportProgress[] = [];
+    const progress: Progress[] = [];
     return Effect.gen(function* () {
       const { draftId } = yield* downloadIntoDraft("dQw4w9WgXcQ");
       const draft = yield* Drafts.use((drafts) => drafts.get(draftId));

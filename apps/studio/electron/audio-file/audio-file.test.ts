@@ -5,7 +5,7 @@ import { NodeServices } from "@effect/platform-node";
 import { afterEach, describe, expect, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
 
-import type { ImportProgress } from "../../src/lib/native/types";
+import type { Progress } from "../../src/lib/native/types";
 import { AppLog } from "../services/app-log";
 import { Drafts, draftsLayer } from "../services/drafts";
 import { settingsLayer } from "../services/settings";
@@ -138,7 +138,7 @@ describe("inspectAudioFile", () => {
 describe("audioFileIntoDraft", () => {
   it.effect("copies the file as it is, takes its artwork and separates the voice", () => {
     const { layer, song, calls } = setup({ format: { duration: "180" }, streams: [AUDIO, ARTWORK] });
-    const progress: ImportProgress[] = [];
+    const progress: Progress[] = [];
     return Effect.gen(function* () {
       const imported = yield* audioFileIntoDraft(song, (step) => Effect.sync(() => void progress.push(step)));
       const draft = yield* Drafts.use((drafts) => drafts.get(imported.draftId));

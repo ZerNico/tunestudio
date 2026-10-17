@@ -3,7 +3,7 @@ import { Effect } from "effect";
 
 import type { ModelFeature } from "../../src/lib/models";
 import { MODEL_FEATURES } from "../../src/lib/models";
-import type { ImportProgress, ModelFeatureStatus } from "../../src/lib/native/types";
+import type { Progress, ModelFeatureStatus } from "../../src/lib/native/types";
 import { FEATURE_MODELS, Models } from "./models";
 
 /** How much of each feature's models is downloaded. */
@@ -36,7 +36,7 @@ export const modelFeatures = Effect.gen(function* () {
 /** Downloads what is missing of a feature's models, reporting the bytes; then how every feature stands. */
 export function downloadFeature(
   feature: ModelFeature,
-  onProgress: (progress: ImportProgress) => Effect.Effect<void> = () => Effect.void,
+  onProgress: (progress: Progress) => Effect.Effect<void> = () => Effect.void,
 ) {
   return Effect.gen(function* () {
     const models = yield* Models;

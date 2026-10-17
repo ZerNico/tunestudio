@@ -50,6 +50,7 @@ src/
 │   ├── edit-commands.ts  # Which keys go to the editor and which to the focused control; undo/redo/clipboard commands
 │   ├── desktop.ts        # platform and desktop helpers, provided synchronously by the preload
 │   ├── import-files.ts   # Classifies picked/dropped files and folders (names only, nothing is read)
+│   ├── steps.ts          # The progress steps main reports and the checklists list
 │   ├── youtube.ts        # YouTube link parsing
 │   ├── format.ts         # Relative times, dates, file sizes
 │   └── utils.ts          # cn() and stateClass() for Base UI class props
@@ -58,11 +59,29 @@ src/
 └── icons.d.ts            # Types for ~icons/* (Solid 2 compatible)
 electron/
 ├── main.ts               # App lifecycle, window, permissions, navigation rules
+├── runtime.ts            # The Effect runtime with every service, built at startup and disposed on quit
+├── windows.ts            # One window per project: which window shows what, where an opened file goes
+├── flush.ts              # Asks a page to save what is waiting before its window closes, the app quits or it reloads
+├── flush-channel.ts      # The IPC channels for that, shared with the preload
+├── abortable.ts          # Native work and downloads that stop on a signal, waited for when interrupted
+├── errors.ts             # Main-only errors and `mapFileError` (file system errors as user-facing ones)
 ├── permissions.ts        # Which web permissions the app's pages get (clipboard writes, the microphone)
 ├── preload.ts            # Hands the renderer's MessagePort to main; exposes platform + version
-├── flush.ts              # Asks a page to save what is waiting before its window closes, the app quits or it reloads
-├── protocols/            # app:// scheme serving dist/ with the CSP; originOf()
-├── rpc/                  # Handlers (procedures.ts), server and MessagePort protocol, the connection listener
+├── rpc/                  # Server, MessagePort protocol, connection listener; handlers per area in handlers/ (procedures.ts joins them)
+├── protocols/            # app:// (dist/ with the CSP; originOf()) and media:// (a project's media) schemes
+├── services/             # Effect services (settings, recents, drafts, path grants, desktop dialogs, app log); layer.ts wires them
+├── project/              # An open project: its database, chart, media, edits, sung pitch, waveform, artwork
+├── drafts/               # New projects' drafts: making their chart, listening, saving them as a project
+├── youtube/              # YouTube projects: yt-dlp downloads, loudness, covers, lyrics
+├── audio-file/           # New projects from an audio file
+├── ultrastar/            # UltraStar song folders: import, export, USDB text and usdb_syncer's sidecar files
+├── charting/             # Making the chart (the PoC's pipeline), chart range and auto pitch
+├── separation/           # Separating the voice from the song
+├── listening/            # Hearing the lyrics with Whisper
+├── models/               # Model downloads, and the features the settings screen lists
+├── native/               # Loads the Rust addon
+├── tools/                # yt-dlp, QuickJS and FFmpeg: sources, downloads, unzipping, running them
+├── testing.ts            # Test helpers: temp folders, synthetic songs, a test runtime, fake addon and models
 ├── csp.ts                # Content Security Policy (also applied to the dev server's pages)
 ├── dev-reload.ts         # Dev-only: reload windows when only the preload was rebuilt
 ├── identity.ts           # Product name, app ID, window background
@@ -113,7 +132,8 @@ resources/icons/          # App icon (icon.svg is the source of icon.png)
 
 - The renderer reaches main only through `native` from `~/lib/native/client`. Adding a call: add an `Rpc` to
   `NativeRpcs` in `src/lib/native/contract.ts` (`call`, `command`, `query`, or `withProgress` for a call that reports
-  progress; outputs are schemas in `types.ts`) and its handler to `nativeHandlers` in `electron/rpc/procedures.ts`.
+  progress; outputs are schemas in `types.ts`) and its handler to its area's file in `electron/rpc/handlers/` (composed into `nativeHandlers` in
+  `electron/rpc/procedures.ts`); a step label main reports and the renderer lists goes in `src/lib/steps.ts`.
   `native.<group>.<name>` appears by itself, named after the tag (`"project.open"`)
 - Calls are Effect RPC over the MessagePort (`electron/rpc/port-protocol.ts` in main, `portProtocol` in `client.ts`),
   values encoded as for JSON (nothing is transferred: Electron's MessagePortMain only transfers ports). The facade
@@ -251,7 +271,7 @@ resources/icons/          # App icon (icon.svg is the source of icon.png)
 ### Making the chart (`electron/charting/`, `native/src/{aligner,pitch,beats,ctc,game,numpy_rng,harmonics,refiners,runtime}.rs`)
 
 - Making the chart (in setup, `drafts.makeChart` via `chartFromFiles`): the song's vocals, audio and lyrics through the auto-tuner PoC's chart pipeline (its defaults: aligner fine-tuned on singing, syllable-start head, GAME notes, pitch corrector, learned note ends); the new project starts with the result. Existing projects can chart a selected passage with supplied lyrics (Chart range), without remaking the song grid. Needs the lyrics and the vocals; English and German only so far (`chartLanguage`).
-- It is a port, checked against the PoC: every function reproduces the PoC's output (NumPy's arithmetic included: `numpy.ts` has pairwise sums, round-half-even, floor modulo, float32 statistics; never `Math.round` or `%` there). `pipeline.ts` runs the stages in the PoC's order; the models sit behind `ChartEngines`. Charts are written on the PoC's rounded headers (#BPM to 3 decimals, #GAP in ms), so an export writes the PoC's beats.
+- It is a port, checked against the PoC: every function reproduces the PoC's output (NumPy's arithmetic included: `numpy.ts` has pairwise sums, round-half-even, floor modulo, float32 statistics; never `Math.round` or `%` there). `pipeline.ts` runs the stages in the PoC's order; the models sit behind `ChartEngines` (`chartEngines` in `engines.ts` binds them to the addon). Charts are written on the PoC's rounded headers (#BPM to 3 decimals, #GAP in ms), so an export writes the PoC's beats.
 - Native: CPU only for now. The aligner runs in ctc-forced-aligner's 30 s windows (one pass gives the CTC log-probabilities and the head's hidden states); the CTC Viterbi (`ctc.rs`) is ctc-forced-aligner's (BSD 2-Clause) in f32 with its tie-breaks; GAME's segmenter gets its random op replaced by an input on the protobuf (`patch_segmenter`) fed from NumPy's PCG64 (`numpy_rng.rs`), seeded per line like the PoC; Beat This! chunks like its own inference, peaks are picked in `beats.ts`.
 - Text: `aligner-text.ts` is ctc-forced-aligner's `preprocess_text` (normalization and uroman) from generated tables (`data/aligner-text.json`, Latin, Hangul and Chinese characters, which romanize character by character). Syllables: the learned tables `data/syllables-{english,german}.json` plus rules. The generated files come from the PoC's `scripts/export_text_tables.py` / `export_fixtures.py`; don't edit them.
 - Models: one `ensureAll(CHART_MODELS)` download (1.6 GB as the app counts, binary units): our aligner and note refiners and ONNX exports of FCPE and Beat This! from Hugging Face (`tuneperfect/*`, pinned revisions), and GAME as openvpi's v1.0.3 release zip from GitHub, unpacked with `unzip` and checked file by file (`unpack`).

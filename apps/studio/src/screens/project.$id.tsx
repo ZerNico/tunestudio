@@ -34,7 +34,6 @@ import { Button } from "~/components/ui/button";
 import { ProgressBar } from "~/components/ui/progress-bar";
 import { toast, toastError } from "~/components/ui/toast";
 import type { TimeRange } from "~/lib/chart-range";
-import { CHART_STEPS } from "~/lib/chart-steps";
 import { onMenuCommand, platform } from "~/lib/desktop";
 import {
   controlKey,
@@ -102,7 +101,8 @@ import type { EditCommand } from "~/lib/native/channel";
 import { native } from "~/lib/native/client";
 import { errorMessage } from "~/lib/native/errors";
 import { follow as followProgress, percentOf } from "~/lib/native/progress";
-import type { ImportProgress, SungPitch, Waveform } from "~/lib/native/types";
+import type { Progress, SungPitch, Waveform } from "~/lib/native/types";
+import { CHART_STEPS } from "~/lib/steps";
 
 const route = getRouteApi("/project/$id");
 
@@ -192,7 +192,7 @@ export default function ProjectScreen() {
   const [pitch, setPitch] = createSignal<SungPitch | null>(null);
   const [waveform, setWaveform] = createSignal<Waveform | null>(null);
   /** Opening isn't finished: the pitch is being prepared (shown after a moment, with its progress). */
-  const [opening, setOpening] = createSignal<ImportProgress | null | undefined>(undefined);
+  const [opening, setOpening] = createSignal<Progress | null | undefined>(undefined);
 
   /** A media file's URL by role (the project's as changed: a new cover). */
   const media = (role: string) => projectMedia().find((item) => item.role === role)?.url;
@@ -1151,7 +1151,7 @@ export default function ProjectScreen() {
 }
 
 /** Over the editor while opening finishes: what is being prepared, and how far it is. */
-function OpeningOverlay(props: { progress: ImportProgress | null }) {
+function OpeningOverlay(props: { progress: Progress | null }) {
   return (
     <div
       class="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 bg-background/85"

@@ -8,7 +8,7 @@ import {
 import { Effect, FileSystem, Option, Path, Stream } from "effect";
 
 import { songFileName } from "../../src/lib/file-names";
-import type { ImportProgress, MediaRole, SongInspection, SongMediaFile } from "../../src/lib/native/types";
+import type { Progress, MediaRole, SongInspection, SongMediaFile } from "../../src/lib/native/types";
 import { ffmpegTools } from "../audio-file/audio-file";
 import {
   ChartUnreadable,
@@ -291,7 +291,7 @@ export interface ImportOptions {
  */
 export function separateSongFolder(
   source: SongSource,
-  onProgress: (progress: ImportProgress) => Effect.Effect<void> = () => Effect.void,
+  onProgress: (progress: Progress) => Effect.Effect<void> = () => Effect.void,
 ) {
   return Effect.gen(function* () {
     const audio = source.media.find((file) => file.role === "audio");
@@ -332,7 +332,7 @@ export function separateSongFolder(
 export function importSong(
   source: SongSource,
   options: ImportOptions,
-  onProgress: (progress: ImportProgress) => Effect.Effect<void> = () => Effect.void,
+  onProgress: (progress: Progress) => Effect.Effect<void> = () => Effect.void,
 ): Effect.Effect<
   ProjectSession,
   MissingMainAudio | ChartUnreadable | OpenError | DiskFull | FileError,

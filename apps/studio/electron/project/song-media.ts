@@ -6,7 +6,7 @@
 import { Effect, FileSystem, Path } from "effect";
 
 import type { SongMediaRole } from "../../src/lib/native/contract";
-import type { ImportProgress } from "../../src/lib/native/types";
+import type { Progress } from "../../src/lib/native/types";
 import { checkLength, ffmpegTools, probe } from "../audio-file/audio-file";
 import { mapFileError, MissingMainAudio, SeparationFailed } from "../errors";
 import { separateStems } from "../separation/separation";
@@ -53,7 +53,7 @@ export function removeVideo(session: ProjectSession) {
  */
 export function separateSong(
   session: ProjectSession,
-  onProgress: (progress: ImportProgress) => Effect.Effect<void> = () => Effect.void,
+  onProgress: (progress: Progress) => Effect.Effect<void> = () => Effect.void,
 ) {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;

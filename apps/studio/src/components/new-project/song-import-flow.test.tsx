@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Dialog, DialogContent } from "~/components/ui/dialog";
-import type { ImportProgress, SongInspection } from "~/lib/native/types";
+import type { Progress, SongInspection } from "~/lib/native/types";
 
 import { SongImportFlow } from "./song-import-flow";
 
@@ -35,7 +35,7 @@ const inspection = (overrides: Partial<SongInspection> = {}): SongInspection => 
   ...overrides,
 });
 
-async function* progress<R>(steps: ImportProgress[], result: R) {
+async function* progress<R>(steps: Progress[], result: R) {
   for (const step of steps) yield step;
   return result;
 }

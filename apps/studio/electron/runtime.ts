@@ -42,5 +42,3 @@ export function makeRuntime(logger: Logger, options: RuntimeOptions) {
     }),
   );
 }
-
-export type StudioRuntime = ReturnType<typeof makeRuntime>;

@@ -13,8 +13,15 @@ import { native } from "~/lib/native/client";
 import { LONGEST_SONG_SECONDS } from "~/lib/native/contract";
 import { errorMessage } from "~/lib/native/errors";
 import { follow } from "~/lib/native/progress";
-import type { ImportProgress, ModelStatus, OpenedProject, YoutubeVideo } from "~/lib/native/types";
+import type { Progress, ModelStatus, OpenedProject, YoutubeVideo } from "~/lib/native/types";
 import { AUDIO_FORMAT_LABELS, encodesAudio, type Settings, VIDEO_FORMAT_LABELS } from "~/lib/settings";
+import {
+  ADJUSTING_THE_VOLUME,
+  DOWNLOADING_THE_AUDIO,
+  DOWNLOADING_THE_VIDEO,
+  GETTING_SEPARATION_MODEL,
+  SEPARATING_THE_VOICE,
+} from "~/lib/steps";
 
 import { Checklist } from "./checklist";
 import { CoverPicker } from "./cover-picker";
@@ -41,11 +48,11 @@ export function describeDownload(settings: Settings): string {
  */
 export function downloadTasks(settings: Settings | null, models: ModelStatus | null): string[] {
   return [
-    "Downloading the audio",
-    ...(settings?.video.download === false ? [] : ["Downloading the video"]),
-    ...(settings && settings.audio.normalization !== "off" ? ["Adjusting the volume"] : []),
-    ...(models && !models.separation ? ["Getting the voice separation model"] : []),
-    "Separating the voice",
+    DOWNLOADING_THE_AUDIO,
+    ...(settings?.video.download === false ? [] : [DOWNLOADING_THE_VIDEO]),
+    ...(settings && settings.audio.normalization !== "off" ? [ADJUSTING_THE_VOLUME] : []),
+    ...(models && !models.separation ? [GETTING_SEPARATION_MODEL] : []),
+    SEPARATING_THE_VOICE,
   ];
 }
 
@@ -66,7 +73,7 @@ function youtubeSongStage(
   lookup: () => Lookup,
   onLookUp: () => void,
 ): Stage {
-  const [downloading, setDownloading] = createSignal<ImportProgress | null | undefined>(undefined);
+  const [downloading, setDownloading] = createSignal<Progress | null | undefined>(undefined);
   const [error, setError] = createSignal<string | null>(null);
   const video = () => {
     const current = lookup();

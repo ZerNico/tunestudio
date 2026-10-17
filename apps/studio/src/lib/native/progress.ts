@@ -3,10 +3,10 @@
  * running one to its end or until it is stopped.
  */
 import { isAbort } from "./errors";
-import type { ImportProgress } from "./types";
+import type { Progress } from "./types";
 
 /** How far a step is, in percent, or undefined when it can't say. */
-export const percentOf = (progress: ImportProgress | null) =>
+export const percentOf = (progress: Progress | null) =>
   progress && progress.total > 0 ? Math.min(100, Math.round((progress.done / progress.total) * 100)) : undefined;
 
 /**
@@ -15,9 +15,9 @@ export const percentOf = (progress: ImportProgress | null) =>
  * made can be cleaned up.
  */
 export async function follow<R>(
-  start: () => Promise<AsyncIterator<ImportProgress, R>>,
+  start: () => Promise<AsyncIterator<Progress, R>>,
   signal: AbortSignal,
-  onProgress: (progress: ImportProgress) => void,
+  onProgress: (progress: Progress) => void,
   onLate?: (result: R) => void,
 ): Promise<R | null> {
   const stopped = new Promise<null>((resolve) => {

@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Dialog, DialogContent } from "~/components/ui/dialog";
 import { MediaUnreadable } from "~/lib/errors";
 import { summarizeAudioFile } from "~/lib/import-files";
-import type { AudioFileDetails, DownloadedDraft, ImportProgress, ToolProgress, ToolStatus } from "~/lib/native/types";
+import type { AudioFileDetails, DownloadedDraft, Progress, ToolProgress, ToolStatus } from "~/lib/native/types";
 import { DEFAULT_SETTINGS } from "~/lib/settings";
 
 import { AudioFlow, importTasks } from "./audio-flow";
@@ -40,7 +40,7 @@ const toolsReady = (): AsyncIterator<ToolProgress, ToolStatus[]> => ({
   next: async () => ({ done: true, value: [] }),
 });
 
-async function* steps<R>(progress: ImportProgress[], result: R) {
+async function* steps<R>(progress: Progress[], result: R) {
   for (const step of progress) yield step;
   return result;
 }

@@ -7,7 +7,8 @@ import { languageName } from "~/lib/languages";
 import { native } from "~/lib/native/client";
 import { errorMessage } from "~/lib/native/errors";
 import { follow, percentOf } from "~/lib/native/progress";
-import type { ImportProgress, OpenedProject } from "~/lib/native/types";
+import type { Progress, OpenedProject } from "~/lib/native/types";
+import { SAVING_THE_PROJECT } from "~/lib/steps";
 
 import { ChartChoice } from "./chart-choice";
 import type { Stage } from "./flow-runner";
@@ -45,7 +46,7 @@ export function lyricsStage(project: NewProject): Stage {
 
 /** Whether to make the chart now; Next makes it (once for the same lyrics and language) and keeps it in the draft. */
 export function chartStage(project: NewProject): Stage {
-  const [making, setMaking] = createSignal<ImportProgress | null | undefined>(undefined);
+  const [making, setMaking] = createSignal<Progress | null | undefined>(undefined);
   const [error, setError] = createSignal<string | null>(null);
   return {
     id: "chart",
@@ -145,7 +146,7 @@ export function finishStage(
     onOpened: (opened: OpenedProject) => void;
   },
 ): Stage {
-  const [saving, setSaving] = createSignal<ImportProgress | null | undefined>(undefined);
+  const [saving, setSaving] = createSignal<Progress | null | undefined>(undefined);
   const [error, setError] = createSignal<string | null>(null);
   return {
     id: "finish",
@@ -239,7 +240,7 @@ export function finishStage(
           <Show when={saving() !== undefined}>
             <div class="flex flex-col gap-2" data-testid="finish-progress">
               <span class="text-[11px] text-popover-foreground" aria-live="polite">
-                {saving()?.step ?? "Saving the project"}…
+                {saving()?.step ?? SAVING_THE_PROJECT}…
               </span>
               <ProgressBar label="Saving progress" value={percentOf(saving() ?? null)} />
             </div>

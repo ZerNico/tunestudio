@@ -7,7 +7,7 @@
 import { createSignal } from "solid-js";
 
 import { errorMessage, isAbort } from "~/lib/native/errors";
-import type { ImportProgress } from "~/lib/native/types";
+import type { Progress } from "~/lib/native/types";
 
 import type { DrawnNote } from "./chart";
 
@@ -24,14 +24,14 @@ export function createAutoPitchJob(options: {
   request: (
     ids: number[],
     signal: AbortSignal,
-    onProgress: (progress: ImportProgress) => void,
+    onProgress: (progress: Progress) => void,
   ) => Promise<readonly { id: number; pitch: number }[] | null>;
   apply: (pitches: readonly { id: number; pitch: number }[], asked: ReadonlyMap<number, AskedNote>) => void;
   /** Tells the user something (nothing sung there; it failed). */
   onMessage: (message: { title: string; description?: string; error?: boolean }) => void;
 }) {
   /** At work (undefined: not), with its progress once there is some. */
-  const [progress, setProgress] = createSignal<ImportProgress | null | undefined>(undefined);
+  const [progress, setProgress] = createSignal<Progress | null | undefined>(undefined);
   /** The notes being worked on (they pulse). */
   const [pending, setPending] = createSignal<ReadonlySet<number>>(new Set());
   let controller: AbortController | undefined;

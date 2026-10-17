@@ -5,9 +5,10 @@
  */
 import { Effect, FileSystem, Path, Schema } from "effect";
 
-import { COPYING_THE_SONG, summarizeAudioFile } from "../../src/lib/import-files";
+import { summarizeAudioFile } from "../../src/lib/import-files";
 import { LONGEST_SONG_SECONDS } from "../../src/lib/native/contract";
-import type { AudioFileDetails, DownloadedDraft, ImportProgress } from "../../src/lib/native/types";
+import type { AudioFileDetails, DownloadedDraft, Progress } from "../../src/lib/native/types";
+import { COPYING_THE_SONG } from "../../src/lib/steps";
 import { MediaUnreadable, mapFileError, VideoDownloadFailed } from "../errors";
 import { separateStems } from "../separation/separation";
 import { Desktop } from "../services/desktop";
@@ -187,7 +188,7 @@ export function inspectAudioFile(file: string) {
  */
 export function audioFileIntoDraft(
   file: string,
-  onProgress: (progress: ImportProgress) => Effect.Effect<void> = () => Effect.void,
+  onProgress: (progress: Progress) => Effect.Effect<void> = () => Effect.void,
 ) {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;

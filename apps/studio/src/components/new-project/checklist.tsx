@@ -5,10 +5,10 @@ import LoaderCircleIcon from "~icons/lucide/loader-circle";
 import { ProgressBar } from "~/components/ui/progress-bar";
 import { formatFileSize } from "~/lib/format";
 import { percentOf } from "~/lib/native/progress";
-import type { ImportProgress } from "~/lib/native/types";
+import type { Progress } from "~/lib/native/types";
 
 /** How far the current task is, in words: a percentage, or bytes of a download. Nothing before it has started. */
-function figure(progress: ImportProgress | null): string | null {
+function figure(progress: Progress | null): string | null {
   if (!progress || progress.total <= 0) return null;
   if (progress.unit === "percent") return progress.done > 0 ? `${percentOf(progress)}%` : null;
   return `${formatFileSize(progress.done)} of ${formatFileSize(progress.total)}`;
@@ -25,7 +25,7 @@ export function Checklist(props: {
   label: string;
   testid: string;
   tasks: string[];
-  progress: ImportProgress | null;
+  progress: Progress | null;
 }) {
   const current = () => Math.max(0, props.tasks.indexOf(props.progress?.step ?? props.tasks[0]!));
   const value = () => (figure(props.progress) === null ? undefined : percentOf(props.progress));

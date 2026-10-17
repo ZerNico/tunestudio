@@ -19,7 +19,8 @@ import { formatFileSize } from "~/lib/format";
 import { native } from "~/lib/native/client";
 import { errorMessage } from "~/lib/native/errors";
 import { follow, percentOf } from "~/lib/native/progress";
-import type { ImportProgress, MediaRole, ModelStatus, OpenedProject, SongInspection } from "~/lib/native/types";
+import type { Progress, MediaRole, ModelStatus, OpenedProject, SongInspection } from "~/lib/native/types";
+import { GETTING_SEPARATION_MODEL, SEPARATING_THE_VOICE } from "~/lib/steps";
 
 /** Labels for media roles, in the order the dialog lists them. */
 export const ROLE_LABELS: Record<MediaRole, string> = {
@@ -66,8 +67,8 @@ export function SongImportFlow(props: {
   const [reading, setReading] = createSignal<Reading>({ status: "reading" });
   const [includeVideo, setIncludeVideo] = createSignal(true);
   const [models, setModels] = createSignal<ModelStatus | null>(null);
-  const [separating, setSeparating] = createSignal<ImportProgress | null | undefined>(undefined);
-  const [saving, setSaving] = createSignal<ImportProgress | null | undefined>(undefined);
+  const [separating, setSeparating] = createSignal<Progress | null | undefined>(undefined);
+  const [saving, setSaving] = createSignal<Progress | null | undefined>(undefined);
   const [error, setError] = createSignal<string | null>(null);
   const [draftId, setDraftId] = createSignal<string | null>(null);
   let saved = false;
@@ -174,10 +175,7 @@ export function SongImportFlow(props: {
             hint="This takes a minute or two."
             label="Separating"
             testid="song-separating"
-            tasks={[
-              ...(models() && !models()!.separation ? ["Getting the voice separation model"] : []),
-              "Separating the voice",
-            ]}
+            tasks={[...(models() && !models()!.separation ? [GETTING_SEPARATION_MODEL] : []), SEPARATING_THE_VOICE]}
             progress={separating() ?? null}
           />
         </Match>
@@ -437,7 +435,7 @@ function SongSummary(props: {
   );
 }
 
-function ImportProgressBar(props: { progress: ImportProgress | null }) {
+function ImportProgressBar(props: { progress: Progress | null }) {
   const percent = () => percentOf(props.progress) ?? 0;
   return (
     <div class="flex flex-col gap-2" data-testid="song-import-progress">

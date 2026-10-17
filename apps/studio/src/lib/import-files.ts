@@ -8,9 +8,6 @@ export const AUDIO_EXTENSIONS = new Set(["mp3", "m4a", "aac", "flac", "ogg", "og
 /** Video files UltraStar games play. */
 export const VIDEO_EXTENSIONS = new Set(["mp4", "m4v", "webm", "mkv", "mov", "avi"]);
 
-/** Importing an audio file's first step, as main reports it. */
-export const COPYING_THE_SONG = "Copying the song";
-
 /** The `accept` list for the audio file picker. */
 export const AUDIO_ACCEPT = [...AUDIO_EXTENSIONS].map((extension) => `.${extension}`).join(",");
 

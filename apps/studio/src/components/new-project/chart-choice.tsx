@@ -1,9 +1,9 @@
 import { Show } from "solid-js";
 
 import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
-import { chartTasks } from "~/lib/chart-steps";
 import { CHART_LANGUAGES, languageName } from "~/lib/languages";
-import type { ImportProgress, MadeChart } from "~/lib/native/types";
+import type { Progress, MadeChart } from "~/lib/native/types";
+import { chartTasks } from "~/lib/steps";
 
 import { Checklist } from "./checklist";
 import { LanguageSelect } from "./language-select";
@@ -35,7 +35,7 @@ export function ChartChoice(props: {
   /** The chart made for these lyrics and this language, if it was. */
   made: MadeChart | null;
   /** How far making the chart is, while it is made (null before the first step). */
-  making?: ImportProgress | null;
+  making?: Progress | null;
   disabled?: boolean;
   onLanguage: (language: string | null) => void;
   onMakeChart: (make: boolean) => void;

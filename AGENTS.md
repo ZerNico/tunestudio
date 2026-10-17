@@ -67,7 +67,7 @@ bun run test:e2e     # build, then the Playwright Electron end-to-end tests
 ```bash
 rg -n "createFileRoute" apps/*/src/routes      # find routes
 rg -n "export function" apps/studio/src/components/ui   # find UI primitives
-rg -n '^  "[a-z]+\.[a-zA-Z]+":' apps/studio/electron/rpc/procedures.ts   # find RPC handlers
+rg -n '^  "[a-z]+\.[a-zA-Z]+":' apps/studio/electron/rpc/handlers   # find RPC handlers
 ```
 
 ## Definition of Done

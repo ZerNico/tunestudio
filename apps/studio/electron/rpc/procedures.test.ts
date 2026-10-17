@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "@effect/vitest";
 import { Deferred, Effect, Fiber, Layer, Stream } from "effect";
 
 import { errorMessage } from "../../src/lib/native/errors";
-import type { ImportProgress, OpenedProject } from "../../src/lib/native/types";
+import type { Progress, OpenedProject } from "../../src/lib/native/types";
 import { AppLog } from "../services/app-log";
 import { soloChart, syntheticBytes, tempDir, testRuntime, writeSong } from "../testing";
 import { nativeHandlers, progressStream } from "./procedures";
@@ -42,8 +42,8 @@ async function rejection(promise: Promise<unknown>) {
 }
 
 /** Drains an import's progress and returns it with the opened project. */
-async function drain(iterator: AsyncIterator<ImportProgress, OpenedProject>) {
-  const progress: ImportProgress[] = [];
+async function drain(iterator: AsyncIterator<Progress, OpenedProject>) {
+  const progress: Progress[] = [];
   for (;;) {
     const next = await iterator.next();
     if (next.done) return { progress, project: next.value };

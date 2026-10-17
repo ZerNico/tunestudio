@@ -15,7 +15,7 @@ import { formatFileSize, formatRelativeTime } from "~/lib/format";
 import { MODEL_FEATURE_INFO, type ModelFeature } from "~/lib/models";
 import { native } from "~/lib/native/client";
 import { isAbort } from "~/lib/native/errors";
-import type { ImportProgress, ModelFeatureStatus, ToolName, ToolProgress, ToolStatus } from "~/lib/native/types";
+import type { Progress, ModelFeatureStatus, ToolName, ToolProgress, ToolStatus } from "~/lib/native/types";
 import {
   AUDIO_BITRATES,
   AUDIO_FORMAT_LABELS,
@@ -393,7 +393,7 @@ export function describeModels(status: ModelFeatureStatus): { state: string; det
 function ModelsSection(props: { initial: readonly ModelFeatureStatus[] }) {
   const [status, setStatus] = createSignal<readonly ModelFeatureStatus[]>(props.initial);
   /** The feature being downloaded or removed, and how far a download is. */
-  const [busy, setBusy] = createSignal<{ feature: ModelFeature; progress: ImportProgress | null } | null>(null);
+  const [busy, setBusy] = createSignal<{ feature: ModelFeature; progress: Progress | null } | null>(null);
   let controller: AbortController | undefined;
 
   onSettled(() => () => controller?.abort());

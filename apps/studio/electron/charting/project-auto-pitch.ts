@@ -4,8 +4,8 @@
  */
 import { Effect, FileSystem, Path } from "effect";
 
-import { FINDING_THE_PITCH, GETTING_CHART_MODELS, READING_SONG } from "../../src/lib/chart-steps";
-import type { ImportProgress } from "../../src/lib/native/types";
+import type { Progress } from "../../src/lib/native/types";
+import { FINDING_THE_PITCH, GETTING_CHART_MODELS, READING_SONG } from "../../src/lib/steps";
 import { abortable } from "../abortable";
 import { ChartFailed, mapFileError } from "../errors";
 import { Models } from "../models/models";
@@ -18,6 +18,7 @@ import type { ProjectSession } from "../project/projects";
 import { Tools } from "../tools/tools";
 import { decodeMono } from "./audio";
 import { autoPitch, type PitchNote } from "./auto-pitch";
+import { chartEngines } from "./engines";
 import { chartLanguage } from "./generate";
 import { GAME_SAMPLE_RATE } from "./pipeline";
 import { PITCH_SAMPLE_RATE } from "./pitch-track";
@@ -29,7 +30,7 @@ const MODELS = ["chartPitch", "chartNotes", "chartPitchFix"] as const;
 export function autoPitchNotes(
   session: ProjectSession,
   ids: readonly number[],
-  onProgress: (progress: ImportProgress) => Effect.Effect<void>,
+  onProgress: (progress: Progress) => Effect.Effect<void>,
 ) {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -93,13 +94,7 @@ export function autoPitchNotes(
               // GAME only tells English from the rest; another language listens as "the rest".
               language: typeof language === "string" ? { name: "other", code: "und" } : language,
             },
-            {
-              trackPitch: (samples) => addon.trackPitch(models.chartPitch, samples),
-              transcribeNotes: (samples, requests, gameLanguage, progress) =>
-                addon.transcribeNotes(models.chartNotes, samples, requests, gameLanguage, progress, signal),
-              harmonicRatios: (samples, notes) => addon.harmonicRatios(samples, notes),
-              predictPitchShifts: (features) => addon.predictPitchShifts(models.chartPitchFix, features),
-            },
+            chartEngines(addon, models, signal),
             (percent) =>
               Effect.runFork(onProgress({ step: FINDING_THE_PITCH, done: percent, total: 100, unit: "percent" })),
             signal,

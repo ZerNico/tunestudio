@@ -4,8 +4,8 @@
  */
 import { Effect, FileSystem } from "effect";
 
-import { CHART_STEPS, GETTING_CHART_MODELS, READING_SONG } from "../../src/lib/chart-steps";
-import type { ImportProgress } from "../../src/lib/native/types";
+import type { Progress } from "../../src/lib/native/types";
+import { CHART_STEPS, GETTING_CHART_MODELS, READING_SONG } from "../../src/lib/steps";
 import { abortable } from "../abortable";
 import { ChartFailed, mapFileError } from "../errors";
 import { CHART_MODELS, Models } from "../models/models";
@@ -15,25 +15,29 @@ import { AppLog } from "../services/app-log";
 import { Tools } from "../tools/tools";
 import { AlignFailed, type LyricLine } from "./align-stage";
 import { decodeMono } from "./audio";
-import { GAME_SAMPLE_RATE, makeChart, type ChartEngines, type ChartLanguage, type ChartStep } from "./pipeline";
+import { chartEngines } from "./engines";
+import { GAME_SAMPLE_RATE, makeChart, type ChartLanguage, type ChartStep } from "./pipeline";
 import { PITCH_SAMPLE_RATE } from "./pitch-track";
 import { toProjectChart, type ChartSongDetails } from "./project-chart";
 
-export { GETTING_CHART_MODELS, READING_SONG };
 const STEPS: Record<ChartStep, string> = CHART_STEPS;
 const BEAT_SAMPLE_RATE = 22_050;
 
-/** The languages charts can be made in so far, by the names projects store. */
-const LANGUAGES: Record<string, ChartLanguage> = {
-  english: { name: "english", code: "eng" },
-  german: { name: "german", code: "deu" },
-};
+/** The languages charts can be made in so far, by ISO 639-1 code. */
+export const CHART_LANGUAGES = {
+  en: { name: "english", code: "eng" },
+  de: { name: "german", code: "deu" },
+} as const satisfies Record<string, ChartLanguage>;
 
-/** The chart language for a project's languages (its first one), or why there is none. */
+/** The chart language for a project's languages (its first one, by the name projects store), or why there is none. */
 export function chartLanguage(languages: readonly string[]): ChartLanguage | string {
   const first = languages[0];
   if (!first) return "Set the song's language first.";
-  return LANGUAGES[first.trim().toLowerCase()] ?? `Charts can't be made in ${first} yet, only in English and German.`;
+  const name = first.trim().toLowerCase();
+  return (
+    Object.values(CHART_LANGUAGES).find((language) => language.name === name) ??
+    `Charts can't be made in ${first} yet, only in English and German.`
+  );
 }
 
 /** What a chart is made from: the vocal stem and the song as files, the lyrics and their language. */
@@ -51,7 +55,7 @@ export interface ChartSource {
 export function chartFromFiles(
   source: ChartSource,
   details: ChartSongDetails,
-  onProgress: (progress: ImportProgress) => Effect.Effect<void>,
+  onProgress: (progress: Progress) => Effect.Effect<void>,
 ) {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -78,22 +82,9 @@ export function chartFromFiles(
     const started = Date.now();
     const result = yield* abortable({
       try: (signal) => {
-        const engines: ChartEngines = {
-          trackPitch: (samples) => addon.trackPitch(models.chartPitch, samples),
-          beatLogits: (samples) => addon.beatLogits(models.chartSpectrogram, models.chartBeats, samples),
-          alignerOutputs: (samples, progress) =>
-            addon.alignerOutputs(models.chartAligner, models.chartBoundary, samples, progress, signal),
-          forcedAlign: (emissions, classes, from, to, targets) =>
-            addon.forcedAlignPath(emissions, classes, from, to, targets),
-          transcribeNotes: (samples, requests, gameLanguage, progress) =>
-            addon.transcribeNotes(models.chartNotes, samples, requests, gameLanguage, progress, signal),
-          harmonicRatios: (samples, notes) => addon.harmonicRatios(samples, notes),
-          predictPitchShifts: (features) => addon.predictPitchShifts(models.chartPitchFix, features),
-          predictNoteEnds: (features) => addon.predictNoteEnds(models.chartNoteEnds, features),
-        };
         return makeChart(
           { vocals16k, vocals44k, mix22k, lines, language: source.language },
-          engines,
+          chartEngines(addon, models, signal),
           (step, percent) =>
             Effect.runFork(onProgress({ step: STEPS[step], done: percent, total: 100, unit: "percent" })),
           signal,

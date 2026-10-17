@@ -8,7 +8,8 @@ import { chartInputsKey } from "../../src/lib/chart-inputs";
 import { songFileName } from "../../src/lib/file-names";
 import { languageName } from "../../src/lib/languages";
 import type { DraftProjectInput } from "../../src/lib/native/contract";
-import type { ImportProgress, MadeChart } from "../../src/lib/native/types";
+import type { Progress, MadeChart } from "../../src/lib/native/types";
+import { SAVING_THE_PROJECT } from "../../src/lib/steps";
 import { watchUrl } from "../../src/lib/youtube";
 import { chartFromFiles, chartLanguage } from "../charting/generate";
 import type { ChartSongDetails } from "../charting/project-chart";
@@ -60,7 +61,7 @@ function downloadedDraft(draftId: string) {
 export function listenToDraft(
   draftId: string,
   heard: { language: string | null; mixed: boolean },
-  onProgress: (progress: ImportProgress) => Effect.Effect<void> = () => Effect.void,
+  onProgress: (progress: Progress) => Effect.Effect<void> = () => Effect.void,
 ) {
   return Effect.gen(function* () {
     const draft = yield* downloadedDraft(draftId);
@@ -78,7 +79,7 @@ export function listenToDraft(
  */
 export function makeDraftChart(
   input: { draftId: string; lines: readonly { start: number | null; text: string }[]; language: string },
-  onProgress: (progress: ImportProgress) => Effect.Effect<void> = () => Effect.void,
+  onProgress: (progress: Progress) => Effect.Effect<void> = () => Effect.void,
 ) {
   return Effect.gen(function* () {
     const drafts = yield* Drafts;
@@ -114,7 +115,7 @@ export function makeDraftChart(
  */
 export function createDraftProject(
   input: DraftProjectInput,
-  onProgress: (progress: ImportProgress) => Effect.Effect<void> = () => Effect.void,
+  onProgress: (progress: Progress) => Effect.Effect<void> = () => Effect.void,
 ) {
   return Effect.scoped(
     Effect.gen(function* () {
@@ -230,7 +231,7 @@ export function createDraftProject(
 
       const session = yield* projects.create(input.target, (db) =>
         Effect.gen(function* () {
-          yield* onProgress({ step: "Saving the project", done: 0, total: 0 });
+          yield* onProgress({ step: SAVING_THE_PROJECT, done: 0, total: 0 });
           yield* db
             .transaction((tx) =>
               Effect.gen(function* () {

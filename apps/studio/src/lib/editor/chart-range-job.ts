@@ -4,7 +4,7 @@ import { rangeProblem } from "~/lib/chart-range";
 import { ChartFailed } from "~/lib/errors";
 import type { ChartRangeInput } from "~/lib/native/contract";
 import { errorMessage, isAbort } from "~/lib/native/errors";
-import type { ImportProgress, RangeChart } from "~/lib/native/types";
+import type { Progress, RangeChart } from "~/lib/native/types";
 
 import { replaceRange, validRangeChart } from "./chart-range";
 import type { ChartDocument } from "./document";
@@ -21,11 +21,11 @@ export function createChartRangeJob(options: {
   request: (
     input: ChartRangeInput,
     signal: AbortSignal,
-    onProgress: (progress: ImportProgress) => void,
+    onProgress: (progress: Progress) => void,
   ) => Promise<RangeChart | null>;
   onDone: () => void;
 }) {
-  const [progress, setProgress] = createSignal<ImportProgress | null | undefined>();
+  const [progress, setProgress] = createSignal<Progress | null | undefined>();
   const [error, setError] = createSignal<string | null>(null);
   let controller: AbortController | undefined;
   const stop = () => {

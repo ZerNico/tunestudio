@@ -9,7 +9,7 @@ import { NOTHING, type Selection } from "~/lib/editor/selection";
 import { testNote, testSong } from "~/lib/editor/test-chart";
 import { ChartFailed } from "~/lib/errors";
 import type { ChartRangeInput } from "~/lib/native/contract";
-import type { EditorChart, ImportProgress, RangeChart } from "~/lib/native/types";
+import type { EditorChart, Progress, RangeChart } from "~/lib/native/types";
 
 import { ChartRangeDialog } from "./chart-range-dialog";
 
@@ -49,7 +49,7 @@ function setup() {
     });
     const pending = { promise, resolve, reject };
     const request = vi.fn(
-      async (_input: ChartRangeInput, _signal: AbortSignal, progress: (value: ImportProgress) => void) => {
+      async (_input: ChartRangeInput, _signal: AbortSignal, progress: (value: Progress) => void) => {
         progress({ step: "Aligning lyrics", done: 40, total: 100 });
         return pending.promise;
       },

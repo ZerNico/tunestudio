@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 
-import type { HeardLyrics, ImportProgress } from "../../src/lib/native/types";
+import type { HeardLyrics, Progress } from "../../src/lib/native/types";
+import { GETTING_LISTENING_MODEL, LISTENING_TO_THE_SONG } from "../../src/lib/steps";
 import { abortable } from "../abortable";
 import { ListeningFailed } from "../errors";
 import { Models } from "../models/models";
@@ -8,9 +9,6 @@ import { Native } from "../native/native";
 import { AppLog } from "../services/app-log";
 import { decodeF32 } from "../tools/ffmpeg";
 import { voicedRanges } from "./ranges";
-
-export const LISTENING = "Listening to the song";
-export const GETTING_LISTENING_MODEL = "Getting the listening model";
 
 const failed = (message: string) => new ListeningFailed({ message: `Couldn't listen to the song: ${message}` });
 
@@ -89,7 +87,7 @@ export function lyricsLines(
  */
 export function listenToVocals(
   input: { ffmpeg: string; vocals: string; folder: string; language: string | null; mixed: boolean },
-  onProgress: (progress: ImportProgress) => Effect.Effect<void>,
+  onProgress: (progress: Progress) => Effect.Effect<void>,
 ) {
   return Effect.gen(function* () {
     const log = yield* AppLog;
@@ -99,7 +97,7 @@ export function listenToVocals(
     const model = yield* (yield* Models).ensure("whisper", (received, total) =>
       onProgress({ step: GETTING_LISTENING_MODEL, done: received, total }),
     );
-    yield* onProgress({ step: LISTENING, done: 0, total: 100, unit: "percent" });
+    yield* onProgress({ step: LISTENING_TO_THE_SONG, done: 0, total: 100, unit: "percent" });
 
     return yield* Effect.gen(function* () {
       const samples = yield* decodeF32(
@@ -120,7 +118,8 @@ export function listenToVocals(
             model,
             samples,
             { language: input.language ?? undefined, ranges, mixed: input.mixed },
-            (percent) => Effect.runFork(onProgress({ step: LISTENING, done: percent, total: 100, unit: "percent" })),
+            (percent) =>
+              Effect.runFork(onProgress({ step: LISTENING_TO_THE_SONG, done: percent, total: 100, unit: "percent" })),
             signal,
           ),
         catch: (error) => failed(error instanceof Error ? error.message : String(error)),

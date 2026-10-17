@@ -9,11 +9,12 @@ import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Note } from "~/components/ui/note";
 import { formatDuration, formatFileSize } from "~/lib/format";
-import { type AudioFileSummary, COPYING_THE_SONG } from "~/lib/import-files";
+import type { AudioFileSummary } from "~/lib/import-files";
 import { native } from "~/lib/native/client";
 import { errorMessage } from "~/lib/native/errors";
 import { follow } from "~/lib/native/progress";
-import type { AudioFileDetails, ImportProgress, ModelStatus, OpenedProject } from "~/lib/native/types";
+import type { AudioFileDetails, Progress, ModelStatus, OpenedProject } from "~/lib/native/types";
+import { COPYING_THE_SONG, GETTING_SEPARATION_MODEL, SEPARATING_THE_VOICE } from "~/lib/steps";
 
 import { Checklist } from "./checklist";
 import { CoverPicker } from "./cover-picker";
@@ -27,11 +28,7 @@ export const AUDIO_STAGES = ["Song", "Lyrics", "Chart", "Finish"];
 
 /** The import step's checklist, in the order main reports it. The voice separation model is downloaded once. */
 export function importTasks(models: ModelStatus | null): string[] {
-  return [
-    COPYING_THE_SONG,
-    ...(models && !models.separation ? ["Getting the voice separation model"] : []),
-    "Separating the voice",
-  ];
+  return [COPYING_THE_SONG, ...(models && !models.separation ? [GETTING_SEPARATION_MODEL] : []), SEPARATING_THE_VOICE];
 }
 
 /** Reading the file: FFmpeg first, then what the file says about itself. */
@@ -46,7 +43,7 @@ type Reading =
  * the file into a draft as it is and separates the voice (once: going back and on keeps it).
  */
 function audioSongStage(project: NewProject, path: () => string, reading: () => Reading, onRead: () => void): Stage {
-  const [importing, setImporting] = createSignal<ImportProgress | null | undefined>(undefined);
+  const [importing, setImporting] = createSignal<Progress | null | undefined>(undefined);
   const [error, setError] = createSignal<string | null>(null);
   const details = () => {
     const current = reading();

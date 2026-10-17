@@ -11,7 +11,8 @@ import { formatFileSize } from "~/lib/format";
 import { LANGUAGES, languageName } from "~/lib/languages";
 import { guessLyricsLanguage } from "~/lib/lyrics-language";
 import { percentOf } from "~/lib/native/progress";
-import type { FoundLyrics, HeardLyrics, ImportProgress } from "~/lib/native/types";
+import type { FoundLyrics, HeardLyrics, Progress } from "~/lib/native/types";
+import { GETTING_LISTENING_MODEL } from "~/lib/steps";
 
 /** The lyrics search: still running, done with what was found, or the lyrics service couldn't be reached. */
 export type LyricsSearch =
@@ -22,7 +23,7 @@ export type LyricsSearch =
 /** Whisper listening to the song: not asked yet, at work, done, or failed. */
 export type Listening =
   | { status: "idle" }
-  | { status: "listening"; progress: ImportProgress | null }
+  | { status: "listening"; progress: Progress | null }
   | { status: "done"; heard: HeardLyrics }
   /** `request` is what was asked for, so trying again asks for the same. */
   | { status: "failed"; message: string; request: HeardLanguage };
@@ -88,8 +89,8 @@ export function languageMismatch(
 }
 
 /** How far listening is, in a few words. */
-function describeListening(progress: ImportProgress | null): string {
-  if (progress?.step === "Getting the listening model") {
+function describeListening(progress: Progress | null): string {
+  if (progress?.step === GETTING_LISTENING_MODEL) {
     return `Getting the listening model (first time only)… ${formatFileSize(progress.done)} of ${formatFileSize(progress.total)}`;
   }
   return `Listening to the song… ${percentOf(progress) ?? 0}%`;

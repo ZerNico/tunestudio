@@ -2,8 +2,9 @@ import { Data, Effect, FileSystem, Path, Schedule, Schema } from "effect";
 
 import { languageCode } from "../../src/lib/languages";
 import { LONGEST_SONG_SECONDS } from "../../src/lib/native/contract";
-import type { ImportProgress, YoutubeVideo } from "../../src/lib/native/types";
+import type { Progress, YoutubeVideo } from "../../src/lib/native/types";
 import type { Settings, VideoFormat } from "../../src/lib/settings";
+import { ADJUSTING_THE_VOLUME, DOWNLOADING_THE_AUDIO, DOWNLOADING_THE_VIDEO } from "../../src/lib/steps";
 import { suggestSongDetails, watchUrl } from "../../src/lib/youtube";
 import { VideoDownloadFailed, VideoUnavailable } from "../errors";
 import { AppLog } from "../services/app-log";
@@ -302,7 +303,7 @@ function fetchStream(
     /** Seconds: a longer video isn't downloaded (one whose length isn't known is). */
     longest?: number;
   },
-  onProgress: (progress: ImportProgress) => Effect.Effect<void>,
+  onProgress: (progress: Progress) => Effect.Effect<void>,
 ) {
   const attempt = Effect.gen(function* () {
     const path = yield* Path.Path;
@@ -394,7 +395,7 @@ export function downloadVideo(
   videoId: string,
   settings: Settings,
   folder: string,
-  onProgress: (progress: ImportProgress) => Effect.Effect<void>,
+  onProgress: (progress: Progress) => Effect.Effect<void>,
 ) {
   return Effect.gen(function* () {
     if (!VIDEO_ID.test(videoId)) {
@@ -407,7 +408,7 @@ export function downloadVideo(
 
     const downloaded = yield* withYtDlp((tools) =>
       Effect.gen(function* () {
-        yield* onProgress({ step: "Downloading the audio", done: 0, total: 0 });
+        yield* onProgress({ step: DOWNLOADING_THE_AUDIO, done: 0, total: 0 });
         const audioFile = yield* fetchStream(
           tools,
           videoId,
@@ -425,7 +426,7 @@ export function downloadVideo(
               "-o",
               `thumbnail:${path.join(folder, "thumbnail.%(ext)s")}`,
             ],
-            step: "Downloading the audio",
+            step: DOWNLOADING_THE_AUDIO,
             folder,
             // The renderer turns longer videos away too; this holds for any caller.
             longest: LONGEST_SONG_SECONDS,
@@ -442,13 +443,13 @@ export function downloadVideo(
     let video: string | null = null;
     let videoProblem: string | null = null;
     if (videoSettings.download) {
-      yield* onProgress({ step: "Downloading the video", done: 0, total: 0 });
+      yield* onProgress({ step: DOWNLOADING_THE_VIDEO, done: 0, total: 0 });
       const result = yield* Effect.result(
         withYtDlp((tools) =>
           fetchStream(
             tools,
             videoId,
-            { name: "video", format: videoFormat(videoSettings), extra: [], step: "Downloading the video", folder },
+            { name: "video", format: videoFormat(videoSettings), extra: [], step: DOWNLOADING_THE_VIDEO, folder },
             onProgress,
           ),
         ),
@@ -460,7 +461,7 @@ export function downloadVideo(
     const { tools } = downloaded;
     let audioFile = downloaded.audioFile;
     if (audio.normalization !== "off") {
-      yield* onProgress({ step: "Adjusting the volume", done: 0, total: 0 });
+      yield* onProgress({ step: ADJUSTING_THE_VOLUME, done: 0, total: 0 });
       if (rewrite) {
         const normalized = path.join(folder, `audio.${audio.format}`);
         yield* rewriteLoudness(tools.ffmpeg, audioFile, normalized, { format: audio.format, bitrate: audio.bitrate });
