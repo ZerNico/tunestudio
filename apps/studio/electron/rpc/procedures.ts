@@ -14,7 +14,7 @@ import { autoPitchNotes } from "../charting/project-auto-pitch";
 import { chartProjectRange } from "../charting/project-range-chart";
 import { syllabify } from "../charting/syllables";
 import { createDraftProject, listenToDraft, makeDraftChart } from "../drafts/draft-project";
-import { ImageUnreadable } from "../errors";
+import { FileSystemFailure, ImageUnreadable, quoted } from "../errors";
 import { downloadFeature, modelFeatures, removeFeature } from "../models/features";
 import { CHART_MODELS, type ModelName, Models } from "../models/models";
 import { setArtwork } from "../project/artwork";
@@ -42,7 +42,7 @@ import { inspectVideo } from "../youtube/youtube";
 import { downloadIntoDraft } from "../youtube/youtube-draft";
 
 /** The default folder for new projects, under the user's Music folder. */
-export const PROJECTS_FOLDER = "Tune Studio";
+const PROJECTS_FOLDER = "Tune Studio";
 
 /**
  * The windows calls come from, by their connection's client id (`port-protocol.ts`), for dialogs to belong to; and
@@ -56,14 +56,22 @@ export class Callers extends Context.Service<
 const windowOf = (client: { readonly id: number }) => Callers.useSync((callers) => callers.windowOf(client.id));
 
 /** `path`, if the user picked or dropped it in this session (or it is a listed recent project). */
-export const allowedPath = (path: string) =>
+const allowedPath = (path: string) =>
   Effect.gen(function* () {
     const grants = yield* PathGrants;
     if (!(yield* grants.allows(path))) return yield* notAllowed();
     return normalizePath(path);
   });
 
+/**
+ * An open project, for calls that may take long (FFmpeg or a model downloaded first): closing it doesn't wait for them,
+ * only for a transaction of theirs in progress, and each change of theirs is one transaction.
+ */
 const project = (id: string) => Projects.use((projects) => projects.get(id));
+
+/** Runs `use` on an open project as a call closing it waits for. */
+const withProject = <A, E, R>(id: string, use: (session: ProjectSession) => Effect.Effect<A, E, R>) =>
+  Projects.use((projects) => projects.track(id, use));
 
 const grant = (path: string | null) =>
   path === null
@@ -74,17 +82,7 @@ const grant = (path: string | null) =>
       );
 
 /** Puts an opened project at the top of the recents; failing to save the list doesn't stop the open. */
-/** A project opened for the window `client` is in: remembered in recents, and that window shows it. */
-const openedIn = (client: { readonly id: number }, session: ProjectSession) =>
-  Effect.gen(function* () {
-    const opened = yield* remember(session);
-    const window = yield* windowOf(client);
-    const { windows } = yield* Callers;
-    if (window) windows?.show(window, { id: opened.id, path: session.path });
-    return opened;
-  });
-
-export const remember = (session: ProjectSession) =>
+const remember = (session: ProjectSession) =>
   Effect.gen(function* () {
     const desktop = yield* Desktop;
     const recents = yield* Recents;
@@ -96,6 +94,30 @@ export const remember = (session: ProjectSession) =>
     }
     yield* PathGrants.use((grants) => grants.grant(session.path));
     return { id: session.id, path: session.path } satisfies OpenedProject;
+  });
+
+/** A project opened for the window `client` is in: remembered in recents, and that window shows it. */
+const openedIn = (client: { readonly id: number }, session: ProjectSession) =>
+  Effect.gen(function* () {
+    const opened = yield* remember(session);
+    const window = yield* windowOf(client);
+    const { windows } = yield* Callers;
+    if (window) windows?.show(window, { id: opened.id, path: session.path });
+    return opened;
+  });
+
+/**
+ * A new project can't replace one a window shows: that window's edits would go on in a file that is gone. (Creating
+ * it closes a session nobody shows.)
+ */
+const notShown = (target: string) =>
+  Effect.gen(function* () {
+    const { windows } = yield* Callers;
+    if (!windows?.showing(target)) return;
+    const name = (yield* Path.Path).basename(target);
+    return yield* new FileSystemFailure({
+      message: `${quoted(name)} is open in Tune Studio. Close it first, or save the new project under another name.`,
+    });
   });
 
 /** A call's progress events, then its result (the shape `progress` in contract.ts describes). */
@@ -164,8 +186,7 @@ export const nativeHandlers = NativeRpcs.toLayer({
         yield* windowOf(client),
         paths.join(folder, `${safeFileName(input.name)}.tunestudio`),
       );
-      if (!chosen) return null;
-      return yield* grant(chosen.toLowerCase().endsWith(".tunestudio") ? chosen : `${chosen}.tunestudio`);
+      return yield* grant(chosen);
     }),
   "dialogs.chooseMediaFile": (input, { client }) =>
     Effect.gen(function* () {
@@ -180,8 +201,7 @@ export const nativeHandlers = NativeRpcs.toLayer({
         yield* windowOf(client),
         paths.join(desktop.musicFolder, `${safeFileName(input.name)}.txt`),
       );
-      if (!chosen) return null;
-      return yield* grant(chosen.toLowerCase().endsWith(".txt") ? chosen : `${chosen}.txt`);
+      return yield* grant(chosen);
     }),
   "dialogs.chooseExportFolder": (_, { client }) =>
     Effect.gen(function* () {
@@ -213,6 +233,7 @@ export const nativeHandlers = NativeRpcs.toLayer({
       Effect.gen(function* () {
         const path = yield* allowedPath(input.path);
         const target = yield* allowedPath(input.target);
+        yield* notShown(target);
         const source = yield* inspectSong(path, input.chart);
         const media = input.draftId ? (yield* Drafts.use((drafts) => drafts.get(input.draftId!))).media : null;
         const stems =
@@ -237,12 +258,14 @@ export const nativeHandlers = NativeRpcs.toLayer({
       const session = yield* Projects.use((projects) => projects.open(path));
       return yield* openedIn(client, session);
     }),
-  "project.overview": (input) => Effect.flatMap(project(input.id), projectOverview),
+  "project.overview": (input) => withProject(input.id, projectOverview),
   "project.close": (input, { client }) =>
     Effect.gen(function* () {
       const window = yield* windowOf(client);
       const { windows } = yield* Callers;
       if (window) windows?.show(window, null);
+      // Another window showing it (opened again from its start screen) keeps it open.
+      if (windows?.showsSession(input.id)) return;
       yield* Projects.use((projects) => projects.close(input.id));
     }),
   "windows.takeOpenRequest": (_, { client }) =>
@@ -257,7 +280,7 @@ export const nativeHandlers = NativeRpcs.toLayer({
     }),
   "project.pitch": (input) =>
     progressStream((onProgress) => Effect.flatMap(project(input.id), (session) => sungPitch(session, onProgress))),
-  "project.waveform": (input) => Effect.flatMap(project(input.id), (session) => waveform(session)),
+  "project.waveform": (input) => Effect.flatMap(project(input.id), waveform),
   "project.replaceMedia": (input) =>
     Effect.gen(function* () {
       const path = yield* allowedPath(input.path);
@@ -266,7 +289,7 @@ export const nativeHandlers = NativeRpcs.toLayer({
       return yield* projectOverview(session);
     }),
   "project.removeVideo": (input) =>
-    Effect.flatMap(project(input.id), (session) => Effect.andThen(removeVideo(session), projectOverview(session))),
+    withProject(input.id, (session) => Effect.andThen(removeVideo(session), projectOverview(session))),
   "project.separate": (input) =>
     progressStream((onProgress) =>
       Effect.flatMap(project(input.id), (session) =>
@@ -286,8 +309,9 @@ export const nativeHandlers = NativeRpcs.toLayer({
       }),
     ),
   "project.applyChanges": (input) =>
-    Effect.flatMap(project(input.id), (session) =>
-      session.db.transaction((tx) => applyChartChanges(tx, input.changes)),
+    withProject(input.id, (session) =>
+      // A save that started finishes even if its window closes meanwhile: stopped halfway, it would roll back.
+      session.db.transaction((tx) => applyChartChanges(tx, input.changes)).pipe(Effect.uninterruptible),
     ),
   "project.autoPitch": (input) =>
     progressStream((onProgress) =>
@@ -297,17 +321,16 @@ export const nativeHandlers = NativeRpcs.toLayer({
     progressStream((onProgress) =>
       Effect.flatMap(project(input.id), (session) => chartProjectRange(session, input, onProgress)),
     ),
-  "project.chart": (input) => Effect.flatMap(project(input.id), (session) => readEditorChart(session.db)),
+  "project.chart": (input) => withProject(input.id, (session) => readEditorChart(session.db)),
   "project.exportUsdb": (input) =>
     Effect.gen(function* () {
       const path = yield* allowedPath(input.path);
-      return yield* exportUsdb(yield* project(input.id), path);
+      return yield* withProject(input.id, (session) => exportUsdb(session, path));
     }),
   "project.exportSong": (input) =>
     Effect.gen(function* () {
       const folder = yield* allowedPath(input.folder);
-      const session = yield* project(input.id);
-      const result = yield* exportSong(session, folder, input.replace);
+      const result = yield* withProject(input.id, (session) => exportSong(session, folder, input.replace));
       yield* grant(result.folder);
       return result;
     }),
@@ -354,6 +377,7 @@ export const nativeHandlers = NativeRpcs.toLayer({
     progressStream((onProgress) =>
       Effect.gen(function* () {
         const target = yield* allowedPath(input.target);
+        yield* notShown(target);
         const cover =
           input.cover.kind === "file"
             ? { kind: "file" as const, path: yield* allowedPath(input.cover.path) }

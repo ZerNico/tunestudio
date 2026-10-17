@@ -8,10 +8,10 @@ import { suggestSongDetails, watchUrl } from "../../src/lib/youtube";
 import { VideoDownloadFailed, VideoUnavailable } from "../errors";
 import { AppLog } from "../services/app-log";
 import { THUMBNAIL_HOSTS } from "../tools/downloads";
+import { lastLine, localInput, runTool } from "../tools/ffmpeg";
 import { Tools } from "../tools/tools";
 import { previewImage } from "./covers";
-import { lastLine, rewriteLoudness, writeGainTags } from "./loudness";
-import { runTool } from "./run";
+import { rewriteLoudness, writeGainTags } from "./loudness";
 
 /*
  * YouTube through yt-dlp, with QuickJS answering YouTube's JavaScript checks and FFmpeg
@@ -86,6 +86,9 @@ function baseArgs(tools: YoutubeTools, path: Path.Path): string[] {
     tools.cacheDir,
   ];
 }
+
+/** What yt-dlp runs besides itself, kept from being removed while it runs. */
+const helpersOf = (tools: YoutubeTools) => [tools.qjs, tools.ffmpeg];
 
 const unavailable = (message: string) => new VideoUnavailable({ message });
 
@@ -185,6 +188,7 @@ export function inspectVideo(videoId: string) {
           tools.ytDlp,
           [...baseArgs(tools, path), "--skip-download", "--dump-single-json", "--", watchUrl(videoId)],
           (line) => Effect.sync(() => void (json += line)),
+          { uses: helpersOf(tools) },
         ).pipe(Effect.mapError((message) => new VideoDownloadFailed({ message: `Couldn't start yt-dlp: ${message}` })));
         if (result.code !== 0) {
           yield* AppLog.use((log) => log.write("WARN", "youtube", lastLine(result.stderr)));
@@ -319,6 +323,8 @@ function fetchStream(
         "--print",
         "after_move:@file %(filepath)s",
         "--no-part",
+        // Without .part files, a run cut short leaves a truncated file; the next attempt mustn't take it as done.
+        "--force-overwrites",
         "-f",
         options.format,
         ...(options.longest ? ["--match-filters", `duration<=?${options.longest}`] : []),
@@ -341,6 +347,7 @@ function fetchStream(
         if (length) duration = Number(length[1]);
         return Effect.void;
       },
+      { uses: helpersOf(tools) },
     ).pipe(Effect.mapError((message) => new VideoDownloadFailed({ message: `Couldn't start yt-dlp: ${message}` })));
     if (result.code !== 0) {
       yield* AppLog.use((log) => log.write("WARN", "youtube", lastLine(result.stderr)));
@@ -485,8 +492,7 @@ function squareCover(ffmpeg: string, thumbnail: string, cover: string) {
       "-hide_banner",
       "-nostats",
       "-y",
-      "-i",
-      thumbnail,
+      ...localInput(thumbnail),
       "-vf",
       "crop='min(iw,ih)':'min(iw,ih)'",
       "-frames:v",

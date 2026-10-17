@@ -1,14 +1,17 @@
+import { randomUUID } from "node:crypto";
+
 import { Effect, FileSystem, Path } from "effect";
 
 import { LONGEST_SONG_SECONDS } from "../../src/lib/native/contract";
 import type { ImportProgress } from "../../src/lib/native/types";
 import type { AudioFormat } from "../../src/lib/settings";
+import { abortable } from "../abortable";
 import { mapFileError, SeparationFailed } from "../errors";
 import { Models } from "../models/models";
 import { Native } from "../native/native";
 import { AppLog } from "../services/app-log";
-import { ENCODERS, lastLine } from "../youtube/loudness";
-import { runTool } from "../youtube/run";
+import { decodeF32, lastLine, localInput, PROBE_LOCAL_ONLY, runTool } from "../tools/ffmpeg";
+import { ENCODERS } from "../youtube/loudness";
 
 export const SEPARATING = "Separating the voice";
 export const GETTING_MODEL = "Getting the voice separation model";
@@ -38,6 +41,7 @@ export function audioBitrate(ffprobe: string, file: string) {
         "stream=bit_rate:format=bit_rate",
         "-of",
         "csv=p=0",
+        ...PROBE_LOCAL_ONLY,
         file,
       ],
       (line) => Effect.sync(() => void lines.push(line)),
@@ -71,8 +75,8 @@ export function separateStems(
     );
     yield* onProgress({ step: SEPARATING, done: 0, total: 100, unit: "percent" });
 
-    const mixFile = paths.join(input.folder, "mix.f32");
-    const raw = paths.join(input.folder, "stem.f32");
+    // Its own name: a cancelled separation may still be finishing in the same folder.
+    const raw = paths.join(input.folder, `stem-${randomUUID().slice(0, 8)}.f32`);
     const source = yield* audioBitrate(input.ffprobe, input.audio);
     const bitrate = source === null ? input.bitrate : Math.min(input.bitrate, source);
 
@@ -86,8 +90,7 @@ export function separateStems(
           "-nostats",
           "-y",
           ...rawArgs(sampleRate),
-          "-i",
-          raw,
+          ...localInput(raw),
           ...(input.format === "opus" ? ["-ar", "48000"] : []),
           "-c:a",
           ENCODERS[input.format],
@@ -100,29 +103,16 @@ export function separateStems(
       });
 
     return yield* Effect.gen(function* () {
-      const decode = yield* runTool(input.ffmpeg, [
-        "-hide_banner",
-        "-nostats",
-        "-y",
-        "-i",
+      const mix = yield* decodeF32(
+        input.ffmpeg,
         input.audio,
-        "-map",
-        "0:a:0",
-        "-vn",
-        ...rawArgs(sampleRate),
-        mixFile,
-      ]).pipe(Effect.mapError(failed));
-      if (decode.code !== 0) return yield* failed(lastLine(decode.stderr));
-
+        { sampleRate, channels: 2, folder: input.folder, what: "the song" },
+        failed,
+      );
       // Separation holds the song in memory several times over: hour-long uploads aren't songs.
-      const size = Number((yield* fs.stat(mixFile).pipe(mapFileError("the song", "read"))).size);
-      if (size / (4 * 2 * sampleRate) > LONGEST_SONG_SECONDS) {
+      if (mix.length / (2 * sampleRate) > LONGEST_SONG_SECONDS) {
         return yield* failed(`the song is longer than ${LONGEST_SONG_SECONDS / 60} minutes.`);
       }
-      const read = yield* fs.readFile(mixFile).pipe(mapFileError("the song", "read"));
-      // Float32Array needs its start aligned to 4 bytes.
-      const bytes = read.byteOffset % 4 === 0 ? read : read.slice();
-      const mix = new Float32Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.byteLength / 4));
       const frames = Math.floor(mix.length / 2);
       const left = new Float32Array(frames);
       const right = new Float32Array(frames);
@@ -130,10 +120,9 @@ export function separateStems(
         left[i] = mix[2 * i]!;
         right[i] = mix[2 * i + 1]!;
       }
-      yield* fs.remove(mixFile).pipe(Effect.ignore);
 
       const started = Date.now();
-      const stems = yield* Effect.tryPromise({
+      const stems = yield* abortable({
         try: (signal) =>
           addon.separateVocals(
             model,
@@ -167,10 +156,6 @@ export function separateStems(
         vocals: yield* encode(vocals, "vocals"),
         instrumental: yield* encode(instrumental, "instrumental"),
       };
-    }).pipe(
-      Effect.ensuring(
-        Effect.all([fs.remove(mixFile, { force: true }), fs.remove(raw, { force: true })]).pipe(Effect.ignore),
-      ),
-    );
+    }).pipe(Effect.ensuring(fs.remove(raw, { force: true }).pipe(Effect.ignore)));
   });
 }

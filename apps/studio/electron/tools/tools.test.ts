@@ -6,14 +6,15 @@ import path from "node:path";
 
 import { NodeServices } from "@effect/platform-node";
 import { afterEach, describe, expect, it } from "@effect/vitest";
-import { Effect, Layer } from "effect";
+import { Deferred, Effect, Fiber, Layer } from "effect";
 import { TestClock } from "effect/testing";
 
 import type { ToolProgress } from "../../src/lib/native/types";
 import { AppLog } from "../services/app-log";
 import { tempDir, zipOf } from "../testing";
 import { type DownloadLimits, DownloadFailed, Downloads, downloadsLayer } from "./downloads";
-import { btbnAsset, latestRelease, quickJsAsset, riedlVersion, ytDlpAsset } from "./sources";
+import { runTool } from "./ffmpeg";
+import { btbnAsset, latestRelease, quickJsAsset, riedlVersion, safeVersion, ytDlpAsset } from "./sources";
 import { CHECK_INTERVAL, Tools, toolsLayer } from "./tools";
 
 let cleanups: (() => void)[] = [];
@@ -102,6 +103,15 @@ function setup(platform: { os: NodeJS.Platform; arch: string } = macOS) {
 }
 
 describe("release files per platform", () => {
+  it("only takes versions that can name a folder", () => {
+    for (const version of ["2026.09.30", "0.17.0", "8.1", "1789931890_9.0.2", "v1.2-rc1+b"]) {
+      expect(safeVersion(version)).toBe(true);
+    }
+    for (const version of ["", "..", "../x", "a/b", "a\\b", ".hidden", "1..2", "x".repeat(101)]) {
+      expect(safeVersion(version)).toBe(false);
+    }
+  });
+
   it("picks the yt-dlp and QuickJS builds for each operating system and processor", () => {
     expect(ytDlpAsset({ os: "darwin", arch: "x64" })).toEqual({
       asset: "yt-dlp_macos.zip",
@@ -211,6 +221,33 @@ describe("Tools", () => {
     }).pipe(Effect.provide(layer));
   });
 
+  it.live("keeps a removed tool's files while a job runs it, until the next start", () => {
+    const { dir, internet, folder, layer } = setup();
+    // Runs until the test lets it end.
+    const waiting = Buffer.from('#!/bin/sh\necho started\nwhile [ ! -e "$1" ]; do sleep 0.01; done\n');
+    internet.release("quickjs-ng/quickjs", "v0.17.0", { "qjs-darwin-arm64": waiting });
+    const done = path.join(dir, "done");
+    return Effect.gen(function* () {
+      const tools = yield* Tools;
+      const { qjs } = (yield* tools.ensure(["quickjs"])).quickjs;
+      const started = yield* Deferred.make<void>();
+      const job = yield* Effect.forkChild(
+        runTool(qjs!, [done], (line) => (line === "started" ? Deferred.succeed(started, undefined) : Effect.void)),
+      );
+      yield* Deferred.await(started);
+      yield* tools.remove("quickjs");
+      expect((yield* tools.status).find((entry) => entry.tool === "quickjs")?.version).toBeNull();
+      expect(fs.readdirSync(path.join(folder, "quickjs"))).toEqual(["0.17.0"]);
+      fs.writeFileSync(done, "");
+      yield* Fiber.join(job);
+      yield* Effect.provide(
+        Tools.use(() => Effect.void),
+        Layer.fresh(layer),
+      );
+      expect(fs.readdirSync(path.join(folder, "quickjs"))).toEqual([]);
+    }).pipe(Effect.provide(Layer.merge(layer, NodeServices.layer)));
+  });
+
   it.effect("unpacks ffmpeg and ffprobe from a BtbN archive", () => {
     const { dir, internet, folder, layer } = setup(linux);
     const build = path.join(dir, "build", "ffmpeg-n8.1-latest-linux64-lgpl-8.1", "bin");
@@ -298,6 +335,17 @@ describe("Tools", () => {
       internet.release("yt-dlp/yt-dlp", "2026.09.30", { "yt-dlp_macos.zip": ytDlpBuild("new") });
       const updated = yield* tools.ensure(["yt-dlp"], { force: true });
       expect(execFileSync(updated["yt-dlp"]["yt-dlp"]!, { encoding: "utf8" }).trim()).toBe("new");
+      // A job may still be running the old one: it goes at the next start, with what a crash left half done.
+      expect(fs.readdirSync(path.join(folder, "yt-dlp")).toSorted()).toEqual([
+        "2026.08.19",
+        "2026.09.30",
+        "current.json",
+      ]);
+      fs.mkdirSync(path.join(folder, "yt-dlp", ".download-12345678"));
+      yield* Effect.provide(
+        Tools.use(() => Effect.void),
+        Layer.fresh(layer),
+      );
       expect(fs.readdirSync(path.join(folder, "yt-dlp")).toSorted()).toEqual(["2026.09.30", "current.json"]);
     }).pipe(Effect.provide(layer));
   });

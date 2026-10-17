@@ -6,6 +6,8 @@ import type { ReadableStream as WebReadableStream } from "node:stream/web";
 
 import { Context, Effect, Layer, Schema } from "effect";
 
+import { abortable } from "../abortable";
+
 /** How often a download reports its progress. */
 const PROGRESS_INTERVAL_MS = 100;
 /** A download failed: offline, a server error, or a host that isn't allowed. */
@@ -86,9 +88,12 @@ const USER_AGENT = "TuneStudio";
 
 const failure = (url: string, message: string) => new DownloadFailed({ url, message });
 
-/** Runs a request, turning any failure into a `DownloadFailed` for `url`. */
+/**
+ * Runs a request, turning any failure into a `DownloadFailed` for `url`. Cancelled, it waits until the file being
+ * written is closed, so removing it afterwards can't race the last writes.
+ */
 const attempt = <A>(url: string, run: (signal: AbortSignal) => Promise<A>) =>
-  Effect.tryPromise({
+  abortable({
     try: run,
     catch: (error) =>
       error instanceof DownloadFailed

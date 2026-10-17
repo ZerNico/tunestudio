@@ -16,7 +16,14 @@ export function handleRendererProtocol(rendererDir: string, contentSecurityPolic
     if (originOf(request.url) !== APP_ORIGIN) return new Response(null, { status: 404 });
 
     const { pathname } = new URL(request.url);
-    const requested = path.normalize(path.join(rendererDir, decodeURIComponent(pathname)));
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(pathname);
+    } catch {
+      // A malformed escape ("%E0%A4%A") names no file.
+      return new Response(null, { status: 400 });
+    }
+    const requested = path.normalize(path.join(rendererDir, decoded));
     const insideRenderer = requested.startsWith(rendererDir + path.sep);
     const isFile = insideRenderer && fs.statSync(requested, { throwIfNoEntry: false })?.isFile();
     // Client routes have no extension; a missing asset is a real 404, not the app shell.

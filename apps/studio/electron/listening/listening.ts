@@ -1,12 +1,12 @@
-import { Effect, FileSystem, Path } from "effect";
+import { Effect } from "effect";
 
 import type { HeardLyrics, ImportProgress } from "../../src/lib/native/types";
-import { ListeningFailed, mapFileError } from "../errors";
+import { abortable } from "../abortable";
+import { ListeningFailed } from "../errors";
 import { Models } from "../models/models";
 import { Native } from "../native/native";
 import { AppLog } from "../services/app-log";
-import { lastLine } from "../youtube/loudness";
-import { runTool } from "../youtube/run";
+import { decodeF32 } from "../tools/ffmpeg";
 import { voicedRanges } from "./ranges";
 
 export const LISTENING = "Listening to the song";
@@ -92,8 +92,6 @@ export function listenToVocals(
   onProgress: (progress: ImportProgress) => Effect.Effect<void>,
 ) {
   return Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const paths = yield* Path.Path;
     const log = yield* AppLog;
     const addon = yield* (yield* Native).addon;
     const sampleRate = addon.transcribeSampleRate();
@@ -103,37 +101,20 @@ export function listenToVocals(
     );
     yield* onProgress({ step: LISTENING, done: 0, total: 100, unit: "percent" });
 
-    const raw = paths.join(input.folder, "listen.f32");
     return yield* Effect.gen(function* () {
-      const decode = yield* runTool(input.ffmpeg, [
-        "-hide_banner",
-        "-nostats",
-        "-y",
-        "-i",
+      const samples = yield* decodeF32(
+        input.ffmpeg,
         input.vocals,
-        "-map",
-        "0:a:0",
-        "-vn",
-        "-f",
-        "f32le",
-        "-ar",
-        String(sampleRate),
-        "-ac",
-        "1",
-        raw,
-      ]).pipe(Effect.mapError(failed));
-      if (decode.code !== 0) return yield* failed(lastLine(decode.stderr));
-      const read = yield* fs.readFile(raw).pipe(mapFileError("the vocals", "read"));
-      // Float32Array needs its start aligned to 4 bytes.
-      const bytes = read.byteOffset % 4 === 0 ? read : read.slice();
-      const samples = new Float32Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.byteLength / 4));
+        { sampleRate, channels: 1, folder: input.folder, what: "the vocals" },
+        failed,
+      );
 
       const ranges = voicedRanges(samples, sampleRate);
       if (ranges.length === 0) {
         return { language: input.language ?? "en", mixed: input.mixed, lines: [] } satisfies HeardLyrics;
       }
       const started = Date.now();
-      const transcript = yield* Effect.tryPromise({
+      const transcript = yield* abortable({
         try: (signal) =>
           addon.transcribe(
             model,
@@ -154,6 +135,6 @@ export function listenToVocals(
         mixed: input.mixed,
         lines: lyricsLines(transcript.segments),
       } satisfies HeardLyrics;
-    }).pipe(Effect.ensuring(fs.remove(raw, { force: true }).pipe(Effect.ignore)));
+    });
   });
 }

@@ -68,6 +68,8 @@ export function createWindows(options: {
     },
     /** Whether `window` shows a project. */
     showsProject: (window: BrowserWindow) => shown.has(window),
+    /** Whether a window still shows the project session `id`. */
+    showsSession: (id: string) => [...shown].some(([window, project]) => !window.isDestroyed() && project.id === id),
     /** The window other than `except` that shows the project at `path`, if there is one. */
     showing: (path: string, except?: BrowserWindow | null): BrowserWindow | null => {
       for (const [window, project] of shown) {

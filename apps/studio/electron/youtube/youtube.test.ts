@@ -310,6 +310,16 @@ describe("downloadVideo", () => {
       expect(audio).toEqual(expect.arrayContaining(["-x", "--audio-format", "m4a", "--audio-quality", "256K"]));
       expect(audio![audio!.indexOf("-f") + 1]).toBe("bestaudio[ext=m4a]/bestaudio/bestaudio*");
       expect(video![video!.indexOf("-f") + 1]).toBe(videoFormat(DEFAULT_SETTINGS.video));
+      // A retry after a cut-off run writes the file again instead of taking the truncated one.
+      expect(audio).toContain("--force-overwrites");
+      expect(video).toContain("--force-overwrites");
+      // FFmpeg reads only the local file it is given.
+      for (const call of calls().filter((call) => call.tool === "ffmpeg")) {
+        expect(call.args.slice(call.args.indexOf("-i") - 2, call.args.indexOf("-i"))).toEqual([
+          "-protocol_whitelist",
+          "file",
+        ]);
+      }
       expect(progress).toContainEqual({ step: "Downloading the audio", done: 50, total: 100 });
       expect(progress).toContainEqual({ step: "Downloading the video", done: 100, total: 100 });
       // No volume step when normalization is off.
@@ -436,6 +446,8 @@ describe("downloadIntoDraft", () => {
       expect(decode).toEqual(
         expect.arrayContaining(["-i", draft.media!.audio, "-f", "f32le", "-ar", "44100", "-ac", "2"]),
       );
+      // Only the local file, and no more of it than the longest song.
+      expect(decode).toEqual(expect.arrayContaining(["-protocol_whitelist", "file", "-t", "1201"]));
       // The song has 128 kbit/s; storing the vocals at the setting's 192 would add nothing.
       expect(encode).toEqual(expect.arrayContaining(["-f", "f32le", "-c:a", "libmp3lame", "-b:a", "128k"]));
       // The raw samples in between are gone.

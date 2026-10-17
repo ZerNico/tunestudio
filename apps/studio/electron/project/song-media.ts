@@ -11,7 +11,15 @@ import { checkLength, ffmpegTools, probe } from "../audio-file/audio-file";
 import { mapFileError, MissingMainAudio, SeparationFailed } from "../errors";
 import { separateStems } from "../separation/separation";
 import { AppSettings } from "../services/settings";
-import { listMedia, mediaBaseName, putRole, replaceRole, withMediaLock, writeMediaToFile } from "./media";
+import {
+  inTransaction,
+  listMedia,
+  mediaBaseName,
+  putRole,
+  replaceRole,
+  withMediaLock,
+  writeMediaToFile,
+} from "./media";
 import type { ProjectSession } from "./projects";
 
 /** How an export names each one after the song ("Artist - Title [VOC].m4a"). */
@@ -74,14 +82,20 @@ export function separateSong(
             message: "The song was replaced while the voice was separated. Separate it again.",
           });
         }
-        for (const role of ["vocals", "instrumental"] as const) {
-          const file = stems[role];
-          yield* putRole(session.db, role, {
-            path: file,
-            fileName: `${base}${SUFFIX[role]}${path.extname(file).toLowerCase()}`,
-            source: "generated",
-          });
-        }
+        // One transaction: a failure or a crash between the two leaves the old pair, never one of each.
+        yield* inTransaction(
+          session.db,
+          Effect.forEach(
+            ["vocals", "instrumental"] as const,
+            (role) =>
+              putRole(session.db, role, {
+                path: stems[role],
+                fileName: `${base}${SUFFIX[role]}${path.extname(stems[role]).toLowerCase()}`,
+                source: "generated",
+              }),
+            { discard: true },
+          ),
+        );
       }).pipe(Effect.uninterruptible),
     );
   }).pipe(Effect.scoped);

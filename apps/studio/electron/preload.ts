@@ -11,6 +11,7 @@ import {
   OPEN_REQUEST_CHANNEL,
   RPC_CONNECT_CHANNEL,
 } from "../src/lib/native/channel";
+import { FLUSH_CHANNEL, FLUSH_DONE_CHANNEL } from "./flush-channel";
 
 // The renderer opens the RPC connection by posting one end of a MessageChannel to itself.
 // MessagePorts can't cross `contextBridge`, so the preload picks the port up from the
@@ -20,6 +21,17 @@ window.addEventListener("message", (event) => {
   if (event.source !== window || event.data !== RPC_CONNECT_CHANNEL) return;
   const [port] = event.ports;
   if (port) ipcRenderer.postMessage(RPC_CONNECT_CHANNEL, null, [port]);
+});
+
+// Main asks the page to save what is still waiting before its window closes, the app quits or the page reloads; the
+// page's handler (`src/lib/flush.ts`) says how. The answer goes back however that went: main only waits for it.
+let flushHandler: (() => Promise<void>) | null = null;
+ipcRenderer.on(FLUSH_CHANNEL, (_event, request: number) => {
+  const handler = flushHandler;
+  void Promise.resolve()
+    .then(() => handler?.())
+    .catch(() => {})
+    .finally(() => ipcRenderer.send(FLUSH_DONE_CHANNEL, request));
 });
 
 /** Values the renderer needs synchronously. Everything else goes through the RPC contract. */
@@ -50,6 +62,16 @@ contextBridge.exposeInMainWorld("tunestudio", {
     const forward = () => listener();
     ipcRenderer.on(OPEN_REQUEST_CHANNEL, forward);
     return () => ipcRenderer.removeListener(OPEN_REQUEST_CHANNEL, forward);
+  },
+  /**
+   * Makes `handler` save what is still waiting when main asks (only the latest one is asked); returns a function that
+   * stops it.
+   */
+  onFlushRequest: (handler: () => Promise<void>): (() => void) => {
+    flushHandler = handler;
+    return () => {
+      if (flushHandler === handler) flushHandler = null;
+    };
   },
   /** Answers Cut, Copy or Paste from the Edit menu: text for the system clipboard, or "do it natively". */
   clipboard: (request: ClipboardRequest) => ipcRenderer.send(CLIPBOARD_CHANNEL, request),

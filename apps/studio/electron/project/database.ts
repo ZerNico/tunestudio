@@ -118,15 +118,29 @@ function writeMeta(db: Queryable, values: Record<string, string>) {
   );
 }
 
-/** Applies the migrations after `from` in one transaction and records the new version. */
+/**
+ * Applies the migrations after `from` in one transaction and records the new version. Foreign keys are off meanwhile:
+ * a migration that rebuilds a table (SQLite's way to change a column) drops the old one, which would otherwise delete
+ * or empty every row pointing at it (dropping `lines` would take the notes). They are checked before committing.
+ */
 function migrate(db: ProjectDb, list: Migrations, from: number, extraMeta: Record<string, string>) {
-  return db.transaction((tx) =>
-    Effect.gen(function* () {
-      for (const migration of list.slice(from)) {
-        for (const statement of migration.statements) yield* tx.run(sql.raw(statement));
-      }
-      yield* writeMeta(tx, { ...extraMeta, format_version: String(list.length) });
-    }),
+  // `foreign_keys` can't change inside a transaction, so it is switched around it.
+  return Effect.andThen(
+    db.run(sql`PRAGMA foreign_keys = OFF`),
+    db
+      .transaction((tx) =>
+        Effect.gen(function* () {
+          for (const migration of list.slice(from)) {
+            for (const statement of migration.statements) yield* tx.run(sql.raw(statement));
+          }
+          const broken = yield* tx.all(sql`PRAGMA foreign_key_check`);
+          if (broken.length > 0) {
+            return yield* Effect.fail(new Error(`The migration left ${broken.length} rows pointing at missing rows`));
+          }
+          yield* writeMeta(tx, { ...extraMeta, format_version: String(list.length) });
+        }),
+      )
+      .pipe(Effect.ensuring(db.run(sql`PRAGMA foreign_keys = ON`).pipe(Effect.orDie))),
   );
 }
 

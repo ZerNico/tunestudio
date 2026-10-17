@@ -4,6 +4,7 @@ import { createReadStream } from "node:fs";
 import { Clock, Context, Effect, FileSystem, Layer, Option, Path, Schema, Semaphore } from "effect";
 
 import type { ModelFeature } from "../../src/lib/models";
+import { abortable } from "../abortable";
 import { type FileError, mapFileError, ModelDownloadFailed } from "../errors";
 import { AppLog } from "../services/app-log";
 import { Downloads, MODEL_HOSTS } from "../tools/downloads";
@@ -259,6 +260,9 @@ interface ModelsShape {
 /** The models behind voice separation and listening, kept in the app's data folder. */
 export class Models extends Context.Service<Models, ModelsShape>()("studio/Models") {}
 
+/** What a download (`.<file>.<id>.download`), an unpack or a record write leaves while it runs. */
+const LEFTOVER = /^(\..+\.[0-9a-f]{8}\.(download|unpack)|installed\.json\.[0-9a-f]{8}\.tmp)$/;
+
 /** Models in `folder`. Tests pass their own sources. */
 export function modelsLayer(options: { folder: string; sources?: Partial<Record<ModelName, ModelSource>> }) {
   const sources: Record<ModelName, ModelSource> = { ...MODELS, ...options.sources };
@@ -274,6 +278,23 @@ export function modelsLayer(options: { folder: string; sources?: Partial<Record<
       ) as Record<ModelName, Semaphore.Semaphore>;
 
       const fileOf = (model: ModelName) => paths.join(options.folder, sources[model].file);
+
+      // Downloads and unpacked zips a crash or a quit cut off; only one Tune Studio runs at a time, so none is ours.
+      const folders = new Set([options.folder, ...MODEL_NAMES.map((model) => paths.dirname(fileOf(model)))]);
+      yield* Effect.forEach(
+        folders,
+        (folder) =>
+          Effect.gen(function* () {
+            const entries = yield* fs.readDirectory(folder).pipe(Effect.orElseSucceed(() => []));
+            const leftovers = entries.filter((entry) => LEFTOVER.test(entry));
+            yield* Effect.forEach(
+              leftovers,
+              (entry) => fs.remove(paths.join(folder, entry), { recursive: true, force: true }).pipe(Effect.ignore),
+              { discard: true },
+            );
+          }),
+        { discard: true },
+      );
 
       const hasSize = (file: string, size: number) =>
         fs.stat(file).pipe(
@@ -357,7 +378,8 @@ export function modelsLayer(options: { folder: string; sources?: Partial<Record<
               message: `The download of ${source.label} came out damaged, so it wasn't kept. Try again.`,
             });
           return yield* Effect.gen(function* () {
-            yield* Effect.tryPromise({ try: () => unzip(zip, scratch), catch: damaged });
+            // Stopped meanwhile, it finishes unpacking before its folder is removed.
+            yield* abortable({ try: () => unzip(zip, scratch), catch: damaged });
             for (const packed of files) {
               const file = paths.join(scratch, folder, packed.name);
               const sha256 = yield* Effect.tryPromise({ try: () => fileSha256(file), catch: damaged });

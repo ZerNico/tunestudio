@@ -6,6 +6,7 @@ import { Effect, FileSystem, Path } from "effect";
 
 import { FINDING_THE_PITCH, GETTING_CHART_MODELS, READING_SONG } from "../../src/lib/chart-steps";
 import type { ImportProgress } from "../../src/lib/native/types";
+import { abortable } from "../abortable";
 import { ChartFailed, mapFileError } from "../errors";
 import { Models } from "../models/models";
 import { Native } from "../native/native";
@@ -79,7 +80,7 @@ export function autoPitchNotes(
     yield* onProgress({ step: FINDING_THE_PITCH, done: 0, total: 100, unit: "percent" });
     const pitches = new Map<number, number>();
     for (const lines of singers) {
-      const found = yield* Effect.tryPromise({
+      const found = yield* abortable({
         try: (signal) =>
           autoPitch(
             {

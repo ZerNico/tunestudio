@@ -19,7 +19,9 @@ files are an export target; the project is the source of truth.
 ## Versioning
 
 - `meta.format_version` is the schema version, one per Drizzle migration set shipped with the app.
-- Opening a file with an older version migrates it forward inside one transaction. A file whose
+- Opening a file with an older version migrates it forward inside one transaction, with foreign
+  keys off (a migration that rebuilds a table must not take the rows pointing at it along) and
+  checked with `PRAGMA foreign_key_check` before committing. A file whose
   version is newer than the app supports is refused with "made with a newer Tune Studio", and
   never written to.
 - `meta` also records the app version that created and last wrote the file.
@@ -40,7 +42,7 @@ model. Exporting quantizes them to the chart's BPM grid. Pitches are MIDI note n
 | `media`        | `id`, `role` (audio, vocals, instrumental, video, cover, background), `file_name` (original name), `mime`, `size`, `sha256`, `duration`, `source` (imported, youtube, generated), `created_at`                                                                   |
 | `media_chunks` | `media_id`, `index`, `data` (`BLOB`, 1 MiB each). Media is stored byte-for-byte as imported, never re-encoded                                                                                                                                                    |
 | `analysis`     | `id`, `kind` (pitch, alignment, words, lyrics, beats, waveform), `input_media_id`, `input_sha256`, `producer`, `producer_version`, `params` (JSON), `created_at`, `encoding` (json, f32), `data` (`BLOB`). Stale when `input_sha256` no longer matches the media |
-| `editor_state` | `key` → JSON: view, zoom, selected source, panels                                                                                                                                                                                                                |
+| `editor_state` | `key` → JSON. Unused so far: the editor's view, zoom and listening settings live in the app's `localStorage`, not in the project                                                                                                                                 |
 
 Encoded values (JSON columns, analysis payloads) are described by Effect Schemas next to the
 Drizzle tables and decoded on read; a value that doesn't decode is a typed error, not a crash.
@@ -97,4 +99,5 @@ asks for.
 The app keeps a list of recently opened project files in its data directory (JSON, an Effect
 Schema): path, last opened, and the title, artist and a small cover thumbnail cached at open, so
 the start screen shows projects without opening each file. A path that no longer exists is
-dropped when the list is shown.
+dropped when the list is shown, unless its whole folder is gone too (a drive that isn't plugged
+in): that one stays.

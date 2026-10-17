@@ -6,6 +6,7 @@ import { Effect, FileSystem } from "effect";
 
 import { CHART_STEPS, GETTING_CHART_MODELS, READING_SONG } from "../../src/lib/chart-steps";
 import type { ImportProgress } from "../../src/lib/native/types";
+import { abortable } from "../abortable";
 import { ChartFailed, mapFileError } from "../errors";
 import { CHART_MODELS, Models } from "../models/models";
 import { Native } from "../native/native";
@@ -75,7 +76,7 @@ export function chartFromFiles(
       .map((line) => ({ text: line.text, start: line.start, end: null }));
     if (!lines.length) return yield* new ChartFailed({ message: "The song has no lyrics yet. Add them first." });
     const started = Date.now();
-    const result = yield* Effect.tryPromise({
+    const result = yield* abortable({
       try: (signal) => {
         const engines: ChartEngines = {
           trackPitch: (samples) => addon.trackPitch(models.chartPitch, samples),

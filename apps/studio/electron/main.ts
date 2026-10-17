@@ -16,6 +16,7 @@ import {
 import { CLIPBOARD_CHANNEL, GRANT_PATH_CHANNEL } from "../src/lib/native/channel";
 import { contentSecurityPolicy } from "./csp";
 import { onDevReload } from "./dev-reload";
+import { flushPage, flushThenReload } from "./flush";
 import { BACKGROUND_COLOR, PRODUCT_NAME } from "./identity";
 import { createLogger } from "./logger";
 import { attachContextMenu, sendEditCommand, setApplicationMenu, setProjectItemsEnabled } from "./menu";
@@ -171,7 +172,20 @@ function createWindow(): BrowserWindow {
   if (!front && saved.maximized) window.maximize();
   if (!front && saved.fullscreen) window.setFullScreen(true);
   if (!background) window.once("ready-to-show", () => window.show());
-  window.on("close", () => saveWindowState(dataDir, window));
+  // Closing waits for the page to save what is still waiting (a few seconds at most), then closes for real. Quitting
+  // has asked every page already.
+  let flushed = false;
+  let flushing = false;
+  window.on("close", (event) => {
+    if (flushed || quitting) return saveWindowState(dataDir, window);
+    event.preventDefault();
+    if (flushing) return;
+    flushing = true;
+    void flushPage(window.webContents).then(() => {
+      flushed = true;
+      if (!window.isDestroyed()) window.close();
+    });
+  });
 
   attachContextMenu(window.webContents);
 
@@ -228,7 +242,7 @@ function start() {
     applyDevelopmentCsp(appOrigin);
     // A new preload only applies to pages loaded after it was built.
     onDevReload(() => {
-      for (const window of BrowserWindow.getAllWindows()) window.webContents.reloadIgnoringCache();
+      for (const window of BrowserWindow.getAllWindows()) flushThenReload(window.webContents, true);
     });
   } else handleRendererProtocol(rendererDir, contentSecurityPolicy(false));
 
@@ -255,17 +269,22 @@ function start() {
     return contents ? BrowserWindow.fromWebContents(contents) : null;
   });
 
-  // Quitting waits while services release what they hold (projects, child processes) and the log
-  // is flushed, then quits for real; a service that hangs gets a few seconds. The windows go
-  // first, so nothing is edited against services that are closing.
+  // Quitting lets every page save what is waiting, then waits while services release what they hold (projects, child
+  // processes) and the log is flushed, a few seconds each at most. The windows are hidden first, so nothing more is
+  // edited.
   let released = false;
   app.on("before-quit", (event) => {
     if (released) return;
     event.preventDefault();
     released = true;
-    for (const window of BrowserWindow.getAllWindows()) window.hide();
+    const open = BrowserWindow.getAllWindows();
+    for (const window of open) window.hide();
     const timeout = new Promise((resolve) => setTimeout(resolve, QUIT_TIMEOUT_MS));
-    void Promise.race([runtime.dispose(), timeout])
+    void Promise.all(open.map((window) => flushPage(window.webContents)))
+      .then(() => {
+        quitting = true;
+        return Promise.race([runtime.dispose(), timeout]);
+      })
       .catch((error: unknown) => logger.write("ERROR", "main", `Quitting: ${String(error)}`))
       .finally(() => logger.flush().finally(() => app.quit()));
   });
@@ -290,6 +309,8 @@ function start() {
 
 /** Which window shows which project, once the app is ready. */
 let windows: Windows | null = null;
+/** Set once quitting has let every page save: windows then close without asking again. */
+let quitting = false;
 /** Project files to open once the app is ready: from the command line, or from the OS before it was. */
 const pendingFiles = projectFilesIn(process.argv.slice(1));
 

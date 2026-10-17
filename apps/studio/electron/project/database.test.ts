@@ -107,6 +107,49 @@ describe("project database", () => {
     raw.close();
   });
 
+  it("keeps the rows pointing at a table a migration rebuilds", async () => {
+    const file = path.join(temp(), "Rebuilt.tunestudio");
+    await create(file);
+    const raw = new DatabaseSync(file);
+    raw.exec(`INSERT INTO singers (id, "index") VALUES (1, 0);
+      INSERT INTO lines (id, singer_id, position) VALUES (1, 1, 0);
+      INSERT INTO notes (line_id, position, start, duration, pitch, lyric, type) VALUES (1, 0, 1, 0.5, 60, 'La', 'normal')`);
+    raw.close();
+    // SQLite's way to change a column: a new table, the rows copied over, the old one dropped and the new one renamed.
+    const rebuild = {
+      name: "test_rebuild_lines",
+      statements: [
+        "CREATE TABLE `lines_new` (`id` integer PRIMARY KEY, `singer_id` integer NOT NULL, `position` integer NOT NULL, `switch_start` real, `switch_end` real, `label` text, CONSTRAINT `fk_lines_singer_id_singers_id_fk` FOREIGN KEY (`singer_id`) REFERENCES `singers`(`id`) ON DELETE CASCADE)",
+        "INSERT INTO `lines_new` (`id`, `singer_id`, `position`, `switch_start`, `switch_end`) SELECT `id`, `singer_id`, `position`, `switch_start`, `switch_end` FROM `lines`",
+        "DROP TABLE `lines`",
+        "ALTER TABLE `lines_new` RENAME TO `lines`",
+      ],
+    };
+    const values = await Effect.runPromise(open(file, [...migrations, rebuild]));
+    expect(values.format_version).toBe(String(FORMAT_VERSION + 1));
+    const check = new DatabaseSync(file, { readOnly: true });
+    expect(check.prepare("SELECT lyric FROM notes").all()).toEqual([{ lyric: "La" }]);
+    check.close();
+  });
+
+  it("rolls a migration back that leaves rows pointing at missing ones", async () => {
+    const file = path.join(temp(), "Dangling.tunestudio");
+    await create(file);
+    const raw = new DatabaseSync(file);
+    raw.exec(
+      `INSERT INTO singers (id, "index") VALUES (1, 0); INSERT INTO lines (id, singer_id, position) VALUES (1, 1, 0)`,
+    );
+    raw.close();
+    const dangling = [...migrations, { name: "test_dangling", statements: ["DELETE FROM `singers`"] }];
+    await expect(Effect.runPromise(open(file, dangling))).rejects.toBeDefined();
+    const check = new DatabaseSync(file, { readOnly: true });
+    expect(check.prepare("SELECT count(*) AS count FROM singers").get()).toEqual({ count: 1 });
+    check.close();
+    // Foreign keys are on again afterwards.
+    const values = await Effect.runPromise(open(file));
+    expect(values.format_version).toBe(String(FORMAT_VERSION));
+  });
+
   it("refuses a project from a newer Tune Studio without writing to it", async () => {
     const file = path.join(temp(), "Future.tunestudio");
     await create(file, [...migrations, { name: "future", statements: ["CREATE TABLE `future` (`id` integer)"] }]);

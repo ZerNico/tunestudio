@@ -176,8 +176,28 @@ const githubDownload = (
     } satisfies ToolDownload;
   });
 
+/**
+ * Whether a release's version can name its folder: it comes from a release page, so `..`, a path separator or a
+ * leading dot (our own scratch folders) must not get through.
+ */
+export function safeVersion(version: string): boolean {
+  return /^[0-9A-Za-z][0-9A-Za-z._+-]{0,99}$/.test(version) && !version.includes("..");
+}
+
 /** The newest release of `tool` for `platform`, with everything needed to verify it. */
 export function latestRelease(tool: ToolName, platform: Platform) {
+  return Effect.flatMap(findRelease(tool, platform), (release) =>
+    safeVersion(release.version)
+      ? Effect.succeed(release)
+      : Effect.fail(
+          new ToolDownloadFailed({
+            message: `The newest ${TOOL_LABELS[tool]} release has a version Tune Studio doesn't understand. Try again later.`,
+          }),
+        ),
+  );
+}
+
+function findRelease(tool: ToolName, platform: Platform) {
   return Effect.gen(function* () {
     if (tool === "yt-dlp") {
       const found = ytDlpAsset(platform);

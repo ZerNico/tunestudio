@@ -7,13 +7,13 @@ interface DesktopShape {
   readonly chooseSong: (window: BrowserWindow | null) => Effect.Effect<string | null>;
   /** A `.tunestudio` file to open. */
   readonly chooseProject: (window: BrowserWindow | null) => Effect.Effect<string | null>;
-  /** Where to save a new project; `defaultPath` is the suggested file. */
+  /** Where to save a new project (ending in `.tunestudio`); `defaultPath` is the suggested file. */
   readonly chooseProjectLocation: (window: BrowserWindow | null, defaultPath: string) => Effect.Effect<string | null>;
   /** A JPEG or PNG image, e.g. for a cover. */
   readonly chooseImage: (window: BrowserWindow | null) => Effect.Effect<string | null>;
   /** An audio or video file, e.g. to replace the song's. */
   readonly chooseMediaFile: (window: BrowserWindow | null, kind: "audio" | "video") => Effect.Effect<string | null>;
-  /** Where to save a chart's text (`.txt`); `defaultPath` is the suggested file. */
+  /** Where to save a chart's text (ending in `.txt`); `defaultPath` is the suggested file. */
   readonly chooseTextFile: (window: BrowserWindow | null, defaultPath: string) => Effect.Effect<string | null>;
   /** The folder an export goes into. */
   readonly chooseExportFolder: (window: BrowserWindow | null, defaultPath: string) => Effect.Effect<string | null>;

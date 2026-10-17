@@ -4,6 +4,7 @@ import { intersectsRange, rangeProblem } from "../../src/lib/chart-range";
 import { CHART_STEPS, GETTING_CHART_MODELS, READING_SONG } from "../../src/lib/chart-steps";
 import type { ChartRangeInput } from "../../src/lib/native/contract";
 import type { ImportProgress } from "../../src/lib/native/types";
+import { abortable } from "../abortable";
 import { ChartFailed, mapFileError } from "../errors";
 import { Models } from "../models/models";
 import { Native } from "../native/native";
@@ -85,7 +86,7 @@ export function chartProjectRange(
     const vocals16k = yield* decodeMono(ffmpeg, file, PITCH_SAMPLE_RATE, folder);
     const vocals44k = yield* decodeMono(ffmpeg, file, GAME_SAMPLE_RATE, folder);
     const addon = yield* (yield* Native).addon;
-    const result = yield* Effect.tryPromise({
+    const result = yield* abortable({
       try: (signal) => {
         const work = chartRange(
           {

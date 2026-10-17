@@ -51,14 +51,22 @@ const MIME_TYPES: Record<string, string> = {
   bmp: "image/bmp",
 };
 
+/** What a MIME type may look like: header values are Latin-1, and a type is two tokens. */
+const MIME_TYPE = /^[a-z]+\/[a-z0-9][a-z0-9.+-]*$/;
+
+/** `mime` if it can go into a `Content-Type` header, else raw bytes. */
+export function headerMime(mime: string): string {
+  return MIME_TYPE.test(mime) ? mime : "application/octet-stream";
+}
+
 /** The MIME type for a media file name, by extension. */
 export function mimeFor(fileName: string, role: MediaRole): string {
-  const extension = fileName.slice(fileName.lastIndexOf(".") + 1).toLowerCase();
+  const dot = fileName.lastIndexOf(".");
+  const extension = dot > 0 ? fileName.slice(dot + 1).toLowerCase() : "";
   const known = MIME_TYPES[extension];
   if (known) return role === "video" || !known.startsWith("video/webm") ? known : "audio/webm";
-  return role === "cover" || role === "background"
-    ? "application/octet-stream"
-    : `${role === "video" ? "video" : "audio"}/${extension}`;
+  if (role === "cover" || role === "background" || !extension) return "application/octet-stream";
+  return headerMime(`${role === "video" ? "video" : "audio"}/${extension}`);
 }
 
 export interface MediaInput {
@@ -174,29 +182,43 @@ export function withMediaLock<A, E, R>(db: ProjectDb, effect: Effect.Effect<A, E
 }
 
 /**
+ * `effect` as one transaction, nested ones inside it included (as savepoints): typed failures stay as they are, the
+ * database's own become a full disk or a defect.
+ */
+export function inTransaction<A, E, R>(
+  db: ProjectDb,
+  effect: Effect.Effect<A, E, R>,
+): Effect.Effect<A, E | DiskFull, R> {
+  return db.transaction(() => effect).pipe(Effect.catchTag("SqlError", (error) => orDiskFull(Effect.fail(error))));
+}
+
+/**
  * Makes `input` the project's only file of its role, or removes the role's files (null): the new file goes in, then
- * every other one of the role (their chunks with them, and what was worked out from them). Run it under
- * `withMediaLock`, or use `replaceRole`.
+ * every other one of the role (their chunks with them, and what was worked out from them), all in one transaction, so a
+ * failure or a crash leaves the old file. Run it under `withMediaLock`, or use `replaceRole`.
  */
 export function putRole(
   db: ProjectDb,
   role: MediaRole,
   input: Omit<MediaInput, "role"> | null,
 ): Effect.Effect<MediaRow | null, FileError, FileSystem.FileSystem> {
-  return Effect.gen(function* () {
-    const added = input ? yield* writeMedia(db, { ...input, role }) : null;
-    yield* db
-      .delete(media)
-      .where(added ? and(eq(media.role, role), ne(media.id, added.id)) : eq(media.role, role))
-      .pipe(orDiskFull);
-    // The sung pitch and waveform of files that are gone only take up space (the lyrics stay, whatever song they
-    // came with).
-    yield* db
-      .delete(analysis)
-      .where(and(isNull(analysis.inputMediaId), inArray(analysis.kind, ["pitch", "waveform"])))
-      .pipe(orDiskFull);
-    return added;
-  });
+  return inTransaction(
+    db,
+    Effect.gen(function* () {
+      const added = input ? yield* writeMedia(db, { ...input, role }) : null;
+      yield* db
+        .delete(media)
+        .where(added ? and(eq(media.role, role), ne(media.id, added.id)) : eq(media.role, role))
+        .pipe(orDiskFull);
+      // The sung pitch and waveform of files that are gone only take up space (the lyrics stay, whatever song they
+      // came with).
+      yield* db
+        .delete(analysis)
+        .where(and(isNull(analysis.inputMediaId), inArray(analysis.kind, ["pitch", "waveform"])))
+        .pipe(orDiskFull);
+      return added;
+    }),
+  );
 }
 
 /** `putRole` as one change at a time per project. */

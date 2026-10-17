@@ -2,7 +2,7 @@ import { Effect, FileSystem } from "effect";
 
 import type { AudioFormat } from "../../src/lib/settings";
 import { VideoDownloadFailed } from "../errors";
-import { runTool } from "./run";
+import { lastLine, localInput, runTool } from "../tools/ffmpeg";
 
 /*
  * Volume normalization as USDB Syncer does it (with ffmpeg-normalize): EBU R128 loudness in two
@@ -62,8 +62,7 @@ export function measureLoudness(ffmpeg: string, input: string, target: number) {
     const result = yield* runTool(ffmpeg, [
       "-hide_banner",
       "-nostats",
-      "-i",
-      input,
+      ...localInput(input),
       "-map",
       "0:a:0",
       "-af",
@@ -109,8 +108,7 @@ export function rewriteLoudness(
       "-hide_banner",
       "-nostats",
       "-y",
-      "-i",
-      input,
+      ...localInput(input),
       "-map",
       "0:a:0",
       "-vn",
@@ -152,8 +150,7 @@ export function writeGainTags(ffmpeg: string, file: string, format: AudioFormat)
       "-hide_banner",
       "-nostats",
       "-y",
-      "-i",
-      file,
+      ...localInput(file),
       "-map",
       "0",
       "-c",
@@ -166,15 +163,4 @@ export function writeGainTags(ffmpeg: string, file: string, format: AudioFormat)
     if (result.code !== 0) return yield* failed(lastLine(result.stderr));
     yield* fs.rename(tagged, file).pipe(Effect.mapError(() => failed("the tagged file couldn't be saved.")));
   });
-}
-
-/** The last thing a tool said, for an error message. */
-export function lastLine(stderr: string): string {
-  return (
-    stderr
-      .trim()
-      .split(/\r?\n/)
-      .findLast((line) => line.trim())
-      ?.trim() ?? "it stopped without saying why."
-  );
 }

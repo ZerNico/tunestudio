@@ -8,8 +8,19 @@ import { Effect } from "effect";
 
 import { FileNotFound } from "../errors";
 import { syntheticBytes, tempDir } from "../testing";
+import { readF32Analysis, writeF32Analysis } from "./analysis-store";
 import { createDatabase, type ProjectDb } from "./database";
-import { CHUNK_SIZE, listMedia, mimeFor, readRange, storedSize, writeMedia, writeMediaToFile } from "./media";
+import {
+  CHUNK_SIZE,
+  inTransaction,
+  listMedia,
+  mimeFor,
+  putRole,
+  readRange,
+  storedSize,
+  writeMedia,
+  writeMediaToFile,
+} from "./media";
 
 let cleanup = () => {};
 afterEach(() => cleanup());
@@ -108,5 +119,50 @@ describe("media chunks", () => {
     expect(mimeFor("a.m4a", "vocals")).toBe("audio/mp4");
     expect(mimeFor("c.jpg", "cover")).toBe("image/jpeg");
     expect(mimeFor("c.unknown", "cover")).toBe("application/octet-stream");
+    expect(mimeFor("a.wv", "audio")).toBe("audio/wv");
+    // Without an extension, or with one a header can't hold, it is just bytes.
+    expect(mimeFor("song", "audio")).toBe("application/octet-stream");
+    expect(mimeFor(".hidden", "audio")).toBe("application/octet-stream");
+    expect(mimeFor("lied.мп3", "audio")).toBe("application/octet-stream");
+    expect(mimeFor("a.b c", "video")).toBe("application/octet-stream");
+  });
+
+  it("replaces a role's file and its partner in one go, or neither", async () => {
+    await withProject((db, dir) =>
+      Effect.gen(function* () {
+        const vocals = path.join(dir, "vocals.m4a");
+        fs.writeFileSync(vocals, syntheticBytes(10, 1));
+        const old = yield* putRole(db, "vocals", { path: vocals, fileName: "Old [VOC].m4a", source: "imported" });
+        const error = yield* Effect.flip(
+          inTransaction(
+            db,
+            Effect.andThen(
+              putRole(db, "vocals", { path: vocals, fileName: "New [VOC].m4a", source: "generated" }),
+              putRole(db, "instrumental", { path: path.join(dir, "gone.m4a"), fileName: "x.m4a", source: "generated" }),
+            ),
+          ),
+        );
+        expect(error).toBeInstanceOf(FileNotFound);
+        expect((yield* listMedia(db)).map((row) => row.id)).toEqual([old!.id]);
+        expect(yield* storedSize(db, old!.id)).toBe(10);
+      }),
+    );
+  });
+
+  it("stores nothing worked out from a file that was replaced meanwhile", async () => {
+    await withProject((db, dir) =>
+      Effect.gen(function* () {
+        const file = path.join(dir, "vocals.m4a");
+        fs.writeFileSync(file, syntheticBytes(10, 1));
+        const old = yield* putRole(db, "vocals", { path: file, fileName: "Old.m4a", source: "imported" });
+        fs.writeFileSync(file, syntheticBytes(10, 2));
+        const now = yield* putRole(db, "vocals", { path: file, fileName: "New.m4a", source: "generated" });
+        const which = { kind: "waveform", producer: "rms", version: "1" } as const;
+        yield* writeF32Analysis(db, which, old!, new Float32Array([0.5]), {});
+        expect(yield* readF32Analysis(db, which, old!)).toBeNull();
+        yield* writeF32Analysis(db, which, now!, new Float32Array([0.5]), {});
+        expect([...(yield* readF32Analysis(db, which, now!))!]).toEqual([0.5]);
+      }),
+    );
   });
 });
