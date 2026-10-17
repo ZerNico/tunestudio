@@ -3,7 +3,20 @@
   "extends": ["//"],
   "tasks": {
     "build": {
-      "outputs": ["dist/**", "dist-electron/**"]
+      // The native addon and the GPU libraries `scripts/native.ts` puts next to it, so a cache hit restores them too.
+      "outputs": ["dist/**", "dist-electron/**", "native/*.node", "native/*.dylib", "native/*.so", "native/*.dll"],
+      // Release builds compile whisper.cpp for other machines' processors unless it says otherwise.
+      "env": ["GGML_NATIVE"]
+    },
+    "dev": {
+      "passThroughEnv": ["TUNESTUDIO_*"]
+    },
+    // The golden and library tests only run when their TUNESTUDIO_* paths are set (see AGENTS.md).
+    "test": {
+      "passThroughEnv": ["TUNESTUDIO_*"]
+    },
+    "test:e2e": {
+      "passThroughEnv": ["$TURBO_EXTENDS$", "TUNESTUDIO_*"]
     }
   }
 }

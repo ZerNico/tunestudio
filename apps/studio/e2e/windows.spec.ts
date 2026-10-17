@@ -31,6 +31,23 @@ async function importAs(page: Page, file: string) {
   await expect(page.getByTestId("home")).toBeVisible();
 }
 
+/** Records which windows main brings to the front (`focused`), from now on. */
+function watchFocus() {
+  return studio.app.evaluate(({ BrowserWindow }) => {
+    const state = Object.assign(globalThis, { focused: [] as number[] });
+    const focus = BrowserWindow.prototype.focus;
+    BrowserWindow.prototype.focus = function (this: Electron.BrowserWindow) {
+      state.focused.push(this.id);
+      return focus.call(this);
+    };
+  });
+}
+
+/** The ids of the windows brought to the front since the last call, in order. */
+function focused() {
+  return studio.app.evaluate(() => (globalThis as typeof globalThis & { focused: number[] }).focused.splice(0));
+}
+
 /** What the OS does when a project file is double-clicked (macOS hands it over as an event). */
 function openFromOs(file: string) {
   return studio.app.evaluate(({ app }, target) => {
@@ -48,9 +65,14 @@ test("project files from the OS open in the start screen's window, or in one of 
   // The start screen's window opens it.
   await openFromOs(first);
   await expect(page.getByTestId("project")).toBeVisible();
-  // Asked again, that window comes to the front: no other opens.
+  const firstWindow = await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows().map((window) => window.id),
+  );
+  expect(firstWindow).toHaveLength(1);
+  await watchFocus();
+  // Asked again, that window comes to the front (main's answer to the request, so it was handled): no other opens.
   await openFromOs(first);
-  await page.waitForTimeout(300);
+  await expect.poll(focused).toEqual(firstWindow);
   expect(app.windows()).toHaveLength(1);
 
   // Another project gets a window of its own.
@@ -64,8 +86,10 @@ test("project files from the OS open in the start screen's window, or in one of 
   await other.getByTestId("close-project").click();
   await expect(other.getByTestId("home")).toBeVisible();
   await answerDialogs(app, first);
+  await focused();
   await other.getByRole("button", { name: "Open project" }).click();
-  await page.waitForTimeout(300);
+  // Main brings the first window to the front instead of opening the project in this one (`project.open`).
+  await expect.poll(focused).toEqual(firstWindow);
   await expect(other.getByTestId("home")).toBeVisible();
   await expect(page.getByTestId("project")).toBeVisible();
 });
@@ -79,11 +103,24 @@ test("the mouse's back button doesn't leave the editor", async () => {
   await page.getByTestId("flow-dialog").getByTestId("flow-next").click();
   await page.getByTestId("flow-dialog").getByRole("button", { name: "Create project" }).click();
   await expect(page.getByTestId("project")).toBeVisible();
+  // Chromium goes back on these unless the page prevents their default; the last listener sees whether it did.
+  await page.evaluate(() => {
+    const seen = Object.assign(window, { backButton: [] as string[] }).backButton;
+    for (const type of ["mousedown", "mouseup"])
+      window.addEventListener(type, (event) => {
+        const { button, defaultPrevented } = event as MouseEvent;
+        if (button === 3) seen.push(`${type}${defaultPrevented ? " prevented" : ""}`);
+      });
+  });
+  const url = page.url();
   const cdp = await page.context().newCDPSession(page);
   for (const type of ["mousePressed", "mouseReleased"] as const) {
     await cdp.send("Input.dispatchMouseEvent", { type, x: 400, y: 400, button: "back", buttons: 8, clickCount: 1 });
   }
-  await page.waitForTimeout(300);
+  await expect
+    .poll(() => page.evaluate(() => (window as Window & { backButton?: string[] }).backButton))
+    .toEqual(["mousedown prevented", "mouseup prevented"]);
+  expect(page.url()).toBe(url);
   await expect(page.getByTestId("project")).toBeVisible();
 });
 

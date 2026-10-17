@@ -80,6 +80,8 @@ function startElectron() {
 }
 
 function restartElectron() {
+  // A restart already waits for the old app to quit; the Electron it starts loads the newest bundle.
+  if (restarting) return;
   if (!electron || electron.exitCode !== null) return startElectron();
 
   restarting = true;

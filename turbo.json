@@ -1,5 +1,31 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalPassThroughEnv": [
+    "TMPDIR",
+    "TEMP",
+    "TMP",
+    "LANG",
+    "LC_*",
+    "TERM",
+    "CI",
+    "DISPLAY",
+    "WAYLAND_DISPLAY",
+    "XAUTHORITY",
+    "XDG_*",
+    "DBUS_SESSION_BUS_ADDRESS",
+    "APPDATA",
+    "LOCALAPPDATA",
+    "USERPROFILE",
+    "PROGRAMDATA",
+    "PROGRAMFILES",
+    "PROGRAMFILES(X86)",
+    "COMSPEC",
+    "PATHEXT",
+    "WINDIR",
+    "CARGO_HOME",
+    "RUSTUP_HOME",
+    "RUSTUP_TOOLCHAIN"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
@@ -18,7 +44,8 @@
     },
     "test:e2e": {
       "dependsOn": ["build"],
-      "cache": false
+      "cache": false,
+      "passThroughEnv": ["PLAYWRIGHT_*"]
     }
   },
   "ui": "stream"
