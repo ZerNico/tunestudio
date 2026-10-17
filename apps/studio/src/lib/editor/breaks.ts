@@ -138,13 +138,15 @@ export function moveBreak(tx: EditRecorder, chart: EditorChart, lineId: number, 
 /**
  * Adds a break at `time` in the singer's line there: the notes starting from it go to a new line after it, which
  * takes the line's own break (the new one ends `split`, the line's old one now ends `created`). A time inside a note
- * moves to that note's end. Returns null when it wouldn't leave a note on either side.
+ * moves to that note's end. The break is stored there, or with `automatic` keeps the default timing (`time` only says
+ * where the line splits). Returns null when it wouldn't leave a note on either side.
  */
 export function addBreak(
   tx: EditRecorder,
   chart: EditorChart,
   singerId: number,
   time: number,
+  automatic = false,
 ): { split: number; created: number } | null {
   const singer = chart.singers.find((item) => item.id === singerId);
   const lines = singer?.lines.filter((line) => line.notes.length > 0) ?? [];
@@ -159,8 +161,36 @@ export function addBreak(
   if (before.length === 0 || after.length === 0) return null;
   const created = tx.createLine({ singerId, switchStart: line.switchStart, switchEnd: line.switchEnd });
   for (const note of after) tx.updateNote(note.id, { lineId: created, edited: note.edited });
-  tx.updateLine(line.id, { switchStart: at, switchEnd: null });
+  tx.updateLine(line.id, { switchStart: automatic ? null : at, switchEnd: null });
   return { split: line.id, created };
+}
+
+/**
+ * Adds a break with default timing after the selected notes `ids` (the last of them to start): the notes of its line
+ * that start later go to a new line (`addBreak`). A string says why it can't: the notes are both singers', or nothing
+ * comes after them in their line.
+ */
+export function breakAfter(
+  tx: EditRecorder,
+  chart: EditorChart,
+  ids: ReadonlySet<number>,
+): { singerId: number; split: number; created: number } | string {
+  const found = chart.singers.flatMap((singer) =>
+    singer.lines.flatMap((line) => line.notes.filter((note) => ids.has(note.id)).map((note) => ({ singer, note }))),
+  );
+  if (new Set(found.map((item) => item.singer.id)).size > 1) return "Select notes of one singer.";
+  const last = found.reduce<(typeof found)[number] | undefined>(
+    (latest, item) => (!latest || item.note.start > latest.note.start ? item : latest),
+    undefined,
+  );
+  if (!last) return "Select a note first.";
+  const added = addBreak(tx, chart, last.singer.id, last.note.start + last.note.duration, true);
+  if (added) return { singerId: last.singer.id, ...added };
+  // Nothing after it, or only notes inside a longer one it is in too.
+  const line = last.singer.lines.find((item) => item.notes.includes(last.note))!;
+  return line.notes.some((note) => note.start > last.note.start)
+    ? "A line break can't go inside a note."
+    : "That's already the end of a line.";
 }
 
 /**
@@ -180,19 +210,41 @@ export function removeBreak(tx: EditRecorder, chart: EditorChart, lineId: number
 
 /**
  * Where a break added at `time` goes: in the gap nearest to it between two notes of the singer's line there, at that
- * gap's default switch. Null when the line has no gap.
+ * gap's default switch. A string says why there is none: the gap nearest to it is between two lines, where a break is
+ * already, or there is no gap (past the last line's notes, or a line of one note).
  */
-export function nearestGap(chart: EditorChart, singerId: number, time: number): number | null {
+export function nearestGap(chart: EditorChart, singerId: number, time: number): number | string {
   const lines = chart.singers.find((item) => item.id === singerId)?.lines.filter((line) => line.notes.length > 0);
-  const line = lines?.findLast((item) => item.notes[0]!.start <= time) ?? lines?.[0];
-  if (!line || line.notes.length < 2) return null;
-  let best: { distance: number; at: number } | null = null;
+  const index = lines
+    ? Math.max(
+        0,
+        lines.findLastIndex((item) => item.notes[0]!.start <= time),
+      )
+    : -1;
+  const line = lines?.[index];
+  const noGap = "There's no gap between notes here for a line break.";
+  if (!lines || !line) return noGap;
+  const lastEnd = (notes: readonly { start: number; duration: number }[]) =>
+    Math.max(...notes.map((note) => note.start + note.duration));
+  const distance = (gapStart: number, gapEnd: number) =>
+    time < gapStart ? gapStart - time : time > gapEnd ? time - gapEnd : 0;
+  if (index === lines.length - 1 && time >= lastEnd(line.notes)) return noGap;
+  let best: { distance: number; at: number | null } | null = null;
+  const consider = (gapStart: number, gapEnd: number, at: number | null) => {
+    const far = distance(gapStart, gapEnd);
+    if (!best || far < best.distance) best = { distance: far, at };
+  };
+  // The gaps on either side of the line have their breaks already.
+  const previous = lines[index - 1];
+  if (previous) consider(lastEnd(previous.notes), line.notes[0]!.start, null);
+  const next = lines[index + 1];
+  if (next) consider(lastEnd(line.notes), next.notes[0]!.start, null);
   for (let i = 0; i < line.notes.length - 1; i++) {
     const gapStart = line.notes[i]!.start + line.notes[i]!.duration;
     const gapEnd = line.notes[i + 1]!.start;
-    const distance = time < gapStart ? gapStart - time : time > gapEnd ? time - gapEnd : 0;
-    if (!best || distance < best.distance)
-      best = { distance, at: Math.min(defaultSwitch(gapStart, Math.max(gapStart, gapEnd), gridStep(chart)), gapEnd) };
+    consider(gapStart, gapEnd, Math.min(defaultSwitch(gapStart, Math.max(gapStart, gapEnd), gridStep(chart)), gapEnd));
   }
-  return best?.at ?? null;
+  const found = best as { distance: number; at: number | null } | null;
+  if (!found) return noGap;
+  return found.at ?? "There's already a line break here.";
 }

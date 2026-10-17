@@ -1,4 +1,4 @@
-/** The editor's controls in the title bar: Undo and Redo, the tools, auto pitch and merge. */
+/** The editor's controls in the title bar: Undo and Redo, the tools, auto pitch, merge and add line break. */
 import type { JSX } from "@solidjs/web";
 import { For, Show } from "solid-js";
 import FoldHorizontalIcon from "~icons/lucide/fold-horizontal";
@@ -9,6 +9,7 @@ import PencilIcon from "~icons/lucide/pencil";
 import ScissorsIcon from "~icons/lucide/scissors";
 import SquareIcon from "~icons/lucide/square";
 import WandSparklesIcon from "~icons/lucide/wand-sparkles";
+import WrapTextIcon from "~icons/lucide/wrap-text";
 
 import { Button } from "~/components/ui/button";
 import { Kbd } from "~/components/ui/kbd";
@@ -172,6 +173,21 @@ export function MergeButton(props: { canMerge: boolean; onMerge: () => void }) {
       testid="merge"
     >
       <FoldHorizontalIcon />
+    </IconButton>
+  );
+}
+
+/** A line break with default timing after the selected notes, or at the playhead (also B). */
+export function LineBreakButton(props: { onAdd: () => void }) {
+  return (
+    <IconButton
+      label="Add line break"
+      tooltip="Line break after the selected notes, or at the playhead"
+      shortcut="B"
+      onClick={() => props.onAdd()}
+      testid="line-break-after"
+    >
+      <WrapTextIcon />
     </IconButton>
   );
 }

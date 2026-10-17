@@ -10,6 +10,7 @@ import {
   AutoPitchButton,
   ChartRangeButton,
   HistoryButton,
+  LineBreakButton,
   MergeButton,
   SungBySwitch,
   ToolSwitch,
@@ -301,6 +302,7 @@ export default function ProjectScreen() {
       if (singer) singersView.choose(singer.index);
     },
     playheadTime: () => playback.time(),
+    busy: () => editing.busy() || loop.busy() || songMarkers.busy(),
     selection,
     setSelection,
     onRefused: (message) => toast.add({ title: message }),
@@ -469,6 +471,7 @@ export default function ProjectScreen() {
     splitAtPlayhead: () => editing.commands.splitAtPlayhead(),
     canMerge: () => editing.commands.canMerge(),
     merge: () => editing.commands.merge(),
+    lineBreakAfter: () => breakEditing.addAfter(),
     singers: singerLabels,
     sungBy: () => editing.commands.sungBy(),
     assign: (index) => editing.commands.assign(index),
@@ -880,6 +883,7 @@ export default function ProjectScreen() {
             />
             <ChartRangeButton canStart={canChartRange()} onStart={openChartRange} />
             <MergeButton canMerge={editing.commands.canMerge()} onMerge={() => editing.commands.merge()} />
+            <LineBreakButton onAdd={() => breakEditing.addHere()} />
             <Show when={duet() && selectedNotes().length > 0}>
               <SungBySwitch
                 singers={singerLabels()}

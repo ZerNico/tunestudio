@@ -1,9 +1,11 @@
 /**
  * Editing one line break (`breaks.ts` has the rules): dragging it, or ← / → with just it selected, moves it, across
  * notes too (they change line). A drag is a preview (`drag`, with a label) until it is let go, then one edit; Esc
- * cancels. A double-click on a marker removes it, one on the lane adds a break there; B adds one at the playhead, in
- * the nearest gap. B adds to the active singer; a double-click to whichever shown singer has a line there, the active one
- * first. What a press selects, and moving or deleting a selection, is `note-editing.ts`'s.
+ * cancels. A double-click on a marker removes it, one on the lane adds a break there (stored at that time). B (and Add
+ * line break) adds one with default timing after the selected notes (their singer becomes the active one), or with
+ * none selected in the gap nearest the playhead, for the active singer. A double-click adds to whichever shown singer
+ * has a line there, the active one first. What a press selects, and moving or deleting a selection, is
+ * `note-editing.ts`'s.
  */
 
 import { createSignal } from "solid-js";
@@ -11,6 +13,7 @@ import { createSignal } from "solid-js";
 import type { AutoScroll } from "./autoscroll";
 import {
   addBreak,
+  breakAfter,
   breakLanding,
   breakRange,
   linesAround,
@@ -40,9 +43,11 @@ export function createBreakEditing(options: {
   singer: () => number | null;
   /** In a duet: the singers (ids) a double-click on the lane may add a break for, the active one first. */
   singers?: () => number[];
-  /** A double-click added a break for this singer (id): it becomes the active one. */
+  /** A double-click or Line break after added a break for this singer (id): it becomes the active one. */
   onSinger?: (singerId: number) => void;
   playheadTime: () => number;
+  /** Whether another gesture is under way (a note drag, a selection box): B waits for it. */
+  busy?: () => boolean;
   onRefused: (message: string) => void;
   /** Where pointer moves and releases are heard during a drag (the window; tests pass their own). */
   pointerTarget?: EventTarget;
@@ -73,7 +78,8 @@ export function createBreakEditing(options: {
     });
   };
 
-  const add = (time: number) => {
+  /** A break at `time` (stored there, or with `automatic` default timing). */
+  const add = (time: number, automatic = false) => {
     const active = options.singer();
     const candidates = options.singers?.() ?? (active === null ? [] : [active]);
     const current = chart();
@@ -85,7 +91,7 @@ export function createBreakEditing(options: {
         (tx) => {
           // addBreak changes nothing when the singer has no line to split there.
           for (const candidate of candidates) {
-            added = addBreak(tx, current, candidate, time);
+            added = addBreak(tx, current, candidate, time, automatic);
             if (added) {
               singerId = candidate;
               break;
@@ -97,6 +103,34 @@ export function createBreakEditing(options: {
     }
     if (!added) options.onRefused("Put the line break between two notes of a line.");
     else if (singerId !== null && singerId !== active) options.onSinger?.(singerId);
+  };
+
+  /** A break with default timing after the selected notes. */
+  const addAfter = () => {
+    const current = chart();
+    const ids = new Set(options.selection().notes);
+    // Set inside the edit (a cast, so TypeScript doesn't narrow it to the empty string).
+    let result = "" as ReturnType<typeof breakAfter>;
+    options.doc().edit("Add line break", (tx) => void (result = breakAfter(tx, current, ids)), {
+      selectionAfter: () =>
+        typeof result === "string" ? options.selection() : renamed(result.split, result.created, null),
+    });
+    if (typeof result === "string") options.onRefused(result);
+    else if (result.singerId !== options.singer()) options.onSinger?.(result.singerId);
+  };
+
+  /** B: after the selected notes, or with none in the gap nearest the playhead, with default timing. */
+  const addHere = () => {
+    const notes = new Set(
+      chart()
+        .singers.flatMap((singer) => singer.lines.flatMap((line) => line.notes))
+        .map((note) => note.id),
+    );
+    if (options.selection().notes.some((id) => notes.has(id))) return addAfter();
+    const singerId = options.singer();
+    const at = singerId === null ? null : nearestGap(chart(), singerId, options.playheadTime());
+    if (typeof at === "number") add(at, true);
+    else options.onRefused(at ?? "There's no gap between notes here for a line break.");
   };
 
   /** How many notes a break at `time` moves to the other line. */
@@ -183,23 +217,33 @@ export function createBreakEditing(options: {
         .edit("Reset line break timing", (tx) => tx.updateLine(item.lineId, { switchStart: null, switchEnd: null }));
     },
 
+    /** Line break after (the note menu): a break with default timing after the selected notes. */
+    addAfter,
+    /** Add line break (B and the title bar): after the selected notes, or at the playhead. */
+    addHere,
+
     /** A double-click on the lane adds a break there. */
     laneDoubleClick(time: number) {
       add(time);
     },
 
     /** Handles a key; returns whether it did. */
-    key(event: { key: string; shiftKey: boolean; metaKey: boolean; ctrlKey: boolean; altKey: boolean }): boolean {
+    key(event: {
+      key: string;
+      shiftKey: boolean;
+      metaKey: boolean;
+      ctrlKey: boolean;
+      altKey: boolean;
+      repeat?: boolean;
+    }): boolean {
       if (cancelDrag) {
         if (event.key === "Escape") cancelDrag();
         return event.key === "Escape";
       }
       if (event.metaKey || event.ctrlKey || event.altKey) return false;
       if (event.key.toLowerCase() === "b" && !event.shiftKey) {
-        const singerId = options.singer();
-        const at = singerId === null ? null : nearestGap(chart(), singerId, options.playheadTime());
-        if (at === null) options.onRefused("There's no gap between notes here for a line break.");
-        else add(at);
+        // Held, it adds one break, not one per repeat.
+        if (!event.repeat && !options.busy?.()) addHere();
         return true;
       }
       return false;

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import type { EditorChart } from "~/lib/native/types";
 
-import { addBreak, breakLanding, breakRange, moveBreak, nearestGap, removeBreak } from "./breaks";
+import { addBreak, breakAfter, breakLanding, breakRange, moveBreak, nearestGap, removeBreak } from "./breaks";
 import { createChartDocument } from "./document";
 import { testNote as note, testSong } from "./test-chart";
 
@@ -124,6 +124,53 @@ describe("line breaks", () => {
     expect(added).toBeNull();
   });
 
+  it("adds a break with default timing after the selected notes, the last of them to start", () => {
+    const { run, lines } = setup();
+    let added: ReturnType<typeof breakAfter> = "";
+    run((tx) => void (added = breakAfter(tx, chart, new Set([101, 100]))));
+    expect(added).toEqual({ singerId: 1, split: 10, created: expect.any(Number) });
+    expect(lines()).toEqual([
+      { notes: [100, 101], switch: null },
+      { notes: [102], switch: 2.5 },
+      { notes: [103, 104], switch: null },
+    ]);
+  });
+
+  it("adds no break after a line's last note, or after both singers' notes", () => {
+    const { run } = setup();
+    let added: ReturnType<typeof breakAfter> = "";
+    expect(run((tx) => void (added = breakAfter(tx, chart, new Set([101, 102]))))).toBe(false);
+    expect(added).toBe("That's already the end of a line.");
+    const duet: EditorChart = {
+      ...chart,
+      singers: [
+        ...chart.singers,
+        { id: 2, index: 2, name: null, lines: [{ id: 12, switchStart: null, switchEnd: null, notes: [note(105, 1)] }] },
+      ],
+    };
+    run((tx) => void (added = breakAfter(tx, duet, new Set([100, 105]))));
+    expect(added).toBe("Select notes of one singer.");
+    // The selected note is inside a longer one: a break can't go between it and the notes after it.
+    const inside: EditorChart = {
+      ...chart,
+      singers: [
+        {
+          ...chart.singers[0]!,
+          lines: [
+            {
+              id: 10,
+              switchStart: null,
+              switchEnd: null,
+              notes: [note(100, 1, "a", 2.5), note(101, 1.2), note(102, 1.8)],
+            },
+          ],
+        },
+      ],
+    };
+    run((tx) => void (added = breakAfter(tx, inside, new Set([101]))));
+    expect(added).toBe("A line break can't go inside a note.");
+  });
+
   it("removes a break, joining the lines", () => {
     const { run, lines } = setup();
     run((tx) => void removeBreak(tx, chart, 10));
@@ -133,8 +180,13 @@ describe("line breaks", () => {
   it("finds the gap nearest to a time for a new break, at its default switch", () => {
     // Gaps of 4 steps: two steps before the next note.
     expect(nearestGap(chart, 1, 1.4)).toBeCloseTo(1.4);
-    expect(nearestGap(chart, 1, 3.1)).toBeCloseTo(3.4);
-    expect(nearestGap(chart, 2, 1)).toBeNull();
+    expect(nearestGap(chart, 1, 3.25)).toBeCloseTo(3.4);
+    // Nearer the break before the line than any gap in it: that one is there already.
+    expect(nearestGap(chart, 1, 3.1)).toBe("There's already a line break here.");
+    expect(nearestGap(chart, 2, 1)).toBe("There's no gap between notes here for a line break.");
+    // Between two lines there is a break already; after the last line nothing to split.
+    expect(nearestGap(chart, 1, 2.5)).toBe("There's already a line break here.");
+    expect(nearestGap(chart, 1, 4)).toBe("There's no gap between notes here for a line break.");
   });
 
   it("keeps breaks out of overlapping notes: their whole stretch counts", () => {

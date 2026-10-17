@@ -33,6 +33,7 @@ export interface NoteMenuActions {
   splitAtPlayhead: () => void;
   canMerge: () => boolean;
   merge: () => void;
+  lineBreakAfter: () => void;
   /** The singers of a duet (none: solo), for Sung by. */
   singers: () => { index: number; label: string }[];
   /** Which singers (indexes) sing the selected notes. */
@@ -97,6 +98,10 @@ export function NoteMenu(props: { actions: NoteMenuActions; children: JSX.Elemen
           <ContextMenuItem disabled={!props.actions.canMerge()} onClick={() => props.actions.merge()}>
             Merge
             <ContextMenuShortcut>M</ContextMenuShortcut>
+          </ContextMenuItem>
+          <ContextMenuItem onClick={() => props.actions.lineBreakAfter()}>
+            Line break after
+            <ContextMenuShortcut>B</ContextMenuShortcut>
           </ContextMenuItem>
           <Show when={props.actions.singers().length > 1}>
             <ContextMenuSeparator />

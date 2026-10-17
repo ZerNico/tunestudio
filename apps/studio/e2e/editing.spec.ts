@@ -118,6 +118,35 @@ test("line breaks are selected with the notes, move with them, and are grabbed o
   await expect(notes.nth(0)).not.toHaveAttribute("data-selected", "true");
 });
 
+test("a line break goes after the selected notes, or at the playhead, with the button and B, with default timing", async () => {
+  await openSong();
+  const { page } = studio;
+  const notes = page.getByTestId("roll-note");
+  const markers = page.getByTestId("break-marker");
+  await notes.nth(1).click();
+  await page.getByTestId("line-break-after").click();
+  await expect(markers).toHaveCount(2);
+  await expect(page.getByTestId("undo")).toHaveAttribute("aria-label", "Undo Add line break");
+  await notes.nth(3).click();
+  await page.keyboard.press("b");
+  await expect(markers).toHaveCount(3);
+  for (const marker of await markers.all()) await expect(marker).toHaveAttribute("data-auto", "");
+  // After a line's last note there is nothing to split.
+  await notes.nth(4).click();
+  await page.keyboard.press("b");
+  await expect(page.getByText("That's already the end of a line.")).toBeVisible();
+  await expect(markers).toHaveCount(3);
+  // With nothing selected it goes at the playhead: in a gap that has a break already, none is added elsewhere.
+  await page.keyboard.press("Escape");
+  const world = (await notes.nth(2).boundingBox())!;
+  const good = (await notes.nth(3).boundingBox())!;
+  const ruler = (await page.getByTestId("time-ruler").boundingBox())!;
+  await page.mouse.click((world.x + world.width + good.x) / 2, ruler.y + ruler.height / 2);
+  await page.getByTestId("line-break-after").click();
+  await expect(page.getByText("There's already a line break here.")).toBeVisible();
+  await expect(markers).toHaveCount(3);
+});
+
 test("a dragged line break keeps its time until Reset timing in its menu", async () => {
   await openSong();
   const { page } = studio;

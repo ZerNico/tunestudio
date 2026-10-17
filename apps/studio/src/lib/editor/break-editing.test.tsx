@@ -6,7 +6,7 @@ import type { EditorChart } from "~/lib/native/types";
 import { createBreakEditing } from "./break-editing";
 import { lineBreaks } from "./chart";
 import { createChartDocument } from "./document";
-import { breaksOnly, notesOnly, type Selection } from "./selection";
+import { breaksOnly, NOTHING, notesOnly, type Selection } from "./selection";
 import { testNote as note, testSong } from "./test-chart";
 
 /** Grid: 0.05 s steps from 1 s. Line 10's break is stored at 2.5 s. */
@@ -27,7 +27,7 @@ const chart: EditorChart = {
   ],
 };
 
-function setup(playhead = 0) {
+function setup(playhead = 0, busy = false) {
   return createRoot(() => {
     const [selection, setSelection] = createSignal<Selection>(notesOnly([5]));
     const doc = createChartDocument<Selection>({
@@ -45,6 +45,7 @@ function setup(playhead = 0) {
       setSelection,
       singer: () => 1,
       playheadTime: () => playhead,
+      busy: () => busy,
       onRefused,
       pointerTarget: pointer,
     });
@@ -59,8 +60,8 @@ function setup(playhead = 0) {
         flush();
       }
     };
-    const press = (key: string) => {
-      const handled = editing.key({ key, shiftKey: false, metaKey: false, ctrlKey: false, altKey: false });
+    const press = (key: string, repeat = false) => {
+      const handled = editing.key({ key, shiftKey: false, metaKey: false, ctrlKey: false, altKey: false, repeat });
       flush();
       return handled;
     };
@@ -110,9 +111,58 @@ describe("break editing", () => {
     editing.laneDoubleClick(1.4);
     flush();
     expect(lines()).toEqual([[100], [101, 102], [103, 104]]);
-    const atPlayhead = setup(3.1);
+    const atPlayhead = setup(3.25);
+    atPlayhead.setSelection(NOTHING);
+    flush();
     expect(atPlayhead.press("b")).toBe(true);
     expect(atPlayhead.lines()).toEqual([[100, 101, 102], [103], [104]]);
+    // The new one has default timing; the stored one stays.
+    expect(lineBreaks(atPlayhead.doc.chart()).map((item) => item.auto)).toEqual([false, true]);
+    // In the gap between two lines there is a break already: none is added elsewhere.
+    const between = setup(2.6);
+    between.setSelection(NOTHING);
+    flush();
+    between.press("b");
+    expect(between.lines()).toEqual([
+      [100, 101, 102],
+      [103, 104],
+    ]);
+    expect(between.onRefused).toHaveBeenCalledWith("There's already a line break here.");
+  });
+
+  it("adds one break while B is held, none during another gesture, and goes by the playhead past stale ids", () => {
+    const held = setup(1.4);
+    held.setSelection(NOTHING);
+    flush();
+    held.press("b");
+    held.press("b", true);
+    held.press("b", true);
+    expect(held.lines()).toEqual([[100], [101, 102], [103, 104]]);
+    const dragging = setup(1.4, true);
+    dragging.setSelection(NOTHING);
+    flush();
+    expect(dragging.press("b")).toBe(true);
+    expect(dragging.doc.undoLabel()).toBeNull();
+    // The default selection holds a note that isn't there (5).
+    const stale = setup(1.4);
+    stale.press("b");
+    expect(stale.lines()).toEqual([[100], [101, 102], [103, 104]]);
+  });
+
+  it("adds a break with default timing after the selected notes with B, keeping them selected", () => {
+    const { press, lines, doc, selection, setSelection, onRefused } = setup(3.1);
+    setSelection(notesOnly([100]));
+    flush();
+    expect(press("b")).toBe(true);
+    expect(lines()).toEqual([[100], [101, 102], [103, 104]]);
+    expect(lineBreaks(doc.chart())[0]).toMatchObject({ auto: true });
+    expect(selection()).toEqual(notesOnly([100]));
+    expect(doc.undoLabel()).toBe("Add line break");
+    // After a line's last note there is nothing to split.
+    setSelection(notesOnly([104]));
+    flush();
+    press("b");
+    expect(onRefused).toHaveBeenCalledWith("That's already the end of a line.");
   });
 
   it("keeps the selected break the one picked when a break is added or removed next to it", () => {
