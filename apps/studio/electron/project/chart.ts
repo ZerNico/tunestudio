@@ -25,22 +25,6 @@ export function writeChart(db: Queryable, chart: ProjectChart) {
   });
 }
 
-/**
- * Replaces the project's singers, lines and notes with `chart`'s, and its grid (BPM and GAP) with `chart`'s; the
- * other song details stay. Run it in a transaction: it deletes before it writes.
- */
-export function replaceChart(
-  db: Queryable,
-  chart: Pick<ProjectChart, "singers"> & { song: { bpm: number; gap: number } },
-) {
-  return Effect.gen(function* () {
-    // Lines and notes go with their singers.
-    yield* db.delete(singers);
-    yield* db.update(song).set({ bpm: chart.song.bpm, gap: chart.song.gap });
-    yield* writeSingers(db, chart.singers);
-  });
-}
-
 function writeSingers(db: Queryable, chartSingers: readonly ChartSingerRow[]) {
   return Effect.gen(function* () {
     for (const singer of chartSingers) {

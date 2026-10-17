@@ -48,6 +48,8 @@ interface DraftsShape {
  */
 export class Drafts extends Context.Service<Drafts, DraftsShape>()("studio/Drafts") {}
 
+const gone = () => new DraftGone({ message: "This new project was closed. Start it again." });
+
 /**
  * Drafts in `folder` (in the app's data directory). Whatever is there when the app starts was
  * left by a crash, since only one Tune Studio runs at a time, so it is removed; so is every
@@ -67,10 +69,18 @@ export function draftsLayer(folder: string) {
       const get = (id: string) =>
         Effect.flatMap(Ref.get(drafts), (all) => {
           const draft = all.get(id);
-          return draft
-            ? Effect.succeed(draft)
-            : Effect.fail(new DraftGone({ message: "This new project was closed. Start it again." }));
+          return draft ? Effect.succeed(draft) : Effect.fail(gone());
         });
+
+      /** Changes a draft in one step, so a change made meanwhile (or a discard) isn't overwritten. */
+      const change = (id: string, update: (draft: Draft) => Draft) =>
+        Effect.flatMap(
+          Ref.modify(drafts, (all) => {
+            const draft = all.get(id);
+            return draft ? [true, new Map(all).set(id, update(draft))] : [false, all];
+          }),
+          (found) => (found ? Effect.void : Effect.fail(gone())),
+        );
 
       return {
         create: (source) =>
@@ -84,20 +94,18 @@ export function draftsLayer(folder: string) {
             return draft;
           }),
         get,
-        setMedia: (id, media) =>
-          Effect.flatMap(get(id), (draft) => Ref.update(drafts, (all) => new Map(all).set(id, { ...draft, media }))),
-        setChart: (id, chart) =>
-          Effect.flatMap(get(id), (draft) => Ref.update(drafts, (all) => new Map(all).set(id, { ...draft, chart }))),
+        setMedia: (id, media) => change(id, (draft) => ({ ...draft, media })),
+        setChart: (id, chart) => change(id, (draft) => ({ ...draft, chart })),
         discard: (id) =>
           Effect.gen(function* () {
-            const draft = (yield* Ref.get(drafts)).get(id);
-            if (!draft) return;
-            yield* Ref.update(drafts, (all) => {
+            const draft = yield* Ref.modify(drafts, (all) => {
+              const found = all.get(id);
+              if (!found) return [undefined, all];
               const next = new Map(all);
               next.delete(id);
-              return next;
+              return [found, next];
             });
-            yield* fs.remove(draft.folder, { recursive: true, force: true }).pipe(Effect.ignore);
+            if (draft) yield* fs.remove(draft.folder, { recursive: true, force: true }).pipe(Effect.ignore);
           }),
       } satisfies DraftsShape;
     }),

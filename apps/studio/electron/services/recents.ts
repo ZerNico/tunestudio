@@ -26,7 +26,10 @@ export const RecentsFile = Schema.fromJsonString(
 const LIMIT = 50;
 
 interface RecentsShape {
-  /** The projects, newest first. Files that no longer exist are dropped from the list. */
+  /**
+   * The projects, newest first. Files that no longer exist are dropped from the list, but only when their folder is
+   * still there: one on a drive that isn't plugged in (or a share that isn't connected) stays.
+   */
   readonly list: Effect.Effect<RecentProjectEntry[]>;
   /** Adds or moves a project to the top. */
   readonly add: (entry: RecentProjectEntry) => Effect.Effect<void, FileError>;
@@ -58,6 +61,8 @@ export function recentsLayer(file: string) {
         Effect.orElseSucceed((): RecentProjectEntry[] => []),
       );
 
+      const exists = (path: string) => fs.exists(path).pipe(Effect.orElseSucceed(() => true));
+
       const write = (projects: RecentProjectEntry[]) => {
         const temporary = `${file}.${randomUUID().slice(0, 8)}.tmp`;
         return Effect.gen(function* () {
@@ -78,7 +83,9 @@ export function recentsLayer(file: string) {
           Effect.gen(function* () {
             const projects = yield* read;
             const kept = yield* Effect.filter(projects, (project) =>
-              fs.exists(project.path).pipe(Effect.orElseSucceed(() => true)),
+              Effect.flatMap(exists(project.path), (found) =>
+                found ? Effect.succeed(true) : Effect.map(exists(paths.dirname(project.path)), (folder) => !folder),
+              ),
             );
             if (kept.length !== projects.length) yield* write(kept).pipe(Effect.ignore);
             return kept;

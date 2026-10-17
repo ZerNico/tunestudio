@@ -14,6 +14,7 @@ import {
   MENU_COMMAND_CHANNEL,
   type MenuCommand,
 } from "../src/lib/native/channel";
+import { flushThenReload } from "./flush";
 import { COPYRIGHT } from "./identity";
 
 /**
@@ -76,7 +77,19 @@ export function setProjectItemsEnabled(enabled: boolean) {
 export function setApplicationMenu(onNewWindow: () => void, onOpenProject: () => void) {
   const development = !app.isPackaged;
   const developmentItems: MenuItemConstructorOptions[] = development
-    ? [{ type: "separator" }, { role: "reload" }, { role: "toggleDevTools" }]
+    ? [
+        { type: "separator" },
+        // Not the role: the page saves what is waiting first.
+        {
+          label: "Reload",
+          accelerator: "CmdOrCtrl+R",
+          click: (_item, window) => {
+            const target = window instanceof BrowserWindow ? window : BrowserWindow.getFocusedWindow();
+            if (target) flushThenReload(target.webContents);
+          },
+        },
+        { role: "toggleDevTools" },
+      ]
     : [];
 
   if (process.platform !== "darwin") {
@@ -176,7 +189,7 @@ export function attachContextMenu(contents: WebContents) {
       items.push(
         { label: "Back", enabled: history.canGoBack(), click: () => history.goBack() },
         { label: "Forward", enabled: history.canGoForward(), click: () => history.goForward() },
-        { label: "Reload", click: () => contents.reload() },
+        { label: "Reload", click: () => flushThenReload(contents) },
         { type: "separator" },
         { label: "Inspect Element", click: () => contents.inspectElement(params.x, params.y) },
       );

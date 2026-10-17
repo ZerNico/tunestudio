@@ -89,6 +89,14 @@ describe("Recents", () => {
     expect(JSON.parse(fs.readFileSync(file, "utf8")).projects).toEqual([b]);
   });
 
+  it("keeps projects whose whole folder is gone, as on a drive that isn't plugged in", async () => {
+    const { run, project } = setup();
+    const a = project("A", "2026-10-01T10:00:00.000Z");
+    const unplugged = { ...a, path: path.join(path.dirname(a.path), "Volume", "Song.tunestudio") };
+    await run(Recents.use((recents) => recents.add(unplugged)));
+    expect(await run(Recents.use((recents) => recents.list))).toEqual([unplugged]);
+  });
+
   it("treats a damaged or foreign list as empty instead of failing", async () => {
     const { file, run, project } = setup();
     fs.mkdirSync(path.dirname(file), { recursive: true });

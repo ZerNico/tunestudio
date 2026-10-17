@@ -9,7 +9,7 @@ import { Effect, FileSystem, Path } from "effect";
 import { decodeMono } from "../charting/audio";
 import { mapFileError } from "../errors";
 import { orDiskFull, type Queryable } from "./database";
-import { type MediaRow, writeMediaToFile } from "./media";
+import { getMedia, type MediaRow, writeMediaToFile } from "./media";
 import { type ANALYSIS_KINDS, analysis } from "./schema";
 
 type Kind = (typeof ANALYSIS_KINDS)[number];
@@ -44,7 +44,10 @@ export function readF32Analysis(db: Queryable, which: F32Analysis, input: MediaR
   });
 }
 
-/** Stores `values` as `which` for `input`, replacing what was stored for that file. */
+/**
+ * Stores `values` as `which` for `input`, replacing what was stored for that file. A file replaced or removed while they
+ * were worked out gets nothing: its rows would only be deleted again (and its id can't be pointed at any more).
+ */
 export function writeF32Analysis(
   db: Queryable,
   which: F32Analysis,
@@ -52,7 +55,10 @@ export function writeF32Analysis(
   values: Float32Array,
   params: Record<string, unknown>,
 ) {
-  return Effect.gen(function* () {
+  // One transaction, so the file can't go between the check and the write.
+  const write = Effect.gen(function* () {
+    const still = yield* getMedia(db, input.id);
+    if (still?.sha256 !== input.sha256) return;
     yield* db
       .delete(analysis)
       .where(and(eq(analysis.kind, which.kind), eq(analysis.inputSha256, input.sha256)))
@@ -71,6 +77,7 @@ export function writeF32Analysis(
       })
       .pipe(orDiskFull);
   });
+  return db.transaction(() => write).pipe(orDiskFull);
 }
 
 /** `input` decoded to mono at `sampleRate` with `ffmpeg`, from a copy in a temporary folder (gone afterwards). */

@@ -1,6 +1,6 @@
 import { Effect, Option } from "effect";
 
-import { CHUNK_SIZE, getMedia, readRange } from "../project/media";
+import { CHUNK_SIZE, getMedia, headerMime, readRange } from "../project/media";
 import { Projects } from "../project/projects";
 import { MEDIA_SCHEME } from "./media-url";
 
@@ -43,7 +43,8 @@ export function mediaResponse(
       if (!row) return notFound();
 
       const headers = new Headers({
-        "Content-Type": row.mime,
+        // Files stored before MIME types were checked may have one a header can't hold.
+        "Content-Type": headerMime(row.mime),
         "Accept-Ranges": "bytes",
         "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff",

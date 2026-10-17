@@ -4,6 +4,7 @@ import { Clock, Context, Effect, FileSystem, Layer, Path, Schema, Semaphore } fr
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import type { ToolProgress, ToolStatus } from "../../src/lib/native/types";
+import { abortable } from "../abortable";
 import {
   type FileError,
   fileError,
@@ -14,6 +15,7 @@ import {
 } from "../errors";
 import { AppLog } from "../services/app-log";
 import { Downloads, TOOL_HOSTS } from "./downloads";
+import { runningIn } from "./ffmpeg";
 import { latestRelease, type Platform, TOOL_LABELS, TOOL_NAMES, type ToolName, type ToolRelease } from "./sources";
 import { isZip, unzip } from "./unzip";
 
@@ -58,7 +60,10 @@ interface ToolsShape {
     tools: readonly ToolName[],
     options?: { force?: boolean; onProgress?: (progress: ToolProgress) => Effect.Effect<void> },
   ) => Effect.Effect<Record<ToolName, ToolPaths>, ToolError>;
-  /** Deletes `tool` (waiting while it is installed or updated); it is installed again when needed. */
+  /**
+   * Deletes `tool` (waiting while it is installed or updated); it is installed again when needed. A version a job is
+   * running now is deleted at the next start.
+   */
   readonly remove: (tool: ToolName) => Effect.Effect<void, FileError>;
 }
 
@@ -70,6 +75,10 @@ const decodeManifest = Schema.decodeUnknownEffect(Manifest);
 /** The files a release is installed from. */
 const sourcesOf = (release: ToolRelease) => release.downloads.map((download) => download.url);
 const encodeManifest = Schema.encodeSync(Manifest);
+
+/** The folders in a tool's folder its manifest uses (none without one). */
+const usedFolders = (manifest: Manifest | undefined) =>
+  new Set(Object.values(manifest?.executables ?? {}).map((relative) => relative.split(/[\\/]/)[0]!));
 
 export function toolsLayer(options: { folder: string; platform: Platform }) {
   return Layer.effect(
@@ -123,7 +132,8 @@ export function toolsLayer(options: { folder: string; platform: Platform }) {
         Effect.gen(function* () {
           const head = yield* fs.readFile(file).pipe(Effect.map((bytes) => bytes.subarray(0, 4)));
           if (isZip(head)) {
-            return yield* Effect.tryPromise(() => unzip(file, folder)).pipe(
+            // Stopped meanwhile, it finishes unpacking before its folder is removed.
+            return yield* abortable({ try: () => unzip(file, folder), catch: (error) => error }).pipe(
               Effect.as(true),
               Effect.orElseSucceed(() => false),
             );
@@ -204,9 +214,11 @@ export function toolsLayer(options: { folder: string; platform: Platform }) {
               }
             }
 
-            const versionFolder = paths.join(toolFolder(tool), release.version);
-            yield* fs.remove(versionFolder, { recursive: true, force: true });
-            yield* fs.rename(staging, versionFolder);
+            // The same version again (a rebuild, or a broken install) goes beside the old one: a job may still be
+            // running it. Startup removes the folders the manifest doesn't name.
+            const taken = yield* fs.exists(paths.join(toolFolder(tool), release.version));
+            const folderName = taken ? `${release.version}-${randomUUID().slice(0, 8)}` : release.version;
+            yield* fs.rename(staging, paths.join(toolFolder(tool), folderName));
             const manifest: Manifest = {
               version: release.version,
               checkedAt: yield* Clock.currentTimeMillis,
@@ -215,8 +227,8 @@ export function toolsLayer(options: { folder: string; platform: Platform }) {
                   download.executables.map((executable) => [
                     executable.as.replace(/\.exe$/, ""),
                     download.bundle
-                      ? paths.join(release.version, download.bundle, executable.from)
-                      : paths.join(release.version, executable.as),
+                      ? paths.join(folderName, download.bundle, executable.from)
+                      : paths.join(folderName, executable.as),
                   ]),
                 ),
               ),
@@ -234,14 +246,7 @@ export function toolsLayer(options: { folder: string; platform: Platform }) {
               }
             }
 
-            // Older versions are no longer used; failing to remove one doesn't matter.
-            const entries = yield* fs.readDirectory(toolFolder(tool)).pipe(Effect.orElseSucceed(() => []));
-            yield* Effect.forEach(
-              entries.filter(
-                (entry) => entry !== release.version && entry !== "current.json" && !entry.startsWith("."),
-              ),
-              (entry) => fs.remove(paths.join(toolFolder(tool), entry), { recursive: true }).pipe(Effect.ignore),
-            );
+            // Older versions stay until the next start: a job may be running one now.
             return manifest;
           }).pipe(Effect.ensuring(fs.remove(work, { recursive: true, force: true }).pipe(Effect.ignore)));
         }).pipe(
@@ -249,6 +254,24 @@ export function toolsLayer(options: { folder: string; platform: Platform }) {
             Effect.fail(fileError(TOOL_LABELS[release.tool], "install")(error)),
           ),
         );
+
+      /**
+       * Removes what `tool`'s current version doesn't use: older versions, and downloads and settings a crash or a quit
+       * left half done. Only at startup, when no job can be running them.
+       */
+      const prune = (tool: ToolName) =>
+        Effect.gen(function* () {
+          const manifest = yield* readManifest(tool);
+          const keep = usedFolders(manifest._tag === "Some" ? manifest.value : undefined);
+          const entries = yield* fs.readDirectory(toolFolder(tool)).pipe(Effect.orElseSucceed(() => []));
+          yield* Effect.forEach(
+            entries.filter((entry) => entry !== "current.json" && !keep.has(entry)),
+            (entry) =>
+              fs.remove(paths.join(toolFolder(tool), entry), { recursive: true, force: true }).pipe(Effect.ignore),
+            { discard: true },
+          );
+        });
+      yield* Effect.forEach(TOOL_NAMES, prune, { discard: true });
 
       const ensureOne = (
         tool: ToolName,
@@ -320,9 +343,24 @@ export function toolsLayer(options: { folder: string; platform: Platform }) {
           }),
         remove: (tool) =>
           locks[tool].withPermits(1)(
-            fs
-              .remove(toolFolder(tool), { recursive: true, force: true })
-              .pipe(mapFileError(TOOL_LABELS[tool], "delete")),
+            Effect.gen(function* () {
+              // Without its manifest the tool counts as removed and is installed again when needed.
+              yield* fs.remove(manifestFile(tool), { force: true }).pipe(mapFileError(TOOL_LABELS[tool], "delete"));
+              const entries = yield* fs.readDirectory(toolFolder(tool)).pipe(Effect.orElseSucceed(() => []));
+              // A version a job is running stays until the next start.
+              const idle = entries.filter((entry) => !runningIn(paths.join(toolFolder(tool), entry), paths.sep));
+              yield* Effect.forEach(
+                idle,
+                (entry) =>
+                  fs
+                    .remove(paths.join(toolFolder(tool), entry), { recursive: true, force: true })
+                    .pipe(mapFileError(TOOL_LABELS[tool], "delete")),
+                { discard: true },
+              );
+              if (idle.length === entries.length) {
+                yield* fs.remove(toolFolder(tool), { recursive: true, force: true }).pipe(Effect.ignore);
+              }
+            }),
           ),
       } satisfies ToolsShape;
     }),

@@ -13,8 +13,8 @@ import { separateStems } from "../separation/separation";
 import { Desktop } from "../services/desktop";
 import { Drafts } from "../services/drafts";
 import { AppSettings } from "../services/settings";
+import { localInput, PROBE_LOCAL_ONLY, runTool } from "../tools/ffmpeg";
 import { Tools } from "../tools/tools";
-import { runTool } from "../youtube/run";
 
 /** The parts of FFprobe's JSON (`-show_format -show_streams`) used here. */
 const Probe = Schema.fromJsonString(
@@ -70,7 +70,7 @@ export function probe(ffprobe: string, file: string, name: string, kind: keyof t
     const lines: string[] = [];
     const result = yield* runTool(
       ffprobe,
-      ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", "--", file],
+      ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", ...PROBE_LOCAL_ONLY, "--", file],
       (line) => Effect.sync(() => void lines.push(line)),
     ).pipe(Effect.mapError(() => unreadable(name, kind)));
     if (result.code !== 0) return yield* unreadable(name, kind);
@@ -112,8 +112,7 @@ function extractArtwork(ffmpeg: string, file: string, info: Probe, folder: strin
       "-v",
       "error",
       "-y",
-      "-i",
-      file,
+      ...localInput(file),
       "-map",
       `0:${index}`,
       "-c",

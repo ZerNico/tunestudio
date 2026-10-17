@@ -121,8 +121,9 @@ describe("import, open, export and recents", () => {
     expect(inspection.suggestedName).toBe("Test Artist - Night Signals");
 
     // The project location defaults to Music/Tune Studio, which the dialog needs to exist.
+    // The dialog adds the extension (`desktop-electron.ts`).
     const target = path.join(dir, "Music", "Tune Studio", "Night Signals");
-    recorded.answers.push(target);
+    recorded.answers.push(`${target}.tunestudio`);
     const location = await rpc.dialogs.chooseProjectLocation({ name: inspection.suggestedName });
     expect(location).toBe(`${target}.tunestudio`);
     expect(fs.existsSync(path.dirname(target))).toBe(true);

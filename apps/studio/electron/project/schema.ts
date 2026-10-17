@@ -139,7 +139,7 @@ export const analysis = sqliteTable("analysis", {
   data: blob("data", { mode: "buffer" }).notNull(),
 });
 
-/** `key` → JSON: view, zoom, selected source, panels. */
+/** `key` → JSON. Unused so far: the editor keeps its view, zoom and listening settings in localStorage (`prefs.ts`). */
 export const editorState = sqliteTable("editor_state", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),

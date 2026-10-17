@@ -272,4 +272,16 @@ describe("Models", () => {
       expect(requested).toHaveLength(1);
     }).pipe(Effect.provide(layer));
   });
+
+  it.effect("clears what cut-off downloads left at startup, and nothing else", () => {
+    const { folder, layer } = setup();
+    fs.mkdirSync(path.join(folder, ".model.onnx.0123abcd.unpack"), { recursive: true });
+    fs.writeFileSync(path.join(folder, ".model.onnx.0123abcd.download"), "half");
+    fs.writeFileSync(path.join(folder, "installed.json.89abcdef.tmp"), "{");
+    fs.writeFileSync(path.join(folder, "model.onnx"), BYTES);
+    return Effect.gen(function* () {
+      yield* Models;
+      expect(fs.readdirSync(folder)).toEqual(["model.onnx"]);
+    }).pipe(Effect.provide(layer));
+  });
 });
