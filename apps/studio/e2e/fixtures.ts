@@ -96,6 +96,32 @@ export function songFixture(): SongFixture {
   return { dir, folder, audio, cover: PNG, cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
 }
 
+/** A WAV file of silence, `seconds` long: audio that really plays (the fixture's own is random bytes). */
+function silentWav(seconds: number): Buffer {
+  const rate = 8000;
+  const size = rate * seconds * 2;
+  const bytes = Buffer.alloc(44 + size);
+  bytes.write("RIFF");
+  bytes.writeUInt32LE(36 + size, 4);
+  bytes.write("WAVEfmt ", 8);
+  bytes.writeUInt32LE(16, 16);
+  bytes.writeUInt16LE(1, 20);
+  bytes.writeUInt16LE(1, 22);
+  bytes.writeUInt32LE(rate, 24);
+  bytes.writeUInt32LE(rate * 2, 28);
+  bytes.writeUInt16LE(2, 32);
+  bytes.writeUInt16LE(16, 34);
+  bytes.write("data", 36);
+  bytes.writeUInt32LE(size, 40);
+  return bytes;
+}
+
+/** Gives the fixture song audio that plays (silence), for tests that need playback to run; before importing it. */
+export function makePlayable(song: SongFixture) {
+  for (const name of ["song.mp3", "song [VOC].mp3", "song [INSTR].mp3"])
+    fs.writeFileSync(path.join(song.folder, name), silentWav(6));
+}
+
 /**
  * Replaces Electron's dialogs and `shell.showItemInFolder` in the main process: dialogs answer
  * from a queue (`answerDialogs`), revealed paths are recorded (`revealedPaths`). No native

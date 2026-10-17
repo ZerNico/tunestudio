@@ -22,4 +22,10 @@ describe("syllabify", () => {
     // Other languages use the English rules.
     expect(ruleSplit("chanson", "french")).toEqual(ruleSplit("chanson", "english"));
   });
+
+  it("takes words and languages named like Object's own properties as any other", () => {
+    expect(syllabify("constructor", "english")).toEqual(ruleSplit("constructor", "english"));
+    expect(syllabify("__proto__", "german").join("")).toBe("__proto__");
+    expect(syllabify("hello", "constructor")).toEqual(syllabify("hello", "english"));
+  });
 });

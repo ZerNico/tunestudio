@@ -21,6 +21,9 @@ export function decodeMono(ffmpeg: string, file: string, sampleRate: number, fol
         "-y",
         "-v",
         "error",
+        // Only the local file: a playlist inside a shared project mustn't make FFmpeg fetch or read elsewhere.
+        "-protocol_whitelist",
+        "file",
         "-i",
         file,
         "-map",

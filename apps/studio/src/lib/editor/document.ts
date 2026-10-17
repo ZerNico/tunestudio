@@ -292,6 +292,20 @@ export function createChartDocument<Selection>(options: {
     return true;
   };
 
+  /**
+   * An edit that may be refused: `build` returns why (before changing anything, so nothing is recorded), or makes the
+   * changes and returns null.
+   */
+  const tryEdit = (
+    label: string,
+    build: (tx: EditRecorder) => string | null,
+    options?: Parameters<typeof edit>[2],
+  ): string | null => {
+    let problem: string | null = null;
+    edit(label, (tx) => void (problem = build(tx)), options);
+    return problem;
+  };
+
   return {
     /** The chart as drawn; follows every edit. */
     chart,
@@ -299,6 +313,7 @@ export function createChartDocument<Selection>(options: {
     /** Synchronous revision, including edits undone again and failed saves. */
     revision: () => revision,
     edit,
+    tryEdit,
     undo: () => {
       const step = failed ? undefined : history.undo();
       if (!step) return;

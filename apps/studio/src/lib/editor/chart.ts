@@ -4,7 +4,7 @@
  */
 import { defaultSwitch } from "@tunestudio/ultrastar";
 
-import type { EditorChart, EditorNote } from "~/lib/native/types";
+import type { EditorChart, EditorNote, NoteType } from "~/lib/native/types";
 
 /** Times closer than this are the same (seconds, against float rounding). */
 const EPSILON = 1e-6;
@@ -134,6 +134,25 @@ export function lineBreaks(chart: EditorChart): LineBreak[] {
 /** The longest note or line, for finding what reaches into a window. */
 export function longest(items: readonly { duration: number }[]): number {
   return items.reduce((max, item) => Math.max(max, item.duration), 0);
+}
+
+/** Where the last of `notes` to end ends; -Infinity for none (no limit). */
+export const lastEnd = (notes: readonly { start: number; duration: number }[]) =>
+  Math.max(...notes.map((note) => note.start + note.duration));
+
+/** Whether a note of `type` is sung on its pitch (rap and freestyle notes have none to hear or match). */
+export const voiced = (type: NoteType) => type === "normal" || type === "golden";
+
+/** The first index whose note starts at or after `time` (notes sorted by start). */
+export function firstFrom(notes: readonly { start: number }[], time: number): number {
+  let low = 0;
+  let high = notes.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (notes[middle]!.start < time) low = middle + 1;
+    else high = middle;
+  }
+  return low;
 }
 
 /** The notes `time` is inside (not at their very start or end). */

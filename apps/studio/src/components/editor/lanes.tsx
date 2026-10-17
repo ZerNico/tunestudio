@@ -1,16 +1,22 @@
 import type { JSX } from "@solidjs/web";
-import { For, Show } from "solid-js";
+import { createEffect, createMemo, For, Show } from "solid-js";
 
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "~/components/ui/context-menu";
 import type { AutoScroll } from "~/lib/editor/autoscroll";
 import type { BreakDrag } from "~/lib/editor/break-editing";
+import { fitCanvas } from "~/lib/editor/canvas";
 import type { LineBreak, LineSpan } from "~/lib/editor/chart";
 import type { Loop } from "~/lib/editor/loop";
 import type { SongMarkers } from "~/lib/editor/song-markers";
 import { formatTime, rulerStep, rulerTicks, timeToX, type TimeView, xToTime } from "~/lib/editor/view";
+import { loudest, waveColumns } from "~/lib/editor/waveform";
+import type { Waveform } from "~/lib/native/types";
 
+import { InlineField } from "./inline-field";
 import { breakX, GUTTER_PX } from "./piano-roll";
 
+/** The waveform lane's height (`h-10`). */
+const WAVEFORM_PX = 40;
 /** A line's text shows only with at least this much room. */
 const MIN_TEXT_PX = 24;
 
@@ -272,7 +278,40 @@ export function BreakLane(props: {
   );
 }
 
-/** Each line's text under its notes (singer 2 on a second row in a duet), cut where the next line starts. */
+/**
+ * How loud the vocals (or the song) are under the roll, mirrored around the middle and scaled to the song's loud parts,
+ * so where a syllable starts shows. Drawn on a canvas, a column a pixel.
+ */
+export function WaveformLane(props: { waveform: Waveform; view: TimeView; width: number }) {
+  let canvas: HTMLCanvasElement | undefined;
+  const scale = createMemo(() => loudest(props.waveform));
+  createEffect(
+    () => waveColumns(props.waveform, props.view, props.width, scale()),
+    (columns) => {
+      const context = canvas && fitCanvas(canvas, props.width, WAVEFORM_PX);
+      if (!context) return;
+      context.fillStyle = getComputedStyle(canvas!).color;
+      const middle = WAVEFORM_PX / 2;
+      columns.forEach((value, x) => {
+        if (value > 0) context.fillRect(x, middle - value * middle, 1, Math.max(1, 2 * value * middle));
+      });
+    },
+  );
+  return (
+    <Lane class="h-10 bg-bar" testid="waveform-lane">
+      <canvas
+        ref={(element) => (canvas = element)}
+        class="pointer-events-none absolute inset-0 size-full text-muted-foreground opacity-55"
+        aria-hidden="true"
+      />
+    </Lane>
+  );
+}
+
+/**
+ * Each line's text under its notes (singer 2 on a second row in a duet), cut where the next line starts. A double-click
+ * on a line's text edits it as text (`line-text.ts`): Enter or leaving the field applies, Esc cancels.
+ */
 export function LyricsLane(props: {
   lines: LineSpan[];
   all: LineSpan[];
@@ -280,12 +319,29 @@ export function LyricsLane(props: {
   duet: boolean;
   /** In a duet, the singer edits go to: the other one's text is muted. */
   activeSinger?: number;
+  /** The lane's width (px): the text field stays inside it. */
+  width: number;
+  /** The line being edited as text, and its text. */
+  editing?: { lineId: number; text: string } | null;
+  onEdit?: (lineId: number) => void;
+  /** The typed text (null: cancelled); `fromKey` when Enter applied it (a refused text stays to be fixed). */
+  onEditDone?: (text: string | null, fromKey: boolean) => void;
 }) {
   const nextStart = (line: LineSpan) =>
     props.all.find((other) => other.singer === line.singer && other.start > line.start)?.start ?? Infinity;
   /** The room for a line's text, up to where the singer's next line starts. */
   const room = (line: LineSpan) =>
     Math.max(0, (Math.min(nextStart(line), line.start + 600) - line.start) * props.view.pxPerSecond - 6);
+  /** The line being edited (from every line, not just those in view) and its text. */
+  const edited = createMemo(() => {
+    const editing = props.editing;
+    const line = editing && props.all.find((item) => item.id === editing.lineId);
+    return line ? { line, text: editing.text } : null;
+  });
+  /** The text field: at least 360 px, and inside the lane even where the line starts off its edges. */
+  const fieldWidth = (line: LineSpan) => Math.min(Math.max(room(line), 360), Math.max(120, props.width - 8));
+  const fieldLeft = (line: LineSpan) =>
+    Math.min(Math.max(0, timeToX(props.view, line.start)), Math.max(0, props.width - fieldWidth(line)));
   return (
     <Lane class={props.duet ? "h-11 bg-bar" : "h-7 bg-bar"} testid="lyrics-lane">
       <For each={props.lines}>
@@ -294,11 +350,13 @@ export function LyricsLane(props: {
             data-singer={line.singer}
             data-row={props.duet && line.singer === 2 ? "2" : undefined}
             data-inactive={props.activeSinger !== undefined && line.singer !== props.activeSinger ? "" : undefined}
-            class="pointer-events-none absolute top-1.5 truncate pl-0.5 text-[11px] leading-4 text-foreground data-inactive:opacity-45 data-[row=2]:top-6 data-[singer=2]:text-violet-text"
+            class="absolute top-1.5 cursor-text truncate pl-0.5 text-[11px] leading-4 text-foreground select-none data-inactive:opacity-45 data-[row=2]:top-6 data-[singer=2]:text-violet-text"
             style={{
               left: `${timeToX(props.view, line.start)}px`,
               "max-width": `${room(line)}px`,
             }}
+            title="Double-click to edit the line's lyrics"
+            onDblClick={() => props.onEdit?.(line.id)}
             data-testid="lyrics-line"
           >
             {/* Too little room for more than a clipped letter. */}
@@ -306,6 +364,23 @@ export function LyricsLane(props: {
           </span>
         )}
       </For>
+      {/* Scrolling while typing keeps the field. */}
+      <Show when={edited()}>
+        {(field) => (
+          <InlineField
+            class="top-1 h-5 data-[row=2]:top-[22px]"
+            data-row={props.duet && field().line.singer === 2 ? "2" : undefined}
+            style={{ left: `${fieldLeft(field().line)}px`, width: `${fieldWidth(field().line)}px` }}
+            value={field().text}
+            label="Line lyrics"
+            onDone={(text, exit) => {
+              if (exit === "blur" && !props.editing) return;
+              props.onEditDone?.(text, exit !== "blur");
+            }}
+            testid="line-text-input"
+          />
+        )}
+      </Show>
     </Lane>
   );
 }

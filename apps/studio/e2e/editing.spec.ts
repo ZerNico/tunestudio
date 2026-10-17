@@ -4,7 +4,7 @@ import path from "node:path";
 import { expect, test } from "@playwright/test";
 
 import { launchStudio, type Studio } from "./app.ts";
-import { answerDialogs, type SongFixture, songFixture, stubDesktop } from "./fixtures.ts";
+import { answerDialogs, makePlayable, type SongFixture, songFixture, stubDesktop } from "./fixtures.ts";
 
 let studio: Studio;
 let song: SongFixture;
@@ -474,6 +474,125 @@ test("song details are edited in a dialog from the title bar, exported, and undo
   await page.getByTestId("undo").click();
   await page.getByTestId("undo").click();
   await expect(name).toContainText("Night Signals");
+});
+
+test("help opens with ? or its button, and lists the keys the tooltips show", async () => {
+  await openSong();
+  const { page } = studio;
+  const help = page.getByTestId("help");
+  await page.keyboard.press("?");
+  await expect(help).toBeVisible();
+  await expect(help.getByTestId("help-keys").first()).toBeVisible();
+  await expect(help).toContainText("Line break after the selection, or at the playhead");
+  await page.keyboard.press("Escape");
+  await expect(help).toBeHidden();
+  await page.getByTestId("help-open").click();
+  await expect(help).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(help).toBeHidden();
+
+  // Holding Cmd (Ctrl) on its own shows the buttons' keys; letting go hides them.
+  const modifier = process.platform === "darwin" ? "Meta" : "Control";
+  await page.keyboard.down(modifier);
+  await expect(page.getByTestId("tool-draw").getByTestId("key-hint")).toHaveText("D");
+  await page.keyboard.up(modifier);
+  await expect(page.getByTestId("key-hint")).toHaveCount(0);
+});
+
+test("singing along draws the microphone's pitch over the notes", async () => {
+  // Audio that plays (silence), so playback runs; the microphone is a 220 Hz tone (A3).
+  makePlayable(song);
+  await openSong();
+  const { page } = studio;
+  await page.evaluate(() => {
+    navigator.mediaDevices.getUserMedia = async () => {
+      const context = new AudioContext();
+      const tone = context.createOscillator();
+      tone.frequency.value = 220;
+      const out = context.createMediaStreamDestination();
+      tone.connect(out);
+      tone.start();
+      return out.stream;
+    };
+  });
+  await page.getByTestId("sing-along").click();
+  await expect(page.getByTestId("sing-along")).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press(" ");
+  await expect(page.getByTestId("voice-trace")).toBeVisible({ timeout: 5000 });
+  // Something gets drawn: the canvas has lit pixels.
+  const lit = () =>
+    page.getByTestId("voice-trace").evaluate((canvas: HTMLCanvasElement) => {
+      const data = canvas.getContext("2d")!.getImageData(0, 0, canvas.width, canvas.height).data;
+      return data.some((value, i) => i % 4 === 3 && value > 0);
+    });
+  await expect.poll(lit, { timeout: 5000 }).toBe(true);
+  await page.keyboard.press(" ");
+  await page.getByTestId("sing-along").click();
+  await expect(page.getByTestId("voice-trace")).toHaveCount(0);
+});
+
+test("a line's lyrics are edited as text, matched word by word onto its notes", async () => {
+  await openSong();
+  const { page } = studio;
+  const notes = page.getByTestId("roll-note");
+  await page.getByTestId("lyrics-line").first().dblclick();
+  const input = page.getByTestId("line-text-input");
+  await expect(input).toHaveValue("Hel-lo world");
+  // A new word with no notes to go on: refused, the text stays to be fixed.
+  await input.fill("Hel-lo big world");
+  await input.press("Enter");
+  await expect(page.getByText("“big” has no notes. Draw them first.")).toBeVisible();
+  await expect(input).toHaveValue("Hel-lo big world");
+  await input.fill("Hel-lo earth");
+  await input.press("Enter");
+  await expect(input).toHaveCount(0);
+  await expect(notes.nth(2)).toContainText("earth");
+  await expect(notes).toHaveCount(5);
+  await expect(page.getByTestId("undo")).toHaveAttribute("aria-label", "Undo Edit line lyrics");
+  // From the note menu, Esc cancels.
+  await notes.nth(3).click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Edit line lyrics" }).click();
+  // The fixture has no space after "good": one word, as games read it.
+  await expect(input).toHaveValue("good-bye");
+  await input.press("Escape");
+  await expect(input).toHaveCount(0);
+});
+
+test("a new gap moves the whole chart with it, exported with the same beats", async () => {
+  await openSong();
+  const { app, page } = studio;
+  const first = (await page.getByTestId("roll-note").first().boundingBox())!;
+  await page.getByTestId("open-song-details").click();
+  const dialog = page.getByTestId("song-details");
+  const gap = dialog.getByTestId("gap");
+  await expect(gap).toHaveValue("1250");
+  await gap.fill("1500");
+  await gap.press("Enter");
+  await expect(page.getByTestId("undo")).toHaveAttribute("aria-label", "Undo Change gap");
+  // Too far back: the first note would start before the song.
+  await gap.fill("-5000");
+  await gap.press("Enter");
+  await expect(dialog.getByRole("alert")).toHaveText("Notes would start before the song.");
+  await expect(gap).toHaveValue("1500");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  const moved = (await page.getByTestId("roll-note").first().boundingBox())!;
+  expect(moved.x).toBeGreaterThan(first.x);
+
+  const exports = path.join(song.dir, "Exports");
+  fs.mkdirSync(exports);
+  await answerDialogs(app, exports);
+  await page.getByTestId("export-song").click();
+  await page.getByTestId("export-folder").click();
+  await expect(page.getByText("Exported for games")).toBeVisible();
+  const chart = fs.readFileSync(
+    path.join(exports, "Test Artist - Night Signals", "Test Artist - Night Signals.txt"),
+    "utf8",
+  );
+  expect(chart).toContain("#GAP:1500\n");
+  expect(chart).toContain(": 0 4 2 Hel\n");
+  expect(chart).toContain("- 18\n");
+  expect(chart).toContain(": 24 6 -3 bye\n");
 });
 
 test("start, end, preview and medley are set from the dialog and the timeline, and exported", async () => {

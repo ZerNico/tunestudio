@@ -13,6 +13,10 @@ const rest = {
   onPlay: () => {},
   onZoom: () => {},
   onShowPitch: () => {},
+  onShowWaveform: () => {},
+  onShowVideo: () => {},
+  singAlong: false,
+  onSingAlong: () => {},
   looping: false,
   onLoop: () => {},
   following: true,
@@ -74,6 +78,49 @@ describe("Transport", () => {
     expect(screen.getByTestId("speed")).toHaveTextContent("0.5×");
     await user.click(screen.getByTestId("tones"));
     expect(onTones).toHaveBeenCalledWith(true);
+  });
+
+  it("turns singing along on and off from the mic button", async () => {
+    const user = userEvent.setup();
+    const onSingAlong = vi.fn<(on: boolean) => void>();
+    const [on, setOn] = createSignal(false);
+    render(() => (
+      <Transport playback={createPlayback({ audio: "a" })} {...rest} singAlong={on()} onSingAlong={onSingAlong} />
+    ));
+    await user.click(screen.getByRole("button", { name: "Sing along" }));
+    expect(onSingAlong).toHaveBeenLastCalledWith(true);
+    setOn(true);
+    flush();
+    const button = screen.getByRole("button", { name: "Stop singing along" });
+    expect(button).toHaveAttribute("aria-pressed", "true");
+    await user.click(button);
+    expect(onSingAlong).toHaveBeenLastCalledWith(false);
+  });
+
+  it("shows the waveform and video toggles only with something to show, and turns them off", async () => {
+    const user = userEvent.setup();
+    const onShowWaveform = vi.fn<(show: boolean) => void>();
+    const onShowVideo = vi.fn<(show: boolean) => void>();
+    const [shown, setShown] = createSignal<boolean | undefined>(undefined);
+    render(() => (
+      <Transport
+        playback={createPlayback({ audio: "a" })}
+        {...rest}
+        showWaveform={shown()}
+        onShowWaveform={onShowWaveform}
+        showVideo={shown()}
+        onShowVideo={onShowVideo}
+      />
+    ));
+    expect(screen.queryByTestId("show-waveform")).toBeNull();
+    expect(screen.queryByTestId("show-video")).toBeNull();
+    setShown(true);
+    flush();
+    expect(screen.getByRole("button", { name: "Waveform" })).toHaveAttribute("aria-pressed", "true");
+    await user.click(screen.getByTestId("show-waveform"));
+    expect(onShowWaveform).toHaveBeenCalledWith(false);
+    await user.click(screen.getByRole("button", { name: "Video" }));
+    expect(onShowVideo).toHaveBeenCalledWith(false);
   });
 
   it("sets the song's volume, mutes and unmutes, and turns tones on from their volume", async () => {

@@ -108,6 +108,11 @@ const ONSETS: Record<string, string[]> = {
 
 const TABLES: Record<string, Record<string, string[]>> = { english, german };
 
+/** `table[key]` only when it is the table's own: a word or language like "constructor" isn't one of Object's. */
+function own<T>(table: Record<string, T>, key: string): T | undefined {
+  return Object.hasOwn(table, key) ? table[key] : undefined;
+}
+
 /** Python's `sorted(..., key=len, reverse=True)`: stable, so equal lengths keep their order. */
 function byLength(groups: string[]): string[] {
   return groups.toSorted((a, b) => [...b].length - [...a].length);
@@ -128,8 +133,8 @@ function startsWith(chars: string[], group: string, at: number): boolean {
 
 /** [start, end) of each vowel sound in the (lowercase) word, in code points. */
 function nuclei(word: string[], language: string): [number, number][] {
-  const vowels = VOWELS[language] ?? VOWELS.english!;
-  const digraphs = DIGRAPHS[language] ?? DIGRAPHS.english!;
+  const vowels = own(VOWELS, language) ?? VOWELS.english!;
+  const digraphs = own(DIGRAPHS, language) ?? DIGRAPHS.english!;
   const out: [number, number][] = [];
   let i = 0;
   while (i < word.length) {
@@ -179,7 +184,7 @@ export function ruleSplit(word: string, language: string): string[] {
   const low = [...word.toLowerCase()];
   const found = nuclei(low, language);
   if (found.length < 2) return [word];
-  const onsets = ONSETS[language] ?? ONSETS.english!;
+  const onsets = own(ONSETS, language) ?? ONSETS.english!;
   const cuts: number[] = [];
   for (let k = 1; k < found.length; k++) {
     const previousEnd = found[k - 1]![1];
@@ -205,7 +210,8 @@ export function ruleSplit(word: string, language: string): string[] {
 /** A word's sung syllables, keeping its casing and punctuation; `language` is e.g. "english" (any case). */
 export function syllabify(word: string, language: string): string[] {
   const lang = language.toLowerCase();
-  const pattern = TABLES[lang]?.[normalize(word)];
+  const table = own(TABLES, lang);
+  const pattern = table && own(table, normalize(word));
   if (!pattern) return ruleSplit(word, lang);
   // Map the learned split (on normalized letters) back onto the original word.
   const bounds = new Set(

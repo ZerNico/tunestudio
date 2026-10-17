@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { DrawnNote, LineSpan } from "~/lib/editor/chart";
 import type { Tool } from "~/lib/editor/tools";
 
-import { BreakLane, LyricsLane } from "./lanes";
+import { BreakLane, LyricsLane, WaveformLane } from "./lanes";
 import { PianoRoll } from "./piano-roll";
 
 const note = (id: number, start: number, lyric: string, extra: Partial<DrawnNote> = {}): DrawnNote => ({
@@ -371,9 +371,22 @@ describe("LyricsLane", () => {
       { id: 1, singer: 1, start: 11, duration: 1, text: "We walk on" },
       { id: 2, singer: 1, start: 13, duration: 1, text: "to the sea" },
     ];
-    render(() => <LyricsLane lines={lines} all={lines} view={view} duet={false} />);
+    render(() => <LyricsLane width={800} lines={lines} all={lines} view={view} duet={false} />);
     const shown = screen.getAllByTestId("lyrics-line");
     expect(shown.map((line) => line.textContent)).toEqual(["We walk on", "to the sea"]);
     expect(shown[0]!.style.maxWidth).toBe("194px");
+  });
+});
+
+describe("WaveformLane", () => {
+  it("is a lane the roll's width, drawn on a canvas", () => {
+    render(() => (
+      <WaveformLane
+        waveform={{ hop: 0.01, levels: [0, 0.5, 1, 0.5, 0] }}
+        view={{ start: 0, pxPerSecond: 100 }}
+        width={5}
+      />
+    ));
+    expect(screen.getByTestId("waveform-lane").querySelector("canvas")).toBeInTheDocument();
   });
 });

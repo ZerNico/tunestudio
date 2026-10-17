@@ -121,7 +121,7 @@ export const mediaChunks = sqliteTable(
   (table) => [primaryKey({ columns: [table.mediaId, table.index] })],
 );
 
-export const ANALYSIS_KINDS = ["pitch", "alignment", "words", "lyrics", "beats"] as const;
+export const ANALYSIS_KINDS = ["pitch", "alignment", "words", "lyrics", "beats", "waveform"] as const;
 
 /** Results of analysing media; stale once `input_sha256` no longer matches the media. */
 export const analysis = sqliteTable("analysis", {

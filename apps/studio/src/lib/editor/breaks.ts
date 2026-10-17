@@ -9,7 +9,7 @@ import { defaultSwitch } from "@tunestudio/ultrastar";
 
 import type { EditorChart } from "~/lib/native/types";
 
-import { gridCeil, gridFloor, gridStep, onGrid } from "./chart";
+import { gridCeil, gridFloor, gridStep, lastEnd, onGrid } from "./chart";
 import type { EditRecorder } from "./document";
 
 const EPSILON = 1e-6;
@@ -224,8 +224,6 @@ export function nearestGap(chart: EditorChart, singerId: number, time: number): 
   const line = lines?.[index];
   const noGap = "There's no gap between notes here for a line break.";
   if (!lines || !line) return noGap;
-  const lastEnd = (notes: readonly { start: number; duration: number }[]) =>
-    Math.max(...notes.map((note) => note.start + note.duration));
   const distance = (gapStart: number, gapEnd: number) =>
     time < gapStart ? gapStart - time : time > gapEnd ? time - gapEnd : 0;
   if (index === lines.length - 1 && time >= lastEnd(line.notes)) return noGap;

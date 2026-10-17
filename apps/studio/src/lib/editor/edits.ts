@@ -7,7 +7,7 @@
  */
 import type { EditorChart, EditorLine, EditorNote, NoteType } from "~/lib/native/types";
 
-import { gridCeil, gridFloor, gridStep, lineBreaks, onGrid } from "./chart";
+import { gridCeil, gridFloor, gridStep, lastEnd, lineBreaks, onGrid } from "./chart";
 import type { EditRecorder } from "./document";
 
 /** Times closer than this are the same (seconds, against float rounding). */
@@ -61,9 +61,8 @@ export function placeNotes(chart: EditorChart, length: number): Map<number, Plac
   return placed;
 }
 
-/** When the notes start and end; over no notes, Infinity and -Infinity (no limit). */
+/** When the notes start; over no notes, Infinity (no limit). They end at `lastEnd`. */
 const firstStart = (notes: readonly EditorNote[]) => Math.min(...notes.map((note) => note.start));
-const lastEnd = (notes: readonly EditorNote[]) => Math.max(...notes.map((note) => note.start + note.duration));
 
 /**
  * Moving the selected notes and line breaks (by the line they end) together in time, worked out once for a drag or a
@@ -216,6 +215,36 @@ export function moveNotes(tx: EditRecorder, chart: EditorChart, ids: Iterable<nu
     const note = tx.note(id);
     if (note) tx.updateNote(id, { start: onGrid(chart, note.start + delta) });
   }
+}
+
+/**
+ * A new gap (seconds), as changing `#GAP` does in the file: the grid and everything on it (every singer's notes, stored
+ * line breaks and the medley, which the file keeps in beats) move by the difference, so nothing leaves the grid. The
+ * song's start, end and preview are times in the audio, as in the file, and stay. Notes stay inside the audio
+ * (`length` seconds). Returns why it can't, or null.
+ */
+export function changeGap(tx: EditRecorder, chart: EditorChart, gap: number, length = Infinity): string | null {
+  const delta = gap - chart.gap;
+  const notes = chart.singers.flatMap((singer) => singer.lines.flatMap((line) => line.notes));
+  if (notes.some((note) => note.start + delta < -EPSILON)) return "Notes would start before the song.";
+  if (notes.some((note) => note.start + note.duration + delta > length + EPSILON))
+    return "Notes would go past the end of the song.";
+  // Not a change to the notes themselves: they keep whether they were edited.
+  for (const note of notes) tx.updateNote(note.id, { start: Math.max(0, note.start + delta), edited: note.edited });
+  for (const line of chart.singers.flatMap((singer) => singer.lines)) {
+    if (line.switchStart === null && line.switchEnd === null) continue;
+    tx.updateLine(line.id, {
+      switchStart: line.switchStart === null ? null : line.switchStart + delta,
+      switchEnd: line.switchEnd === null ? null : line.switchEnd + delta,
+    });
+  }
+  const { medleyStart, medleyEnd } = chart.song;
+  tx.updateSong({
+    gap,
+    medleyStart: medleyStart === null ? null : medleyStart + delta,
+    medleyEnd: medleyEnd === null ? null : medleyEnd + delta,
+  });
+  return null;
 }
 
 /** Changes the notes' length by `delta` seconds (their ends kept on the grid). */

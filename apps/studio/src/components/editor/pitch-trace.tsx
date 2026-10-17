@@ -1,5 +1,6 @@
 import { createEffect } from "solid-js";
 
+import { fitCanvas } from "~/lib/editor/canvas";
 import { type PitchRange, rowCount, type TimeView } from "~/lib/editor/view";
 import type { SungPitch } from "~/lib/native/types";
 
@@ -7,17 +8,21 @@ import type { SungPitch } from "~/lib/native/types";
 const JUMP = 2.5;
 
 /**
- * What is sung, as a line behind the notes: its height is the pitch, centred on the rows like the notes are. Only the
- * frames in view are drawn; nothing where nothing is sung.
+ * A pitch as a line: its height is the pitch, centred on the rows like the notes are. Only the frames in view are
+ * drawn; nothing where nothing is sung. What is sung in the vocals (`sung`) goes behind the notes; your voice singing
+ * along (`voice`) over them, as it is mostly right on them.
  */
 export function PitchTrace(props: {
   pitch: SungPitch;
+  kind?: "sung" | "voice";
   view: TimeView;
   width: number;
   height: number;
   range: PitchRange;
 }) {
   let canvas: HTMLCanvasElement | undefined;
+  /** Its colour, read once (reading it styles the page again). */
+  let colour: string | undefined;
   createEffect(
     () => ({
       pitch: props.pitch,
@@ -27,17 +32,12 @@ export function PitchTrace(props: {
       range: props.range,
     }),
     ({ pitch, view, width, height, range }) => {
-      const context = canvas?.getContext("2d");
-      if (!canvas || !context || width <= 0 || height <= 0) return;
-      const scale = window.devicePixelRatio || 1;
-      canvas.width = Math.round(width * scale);
-      canvas.height = Math.round(height * scale);
-      context.setTransform(scale, 0, 0, scale, 0, 0);
-      context.clearRect(0, 0, width, height);
+      const context = canvas && fitCanvas(canvas, width, height);
+      if (!context) return;
       const rowHeight = height / rowCount(range);
       const first = Math.max(0, Math.floor(view.start / pitch.hop) - 1);
       const last = Math.min(pitch.midi.length - 1, Math.ceil((view.start + width / view.pxPerSecond) / pitch.hop) + 1);
-      context.strokeStyle = getComputedStyle(canvas).color;
+      context.strokeStyle = colour ??= getComputedStyle(canvas!).color;
       context.lineWidth = 1.75;
       context.lineJoin = "round";
       context.lineCap = "round";
@@ -61,9 +61,10 @@ export function PitchTrace(props: {
   return (
     <canvas
       ref={(element) => (canvas = element)}
-      class="pointer-events-none absolute inset-0 size-full text-info opacity-80"
+      class="pointer-events-none absolute inset-0 size-full text-info opacity-80 data-[kind=voice]:z-[5] data-[kind=voice]:text-warning data-[kind=voice]:opacity-100"
+      data-kind={props.kind ?? "sung"}
       aria-hidden="true"
-      data-testid="pitch-trace"
+      data-testid={props.kind === "voice" ? "voice-trace" : "pitch-trace"}
     />
   );
 }

@@ -16,21 +16,24 @@ import { Kbd } from "~/components/ui/kbd";
 import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import { FINDING_THE_PITCH } from "~/lib/chart-steps";
+import { keyOf, SHORTCUTS } from "~/lib/editor/shortcuts";
 import { type Tool, TOOLS } from "~/lib/editor/tools";
 
-import { IconButton } from "./icon-button";
+import { IconButton, KeyHint } from "./icon-button";
 
 /** Undo or Redo: says what it would do ("Undo Move note"), disabled when there is nothing. */
 export function HistoryButton(props: {
   label: string | null;
   action: "Undo" | "Redo";
   onClick: () => void;
+  shortcut?: string;
   testid: string;
   children: JSX.Element;
 }) {
   return (
     <IconButton
       label={props.label ? `${props.action} ${props.label}` : props.action}
+      shortcut={props.shortcut}
       disabled={!props.label}
       onClick={() => props.onClick()}
       testid={props.testid}
@@ -71,11 +74,13 @@ export function ToolSwitch(props: { tool: Tool; onTool: (tool: Tool) => void; cl
                 render={(triggerProps: JSX.HTMLAttributes<HTMLButtonElement>) => (
                   <ToggleGroupItem
                     {...triggerProps}
+                    class="relative"
                     value={entry.tool}
                     aria-label={entry.label}
                     data-testid={`tool-${entry.tool}`}
                   >
                     <Icon />
+                    <KeyHint keys={entry.key} />
                   </ToggleGroupItem>
                 )}
               />
@@ -108,8 +113,8 @@ export function AutoPitchButton(props: {
       fallback={
         <IconButton
           label="Auto pitch"
-          tooltip="Auto pitch the selected notes"
-          shortcut="A"
+          tooltip={SHORTCUTS.autoPitch.does}
+          shortcut={keyOf("autoPitch")}
           disabled={!props.canStart}
           onClick={() => props.onStart()}
           testid="auto-pitch"
@@ -166,8 +171,8 @@ export function MergeButton(props: { canMerge: boolean; onMerge: () => void }) {
   return (
     <IconButton
       label="Merge"
-      tooltip="Merge notes"
-      shortcut="M"
+      tooltip={SHORTCUTS.merge.does}
+      shortcut={keyOf("merge")}
       disabled={!props.canMerge}
       onClick={() => props.onMerge()}
       testid="merge"
@@ -182,8 +187,8 @@ export function LineBreakButton(props: { onAdd: () => void }) {
   return (
     <IconButton
       label="Add line break"
-      tooltip="Line break after the selected notes, or at the playhead"
-      shortcut="B"
+      tooltip={SHORTCUTS.lineBreak.does}
+      shortcut={keyOf("lineBreak")}
       onClick={() => props.onAdd()}
       testid="line-break-after"
     >

@@ -17,6 +17,7 @@ import {
 } from "~/lib/editor/view";
 import type { NoteType, SungPitch } from "~/lib/native/types";
 
+import { InlineField } from "./inline-field";
 import { PitchTrace } from "./pitch-trace";
 
 /** Notes narrower than this show no syllable (it would only be a clipped letter). */
@@ -104,6 +105,8 @@ export function PianoRoll(props: {
   activeSinger?: number;
   /** What is sung, drawn behind the notes (null: not shown). */
   pitch?: SungPitch | null;
+  /** What is sung into the microphone while singing along, drawn like the sung pitch in its own colour. */
+  voice?: SungPitch | null;
   range: PitchRange;
   view: TimeView;
   /** The drawing area (without the gutter). */
@@ -315,6 +318,18 @@ export function PianoRoll(props: {
             />
           )}
         </Show>
+        <Show when={props.voice}>
+          {(voice) => (
+            <PitchTrace
+              pitch={voice()}
+              kind="voice"
+              view={props.view}
+              width={props.width}
+              height={props.height}
+              range={props.range}
+            />
+          )}
+        </Show>
         <For each={props.breaks}>
           {(item) => (
             <>
@@ -456,9 +471,7 @@ export function PianoRoll(props: {
         </Show>
         <Show when={lyricField()}>
           {(field) => (
-            <input
-              ref={(input) => queueMicrotask(() => input.select())}
-              class="absolute z-40 rounded-[3px] border border-ring bg-field px-1 font-sans text-[12px] text-foreground outline-none"
+            <InlineField
               style={{
                 left: `${field().x}px`,
                 top: `${field().y}px`,
@@ -466,21 +479,15 @@ export function PianoRoll(props: {
                 height: `${field().height}px`,
               }}
               value={field().lyric}
-              aria-label="Syllable"
-              spellcheck={false}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") props.onLyricDone(event.currentTarget.value);
-                else if (event.key === "Escape") props.onLyricDone(null);
-                else if (event.key === "Tab") props.onLyricDone(event.currentTarget.value, event.shiftKey ? -1 : 1);
-                else return;
-                event.preventDefault();
-                event.stopPropagation();
+              label="Syllable"
+              tabs
+              onDone={(text, exit) => {
+                // Leaving it after Enter or Tab closed it changes nothing.
+                if (exit === "blur" && (props.editingLyric === null || props.editingLyric === undefined)) return;
+                if (exit === "tab" || exit === "shift-tab") props.onLyricDone(text, exit === "tab" ? 1 : -1);
+                else props.onLyricDone(text);
               }}
-              onBlur={(event) => {
-                if (props.editingLyric !== null && props.editingLyric !== undefined)
-                  props.onLyricDone(event.currentTarget.value);
-              }}
-              data-testid="lyric-input"
+              testid="lyric-input"
             />
           )}
         </Show>

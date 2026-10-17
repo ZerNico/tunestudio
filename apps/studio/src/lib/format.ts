@@ -55,11 +55,6 @@ export function formatDuration(seconds: number): string {
   return hours > 0 ? `${hours}:${String(minutes).padStart(2, "0")}:${rest}` : `${minutes}:${rest}`;
 }
 
-/** "1.25 s", "-0.5 s": a time in seconds, without float noise. */
-export function formatSeconds(seconds: number): string {
-  return `${Number(seconds.toFixed(3))} s`;
-}
-
 /** "312.5": a number without float noise. */
 export function formatNumber(value: number): string {
   return String(Number(value.toFixed(3)));

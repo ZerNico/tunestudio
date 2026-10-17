@@ -17,7 +17,6 @@ function setup(singers: SongDetailsSinger[] = [{ id: 1, index: 1, name: null }])
       onOpenChange={() => {}}
       song={{ ...testSong, year: 2024, tags: ["live"] }}
       bpm={300}
-      gap={1.25}
       singers={singers}
       otherHeaders={[["COMMENT", "kept"]]}
       onChange={onChange}
@@ -79,7 +78,6 @@ describe("song details", () => {
         onOpenChange={() => {}}
         song={song()}
         bpm={300}
-        gap={1}
         singers={[{ id: 1, index: 1, name: null }]}
         otherHeaders={[]}
         onChange={(_label, patch) => setSong({ ...song(), ...patch })}
@@ -144,7 +142,6 @@ describe("song details", () => {
         onOpenChange={() => {}}
         song={testSong}
         bpm={300}
-        gap={1}
         singers={singers()}
         otherHeaders={[]}
         onChange={() => {}}

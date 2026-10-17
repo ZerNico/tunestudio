@@ -1,9 +1,10 @@
 /**
  * The song's times in the song details: where the game starts and stops playing, where the song list's preview plays
- * from, the medley, and the video's offset. The first four are also markers on the timeline (`song-markers.ts`); here
- * they are set to the playhead (the medley to the selected notes' lines), played from, or cleared.
+ * from, the medley, the video's offset and the gap. The first four are also markers on the timeline (`song-markers.ts`);
+ * here they are set to the playhead (the medley to the selected notes' lines), played from, or cleared. The gap moves
+ * the whole chart (`changeGap`).
  */
-import { Show } from "solid-js";
+import { createSignal, Show } from "solid-js";
 import CrosshairIcon from "~icons/lucide/crosshair";
 import PlayIcon from "~icons/lucide/play";
 import XIcon from "~icons/lucide/x";
@@ -12,7 +13,9 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import type { SongMarker } from "~/lib/editor/song-markers";
+import { TIMING_WORDS } from "~/lib/editor/timing-words";
 import { formatTime } from "~/lib/editor/view";
+import { formatNumber } from "~/lib/format";
 import type { EditorSong } from "~/lib/native/types";
 
 export interface TimingActions {
@@ -22,6 +25,19 @@ export interface TimingActions {
   clear: (marker: SongMarker) => void;
   playFrom: (seconds: number) => void;
   setVideoGap: (seconds: number | null) => void;
+  /** A new gap (seconds); returns why it can't be, or null. */
+  setGap: (seconds: number) => string | null;
+}
+
+/** Milliseconds as typed and shown: no float noise. */
+const formatMs = (seconds: number) => formatNumber(seconds * 1000);
+
+/** A typed number (a comma works as the point too): null when nothing is typed, undefined when it isn't one. */
+function typedNumber(text: string): number | null | undefined {
+  const trimmed = text.trim().replace(",", ".");
+  if (trimmed === "") return null;
+  const value = Number(trimmed);
+  return Number.isFinite(value) ? value : undefined;
 }
 
 function Row(props: {
@@ -78,6 +94,8 @@ const time = (seconds: number | null) => (seconds === null ? null : formatTime(s
 
 export function SongTiming(props: {
   song: EditorSong;
+  /** Where the chart's grid starts (seconds). */
+  gap: number;
   hasVideo: boolean;
   /** Whether notes are selected (the medley is set from their lines). */
   hasSelection: boolean;
@@ -85,6 +103,7 @@ export function SongTiming(props: {
   playheadTime: () => number;
 }) {
   const play = (seconds: number) => props.actions.playFrom(seconds);
+  const [gapProblem, setGapProblem] = createSignal<string | null>(null);
   return (
     <div class="flex flex-col gap-2 border-t border-popover-line pt-4" data-testid="song-timing">
       <span class="eyebrow">Timing (also on the timeline)</span>
@@ -141,30 +160,52 @@ export function SongTiming(props: {
         onPlay={play}
         testid="timing-medley"
       />
-      <Show when={props.hasVideo}>
-        <Label class="mt-1" title="How much later the video starts than the song, in seconds">
-          Video offset (s)
+      {/* Laid out like the song's fields above: two columns, labels on top. */}
+      <div class="mt-1 grid grid-cols-2 gap-3">
+        <Label layout="stacked" title={TIMING_WORDS.gap}>
+          Gap (ms)
           <Input
-            class="w-[120px]"
-            value={props.song.videoGap === null ? "" : String(props.song.videoGap)}
-            placeholder="0"
+            value={formatMs(props.gap)}
             inputmode="decimal"
+            aria-describedby={gapProblem() ? "gap-problem" : undefined}
             onChange={(event) => {
               const input = event.currentTarget;
-              const text = input.value.trim().replace(",", ".");
-              const seconds = text === "" ? null : Number(text);
-              if (seconds !== null && !Number.isFinite(seconds)) {
-                input.value = props.song.videoGap === null ? "" : String(props.song.videoGap);
-                return;
-              }
-              props.actions.setVideoGap(seconds);
+              const typed = typedNumber(input.value);
+              setGapProblem(typed === null || typed === undefined ? null : props.actions.setGap(typed / 1000));
+              input.value = formatMs(props.gap);
             }}
             onKeyDown={(event) => {
               if (event.key === "Enter") event.currentTarget.blur();
             }}
-            data-testid="video-gap"
+            data-testid="gap"
           />
         </Label>
+        <Show when={props.hasVideo}>
+          <Label layout="stacked" title={TIMING_WORDS.videoOffset}>
+            Video offset (s)
+            <Input
+              value={props.song.videoGap === null ? "" : String(props.song.videoGap)}
+              placeholder="0"
+              inputmode="decimal"
+              onChange={(event) => {
+                const input = event.currentTarget;
+                const seconds = typedNumber(input.value);
+                if (seconds === undefined)
+                  input.value = props.song.videoGap === null ? "" : String(props.song.videoGap);
+                else props.actions.setVideoGap(seconds);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") event.currentTarget.blur();
+              }}
+              data-testid="video-gap"
+            />
+          </Label>
+        </Show>
+      </div>
+      <Show when={gapProblem()}>
+        <p id="gap-problem" class="m-0 text-[11px] text-destructive" role="alert">
+          {gapProblem()}
+        </p>
       </Show>
     </div>
   );

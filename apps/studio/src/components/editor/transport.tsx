@@ -1,7 +1,10 @@
 import type { JSX } from "@solidjs/web";
 import { For, omit, Show } from "solid-js";
 import ActivityIcon from "~icons/lucide/activity";
+import AudioLinesIcon from "~icons/lucide/audio-lines";
 import LocateFixedIcon from "~icons/lucide/locate-fixed";
+import MicIcon from "~icons/lucide/mic";
+import MonitorPlayIcon from "~icons/lucide/monitor-play";
 import MusicIcon from "~icons/lucide/music";
 import PauseIcon from "~icons/lucide/pause";
 import PlayIcon from "~icons/lucide/play";
@@ -18,9 +21,10 @@ import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import { type Playback, SOURCE_LABELS, type Speed, SPEEDS } from "~/lib/editor/playback";
 import type { Volumes } from "~/lib/editor/prefs";
+import { keyOf } from "~/lib/editor/shortcuts";
 import { formatTime } from "~/lib/editor/view";
 
-import { IconButton } from "./icon-button";
+import { IconButton, KeyHint } from "./icon-button";
 
 const speedLabel = (speed: number) => `${speed}×`;
 
@@ -69,7 +73,29 @@ function VolumeTrack(props: JSX.HTMLAttributes<HTMLDivElement> & { dimmed?: bool
   );
 }
 
-/** Play/pause, where the playhead is, which source plays, looping, speed, following, tones, and zoom. */
+/** A part of the view shown or hidden; not there when there is nothing to show (`shown` undefined). */
+function ViewToggle(props: {
+  label: string;
+  shown: boolean | undefined;
+  onShow: (show: boolean) => void;
+  testid: string;
+  children: JSX.Element;
+}) {
+  return (
+    <Show when={props.shown !== undefined}>
+      <IconButton
+        label={props.label}
+        pressed={props.shown === true}
+        onClick={() => props.onShow(!props.shown)}
+        testid={props.testid}
+      >
+        {props.children}
+      </IconButton>
+    </Show>
+  );
+}
+
+/** Play/pause, where the playhead is, which source plays, looping, speed, singing along, the sung pitch, waveform and video, following, tones, and zoom. */
 export function Transport(props: {
   playback: Playback;
   /** Play/pause. */
@@ -79,6 +105,15 @@ export function Transport(props: {
   /** Whether the sung pitch is drawn; undefined when the project has none to draw. */
   showPitch?: boolean;
   onShowPitch: (show: boolean) => void;
+  /** Whether the waveform lane shows; undefined when the project has no audio to draw. */
+  showWaveform?: boolean;
+  onShowWaveform: (show: boolean) => void;
+  /** Whether the microphone's pitch is drawn while playing. */
+  singAlong: boolean;
+  onSingAlong: (on: boolean) => void;
+  /** Whether the video shows; undefined when the project has no video. */
+  showVideo?: boolean;
+  onShowVideo: (show: boolean) => void;
   looping: boolean;
   onLoop: () => void;
   following: boolean;
@@ -123,6 +158,7 @@ export function Transport(props: {
       data-testid="transport"
     >
       <Button
+        class="relative"
         size="icon-sm"
         aria-label={props.playback.playing() ? "Pause" : "Play"}
         disabled={!props.playback.source()}
@@ -132,6 +168,7 @@ export function Transport(props: {
         <Show when={props.playback.playing()} fallback={<PlayIcon />}>
           <PauseIcon />
         </Show>
+        <KeyHint keys={keyOf("play")} side="above" />
       </Button>
       <span class="font-mono text-[11px] text-foreground tabular-nums" data-testid="transport-time">
         {formatTime(props.playback.time())}
@@ -161,7 +198,14 @@ export function Transport(props: {
             </For>
           </ToggleGroup>
         </Show>
-        <IconButton label="Loop" shortcut="L" pressed={props.looping} onClick={() => props.onLoop()} testid="loop">
+        <IconButton
+          label="Loop"
+          shortcut={keyOf("loop")}
+          hintSide="above"
+          pressed={props.looping}
+          onClick={() => props.onLoop()}
+          testid="loop"
+        >
           <RepeatIcon />
         </IconButton>
         <Select
@@ -217,16 +261,23 @@ export function Transport(props: {
         )}
       </Show>
       <div class="ml-auto flex items-center gap-1">
-        <Show when={props.showPitch !== undefined}>
-          <IconButton
-            label="Sung pitch"
-            pressed={props.showPitch === true}
-            onClick={() => props.onShowPitch(!props.showPitch)}
-            testid="show-pitch"
-          >
-            <ActivityIcon />
-          </IconButton>
-        </Show>
+        <ViewToggle label="Sung pitch" shown={props.showPitch} onShow={props.onShowPitch} testid="show-pitch">
+          <ActivityIcon />
+        </ViewToggle>
+        <ViewToggle label="Waveform" shown={props.showWaveform} onShow={props.onShowWaveform} testid="show-waveform">
+          <AudioLinesIcon />
+        </ViewToggle>
+        <IconButton
+          label={props.singAlong ? "Stop singing along" : "Sing along"}
+          pressed={props.singAlong}
+          onClick={() => props.onSingAlong(!props.singAlong)}
+          testid="sing-along"
+        >
+          <MicIcon />
+        </IconButton>
+        <ViewToggle label="Video" shown={props.showVideo} onShow={props.onShowVideo} testid="show-video">
+          <MonitorPlayIcon />
+        </ViewToggle>
         <IconButton
           label="Follow playhead"
           pressed={props.following}

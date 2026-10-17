@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatDuration, formatFileSize, formatNumber, formatRelativeTime, formatSeconds } from "./format";
+import { formatDuration, formatFileSize, formatNumber, formatRelativeTime } from "./format";
 
 const now = Date.parse("2026-10-14T12:00:00Z");
 const ago = (seconds: number) => new Date(now - seconds * 1000).toISOString();
@@ -51,10 +51,8 @@ describe("formatDuration", () => {
   });
 });
 
-describe("formatSeconds and formatNumber", () => {
-  it("drop float noise", () => {
-    expect(formatSeconds(1.2505000000000002)).toBe("1.251 s");
-    expect(formatSeconds(-0.5)).toBe("-0.5 s");
+describe("formatNumber", () => {
+  it("drops float noise", () => {
     expect(formatNumber(312.5)).toBe("312.5");
     expect(formatNumber(0.1 + 0.2)).toBe("0.3");
   });

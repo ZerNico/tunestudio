@@ -47,6 +47,13 @@ export function languageName(code: string): string {
   }
 }
 
+/** The code of a language as projects store it ("English", or a code like "de"), or null when it isn't one. */
+export function codeOfLanguage(name: string | null | undefined): string | null {
+  const wanted = name?.trim().toLowerCase();
+  if (!wanted) return null;
+  return LANGUAGES.find((code) => languageName(code).toLowerCase() === wanted) ?? languageCode(wanted);
+}
+
 /** The primary language of a tag ("en" for "en-US"), lowercase, or null when there is none. */
 export function languageCode(tag: string | null | undefined): string | null {
   const code = tag?.trim().toLowerCase().split(/[-_]/)[0];

@@ -5,7 +5,6 @@
 import type { JSX } from "@solidjs/web";
 import { createSignal, For, Show } from "solid-js";
 import CheckIcon from "~icons/lucide/check";
-import DeleteIcon from "~icons/lucide/delete";
 
 import {
   ContextMenu,
@@ -19,8 +18,8 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "~/components/ui/context-menu";
-import { platform } from "~/lib/desktop";
 import { NOTE_FLAGS, type NoteFlag } from "~/lib/editor/edits";
+import { keyOf } from "~/lib/editor/shortcuts";
 
 export interface NoteMenuActions {
   /** The menu is opening: whether it was over a note (which joins the selection). */
@@ -34,6 +33,8 @@ export interface NoteMenuActions {
   canMerge: () => boolean;
   merge: () => void;
   lineBreakAfter: () => void;
+  /** Edits the lyrics of the selected notes' first line as text. */
+  editLineLyrics: () => void;
   /** The singers of a duet (none: solo), for Sung by. */
   singers: () => { index: number; label: string }[];
   /** Which singers (indexes) sing the selected notes. */
@@ -50,8 +51,6 @@ export interface NoteMenuActions {
   remove: () => void;
   selectAll: () => void;
 }
-
-const COMMAND = platform === "macos" ? "⌘" : "Ctrl+";
 
 export function NoteMenu(props: { actions: NoteMenuActions; children: JSX.Element }) {
   const [onNote, setOnNote] = createSignal(false);
@@ -74,18 +73,18 @@ export function NoteMenu(props: { actions: NoteMenuActions; children: JSX.Elemen
             <>
               <ContextMenuItem onClick={() => props.actions.paste()}>
                 Paste
-                <ContextMenuShortcut>{COMMAND}V</ContextMenuShortcut>
+                <ContextMenuShortcut>{keyOf("paste")}</ContextMenuShortcut>
               </ContextMenuItem>
               <ContextMenuItem onClick={() => props.actions.selectAll()}>
                 Select all
-                <ContextMenuShortcut>{COMMAND}A</ContextMenuShortcut>
+                <ContextMenuShortcut>{keyOf("selectAll")}</ContextMenuShortcut>
               </ContextMenuItem>
             </>
           }
         >
           <ContextMenuItem disabled={!props.actions.canAutoPitch()} onClick={() => props.actions.autoPitch()}>
             Auto pitch
-            <ContextMenuShortcut>A</ContextMenuShortcut>
+            <ContextMenuShortcut>{keyOf("autoPitch")}</ContextMenuShortcut>
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem
@@ -93,16 +92,17 @@ export function NoteMenu(props: { actions: NoteMenuActions; children: JSX.Elemen
             onClick={() => props.actions.splitAtPlayhead()}
           >
             Split at playhead
-            <ContextMenuShortcut>{COMMAND}K</ContextMenuShortcut>
+            <ContextMenuShortcut>{keyOf("splitAtPlayhead")}</ContextMenuShortcut>
           </ContextMenuItem>
           <ContextMenuItem disabled={!props.actions.canMerge()} onClick={() => props.actions.merge()}>
             Merge
-            <ContextMenuShortcut>M</ContextMenuShortcut>
+            <ContextMenuShortcut>{keyOf("merge")}</ContextMenuShortcut>
           </ContextMenuItem>
           <ContextMenuItem onClick={() => props.actions.lineBreakAfter()}>
             Line break after
-            <ContextMenuShortcut>B</ContextMenuShortcut>
+            <ContextMenuShortcut>{keyOf("lineBreak")}</ContextMenuShortcut>
           </ContextMenuItem>
+          <ContextMenuItem onClick={() => props.actions.editLineLyrics()}>Edit line lyrics</ContextMenuItem>
           <Show when={props.actions.singers().length > 1}>
             <ContextMenuSeparator />
             <ContextMenuSub>
@@ -158,24 +158,20 @@ export function NoteMenu(props: { actions: NoteMenuActions; children: JSX.Elemen
           <ContextMenuSeparator />
           <ContextMenuItem onClick={() => props.actions.cut()}>
             Cut
-            <ContextMenuShortcut>{COMMAND}X</ContextMenuShortcut>
+            <ContextMenuShortcut>{keyOf("cut")}</ContextMenuShortcut>
           </ContextMenuItem>
           <ContextMenuItem onClick={() => props.actions.copy()}>
             Copy
-            <ContextMenuShortcut>{COMMAND}C</ContextMenuShortcut>
+            <ContextMenuShortcut>{keyOf("copy")}</ContextMenuShortcut>
           </ContextMenuItem>
           <ContextMenuItem onClick={() => props.actions.paste()}>
             Paste
-            <ContextMenuShortcut>{COMMAND}V</ContextMenuShortcut>
+            <ContextMenuShortcut>{keyOf("paste")}</ContextMenuShortcut>
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem variant="destructive" onClick={() => props.actions.remove()}>
             Delete
-            <ContextMenuShortcut>
-              <Show when={platform === "macos"} fallback="Del">
-                <DeleteIcon class="size-3" aria-label="Delete key" />
-              </Show>
-            </ContextMenuShortcut>
+            <ContextMenuShortcut>{keyOf("delete")}</ContextMenuShortcut>
           </ContextMenuItem>
         </Show>
       </ContextMenuContent>

@@ -8,6 +8,7 @@ import { createChartDocument } from "./document";
 import {
   addNote,
   canSplit,
+  changeGap,
   defaultLength,
   deleteSelection,
   lineAt,
@@ -70,6 +71,43 @@ function setup() {
 
 const notesOf = (value: EditorChart) => value.singers.flatMap((singer) => singer.lines.flatMap((line) => line.notes));
 const find = (value: EditorChart, id: number) => notesOf(value).find((item) => item.id === id);
+
+describe("the gap", () => {
+  it("moves every note, stored break and the medley with it, not the song's start, end or preview", () => {
+    const doc = setup();
+    doc.edit("Song", (tx) => tx.updateSong({ start: 0.5, previewStart: 4, medleyStart: 1, medleyEnd: 3.3 }));
+    flush();
+    const before = doc.chart();
+    expect(doc.tryEdit("Change gap", (tx) => changeGap(tx, before, 1.12))).toBeNull();
+    flush();
+    const after = doc.chart();
+    expect(after.gap).toBeCloseTo(1.12, 9);
+    expect(notesOf(after).map((item) => item.start)).toEqual(
+      [1.12, 1.62, 1.92, 3.12].map((value) => expect.closeTo(value, 9)),
+    );
+    expect(after.singers[0]!.lines.map((line) => line.switchStart)).toEqual([expect.closeTo(2.62, 9), null]);
+    expect(after.song).toMatchObject({ start: 0.5, previewStart: 4, medleyStart: expect.closeTo(1.12, 9) });
+    expect(after.song.medleyEnd).toBeCloseTo(3.42, 9);
+    // Still on the grid, which moved too.
+    expect(onGrid(after, after.singers[0]!.lines[0]!.notes[1]!.start)).toBeCloseTo(1.62, 9);
+    doc.undo();
+    flush();
+    expect(doc.chart().gap).toBe(1);
+    expect(find(doc.chart(), 100)!.start).toBe(1);
+  });
+
+  it("is refused where notes would leave the song, and keeps whether notes were edited", () => {
+    const doc = setup();
+    expect(doc.tryEdit("Change gap", (tx) => changeGap(tx, chart, -0.5))).toBe("Notes would start before the song.");
+    expect(doc.tryEdit("Change gap", (tx) => changeGap(tx, chart, 2, 3.5))).toBe(
+      "Notes would go past the end of the song.",
+    );
+    expect(doc.undoLabel()).toBeNull();
+    doc.tryEdit("Change gap", (tx) => changeGap(tx, chart, 1.1, 10));
+    flush();
+    expect(notesOf(doc.chart()).every((item) => !item.edited)).toBe(true);
+  });
+});
 
 describe("grid", () => {
   it("steps 15 / BPM seconds from the gap", () => {

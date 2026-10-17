@@ -92,6 +92,13 @@ export const SungPitch = Schema.Struct({
 });
 export type SungPitch = typeof SungPitch.Type;
 
+/** How loud the vocals (or the song, without them) are: the average loudness (RMS, 0-1) of every `hop` seconds. */
+export const Waveform = Schema.Struct({
+  hop: Schema.Number,
+  levels: Schema.Array(Schema.Number),
+});
+export type Waveform = typeof Waveform.Type;
+
 /** A project in the recent projects list. */
 export const RecentProjectEntry = Schema.Struct({
   /** The `.tunestudio` file. */

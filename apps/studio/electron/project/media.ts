@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { and, eq, isNull, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { Effect, FileSystem, Semaphore } from "effect";
 
 import { songFileName } from "../../src/lib/file-names";
@@ -189,10 +189,11 @@ export function putRole(
       .delete(media)
       .where(added ? and(eq(media.role, role), ne(media.id, added.id)) : eq(media.role, role))
       .pipe(orDiskFull);
-    // The sung pitch of vocals that are gone only takes up space (the lyrics stay, whatever song they came with).
+    // The sung pitch and waveform of files that are gone only take up space (the lyrics stay, whatever song they
+    // came with).
     yield* db
       .delete(analysis)
-      .where(and(isNull(analysis.inputMediaId), eq(analysis.kind, "pitch")))
+      .where(and(isNull(analysis.inputMediaId), inArray(analysis.kind, ["pitch", "waveform"])))
       .pipe(orDiskFull);
     return added;
   });

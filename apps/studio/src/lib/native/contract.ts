@@ -23,6 +23,7 @@ import {
   RangeChart,
   SongInspection,
   SungPitch,
+  Waveform,
   ToolName,
   ToolProgress,
   ToolStatus,
@@ -299,6 +300,12 @@ export type ChartRangeInput = typeof ChartRangeInput.Type;
 /** A note's new pitch (MIDI) from auto pitch. */
 export const NotePitch = Schema.Struct({ id: Schema.Number, pitch: Schema.Number });
 
+/** Words to split into syllables (a line's worth), in a language (ISO 639-1; null: not known, vowel rules). */
+export const SyllabifyInput = Schema.Struct({
+  language: Schema.NullOr(Schema.String.check(Schema.isPattern(/^[a-z]{2,3}$/))),
+  words: Schema.Array(Schema.String.check(Schema.isMaxLength(100))).check(Schema.isMaxLength(500)),
+});
+
 export const SongSearchInput = Schema.Struct({
   artist: Schema.String,
   title: Schema.String,
@@ -353,6 +360,8 @@ export class NativeRpcs extends RpcGroup.make(
 
   /** Reads a song folder (or chart) and reports what an import would bring in. */
   call("song.inspect", SongInput, SongInspection),
+  /** Words split into sung syllables the way charts split them (a language's learned splits, else vowel rules). */
+  call("lyrics.syllabify", SyllabifyInput, Schema.Array(Schema.Array(Schema.String))),
   /** Imports a song into a new project file, reporting progress, and opens it. */
   /** Separates the vocals and music from the song's audio into a new draft, reporting progress. */
   withProgress("song.separate", SongInput, ImportProgress, DraftInput),
@@ -366,6 +375,8 @@ export class NativeRpcs extends RpcGroup.make(
    * reporting progress; null without vocals.
    */
   withProgress("project.pitch", ProjectInput, ImportProgress, nullable(SungPitch)),
+  /** How loud the project's vocals (or its song) are, for the waveform lane: stored, or worked out now; null without. */
+  call("project.waveform", ProjectInput, nullable(Waveform)),
   /** Writes one edit (or its undo) to the project in one transaction; fails, writing nothing, if it is out of step. */
   command("project.applyChanges", ChartChangesInput),
   /** The chart with its row ids, for the editor. */

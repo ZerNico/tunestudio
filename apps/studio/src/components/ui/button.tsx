@@ -24,6 +24,8 @@ export const buttonVariants = cva(
         link: "h-auto gap-[7px] p-0 font-normal text-sage-73 hover:text-primary",
         assist:
           "border-violet-line bg-violet-soft text-violet-text hover:border-violet-38 hover:bg-violet-22 hover:text-white",
+        /** Over a picture (the video preview): a dark round chip that reads on any frame. */
+        overlay: "rounded-full bg-black/55 text-white/85 hover:bg-black/75 hover:text-white",
       },
       size: {
         default: "min-h-[34px] px-3 py-2",

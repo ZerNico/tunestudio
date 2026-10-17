@@ -18,7 +18,7 @@ import {
 } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
-import { formatNumber, formatSeconds } from "~/lib/format";
+import { formatNumber } from "~/lib/format";
 import type { SongFields } from "~/lib/native/contract";
 import type { EditorSong, LyricsLine } from "~/lib/native/types";
 import { parseYoutubeVideoId, watchUrl } from "~/lib/youtube";
@@ -88,9 +88,8 @@ export function SongDetailsDialog(props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   song: EditorSong;
-  /** The chart's grid (shown, not edited here). */
+  /** The chart's grid (shown; its gap is edited with the timing). */
   bpm: number;
-  gap: number;
   singers: readonly SongDetailsSinger[];
   /** Headers the song came with that Tune Studio doesn't edit (kept for export). */
   otherHeaders: readonly (readonly [string, string])[];
@@ -255,7 +254,7 @@ export function SongDetailsDialog(props: {
             )}
           </Show>
           <p class="m-0 text-[11px] text-muted-foreground" data-testid="song-grid">
-            Chart grid: {formatNumber(props.bpm)} BPM, first beat at {formatSeconds(props.gap)}
+            Chart grid: {formatNumber(props.bpm)} BPM
           </p>
           <Show when={props.otherHeaders.length > 0}>
             <div class="flex flex-col gap-1.5 border-t border-popover-line pt-3">

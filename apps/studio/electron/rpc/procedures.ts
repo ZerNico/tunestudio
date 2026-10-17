@@ -6,11 +6,13 @@ import { Context, Effect, Exit, FileSystem, Path, Queue, Stream } from "effect";
 import type { BrowserWindow } from "electron";
 
 import { safeFileName } from "../../src/lib/file-names";
+import { languageName } from "../../src/lib/languages";
 import { NativeRpcs } from "../../src/lib/native/contract";
 import type { ChosenImage, OpenedProject, RecentProjectEntry } from "../../src/lib/native/types";
 import { audioFileIntoDraft, inspectAudioFile } from "../audio-file/audio-file";
 import { autoPitchNotes } from "../charting/project-auto-pitch";
 import { chartProjectRange } from "../charting/project-range-chart";
+import { syllabify } from "../charting/syllables";
 import { createDraftProject, listenToDraft, makeDraftChart } from "../drafts/draft-project";
 import { ImageUnreadable } from "../errors";
 import { downloadFeature, modelFeatures, removeFeature } from "../models/features";
@@ -23,6 +25,7 @@ import { projectOverview, recentEntry } from "../project/overview";
 import { sungPitch } from "../project/pitch";
 import { Projects, type ProjectSession } from "../project/projects";
 import { removeVideo, replaceSongMedia, separateSong } from "../project/song-media";
+import { waveform } from "../project/waveform";
 import { AppLog } from "../services/app-log";
 import { Desktop } from "../services/desktop";
 import { Drafts } from "../services/drafts";
@@ -186,6 +189,12 @@ export const nativeHandlers = NativeRpcs.toLayer({
       return yield* grant(yield* desktop.chooseExportFolder(yield* windowOf(client), desktop.musicFolder));
     }),
 
+  "lyrics.syllabify": (input) =>
+    Effect.sync(() => {
+      // The syllable rules go by English language names ("german"); without one, the vowel rules.
+      const language = input.language ? languageName(input.language).toLowerCase() : "";
+      return input.words.map((word) => syllabify(word, language));
+    }),
   "song.inspect": (input) =>
     Effect.flatMap(allowedPath(input.path), (path) => Effect.map(inspectSong(path, input.chart), describeSong)),
   "song.separate": (input) =>
@@ -248,6 +257,7 @@ export const nativeHandlers = NativeRpcs.toLayer({
     }),
   "project.pitch": (input) =>
     progressStream((onProgress) => Effect.flatMap(project(input.id), (session) => sungPitch(session, onProgress))),
+  "project.waveform": (input) => Effect.flatMap(project(input.id), (session) => waveform(session)),
   "project.replaceMedia": (input) =>
     Effect.gen(function* () {
       const path = yield* allowedPath(input.path);

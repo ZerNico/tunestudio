@@ -6,6 +6,9 @@
  */
 import type { NoteType } from "~/lib/native/types";
 
+import { firstFrom, voiced } from "./chart";
+import { midiToHz } from "./voice-pitch";
+
 export interface ToneNote {
   id: number;
   start: number;
@@ -27,24 +30,6 @@ const VOLUME = 0.22;
  */
 const WAVE: OscillatorType = "sawtooth";
 const BRIGHTNESS_HZ = 2200;
-
-export function midiToHz(midi: number): number {
-  return 440 * 2 ** ((midi - 69) / 12);
-}
-
-const voiced = (type: NoteType) => type === "normal" || type === "golden";
-
-/** The first index whose note starts at or after `time` (notes sorted by start). */
-function firstFrom(notes: readonly ToneNote[], time: number): number {
-  let low = 0;
-  let high = notes.length;
-  while (low < high) {
-    const middle = (low + high) >> 1;
-    if (notes[middle]!.start < time) low = middle + 1;
-    else high = middle;
-  }
-  return low;
-}
 
 export function createTones(options: {
   /** The notes, sorted by start. A new array restarts scheduling (for example, after hiding a singer). */

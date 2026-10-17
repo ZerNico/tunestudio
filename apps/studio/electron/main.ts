@@ -1,7 +1,17 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { app, BrowserWindow, clipboard, ipcMain, protocol, session, shell, webContents } from "electron";
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  ipcMain,
+  protocol,
+  session,
+  shell,
+  systemPreferences,
+  webContents,
+} from "electron";
 
 import { CLIPBOARD_CHANNEL, GRANT_PATH_CHANNEL } from "../src/lib/native/channel";
 import { contentSecurityPolicy } from "./csp";
@@ -9,6 +19,7 @@ import { onDevReload } from "./dev-reload";
 import { BACKGROUND_COLOR, PRODUCT_NAME } from "./identity";
 import { createLogger } from "./logger";
 import { attachContextMenu, sendEditCommand, setApplicationMenu, setProjectItemsEnabled } from "./menu";
+import { allowsPermission } from "./permissions";
 import { Projects } from "./project/projects";
 import { mediaResponse } from "./protocols/media";
 import { MEDIA_SCHEME } from "./protocols/media-url";
@@ -200,15 +211,17 @@ function start() {
     app.dock?.setIcon(path.join(__dirname, "../resources/icons/icon.png"));
   }
 
-  // The start screen needs no web permissions besides writing the clipboard; everything else
-  // is denied, for requests and for the synchronous checks behind `navigator.permissions`.
-  const permissions = new Set(["clipboard-sanitized-write"]);
-  const allowed = (url: string, permission: string) => originOf(url) === appOrigin && permissions.has(permission);
-  session.defaultSession.setPermissionRequestHandler((contents, permission, callback) => {
-    callback(allowed(contents.getURL(), permission));
+  // Only what `allowsPermission` lets the app's pages have. The microphone also needs macOS's consent, asked first so
+  // its prompt shows (a refusal there is remembered in System Settings).
+  session.defaultSession.setPermissionRequestHandler((_contents, permission, callback, details) => {
+    // The frame asking, not the page it is in; the microphone only for the page itself.
+    const mediaTypes = "mediaTypes" in details && details.isMainFrame ? (details.mediaTypes ?? []) : [];
+    if (!allowsPermission(originOf(details.requestingUrl), appOrigin, permission, mediaTypes)) return callback(false);
+    if (permission !== "media" || process.platform !== "darwin") return callback(true);
+    systemPreferences.askForMediaAccess("microphone").then(callback, () => callback(false));
   });
-  session.defaultSession.setPermissionCheckHandler((_contents, permission, requestingOrigin) =>
-    allowed(requestingOrigin, permission),
+  session.defaultSession.setPermissionCheckHandler((_contents, permission, requestingOrigin, details) =>
+    allowsPermission(originOf(requestingOrigin), appOrigin, permission, details.mediaType ? [details.mediaType] : []),
   );
 
   if (devServerUrl) {

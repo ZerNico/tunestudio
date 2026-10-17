@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { createTones, midiToHz, type ToneNote } from "./tones";
+import { createTones, type ToneNote } from "./tones";
+import { midiToHz } from "./voice-pitch";
 
 /** An audio context as far as tones use it: oscillators record when they start and stop. */
 class FakeContext {

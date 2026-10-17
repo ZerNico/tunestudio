@@ -112,6 +112,11 @@ const config: Configuration = {
     // No Developer ID yet: skip electron-builder's signing and sign ad-hoc in `afterPack`.
     identity: null,
     minimumSystemVersion: "12.0",
+    // Singing along listens to the microphone; macOS shows this when it asks. Signing with the hardened runtime (to
+    // notarize) also needs the `com.apple.security.device.audio-input` entitlement, or the microphone stays silent.
+    extendInfo: {
+      NSMicrophoneUsageDescription: "Tune Studio listens while you sing along, to show your pitch over the notes.",
+    },
     target: dirOnly ? ["dir"] : ["dmg"],
   },
   dmg: { artifactName: `${PRODUCT_NAME}_${version}_${archName}.dmg` },

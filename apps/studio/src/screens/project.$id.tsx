@@ -1,5 +1,6 @@
 import { getRouteApi, useNavigate, useRouter } from "@tanstack/solid-router";
 import { createEffect, createMemo, createSignal, flush, onSettled, Show, untrack } from "solid-js";
+import CircleHelpIcon from "~icons/lucide/circle-help";
 import LoaderCircleIcon from "~icons/lucide/loader-circle";
 import Redo2Icon from "~icons/lucide/redo-2";
 import Undo2Icon from "~icons/lucide/undo-2";
@@ -15,7 +16,9 @@ import {
   SungBySwitch,
   ToolSwitch,
 } from "~/components/editor/edit-controls";
-import { BreakLane, LyricsLane, OverviewBar, TimeRuler } from "~/components/editor/lanes";
+import { HelpDialog } from "~/components/editor/help-dialog";
+import { IconButton } from "~/components/editor/icon-button";
+import { BreakLane, LyricsLane, OverviewBar, TimeRuler, WaveformLane } from "~/components/editor/lanes";
 import { NoteMenu, type NoteMenuActions } from "~/components/editor/note-menu";
 import { GUTTER_PX, PianoRoll } from "~/components/editor/piano-roll";
 import { Playhead } from "~/components/editor/playhead";
@@ -24,6 +27,7 @@ import type { ArtworkActions } from "~/components/editor/song-artwork";
 import { SongDetails } from "~/components/editor/song-details";
 import type { MediaActions } from "~/components/editor/song-files";
 import { Transport } from "~/components/editor/transport";
+import { VideoPreview } from "~/components/editor/video-preview";
 import { follow as followProgress, percentOf, progressBarClass } from "~/components/new-project/progress";
 import { ExportMenu } from "~/components/project/export-menu";
 import { ProblemsMenu } from "~/components/project/problems-menu";
@@ -55,11 +59,15 @@ import { createChartRangeJob } from "~/lib/editor/chart-range-job";
 import { type ChartProblem, chartProblems } from "~/lib/editor/checks";
 import { createChartDocument } from "~/lib/editor/document";
 import { overlapping } from "~/lib/editor/edits";
+import { listenForKeyHints } from "~/lib/editor/key-hints";
+import { createLineTextEditing } from "~/lib/editor/line-text-editing";
 import { createLoop } from "~/lib/editor/loop";
 import { createNoteEditing, previewChart } from "~/lib/editor/note-editing";
 import { createPlayback } from "~/lib/editor/playback";
 import { createEditorPrefs } from "~/lib/editor/prefs";
 import { breaksOnly, NOTHING, notesOnly, type Selection } from "~/lib/editor/selection";
+import { keyOf } from "~/lib/editor/shortcuts";
+import { createSingAlong, microphoneProblem } from "~/lib/editor/sing-along";
 import { addSinger, removeSinger, singerLabel, singerOf } from "~/lib/editor/singers";
 import { createSingersView } from "~/lib/editor/singers-view";
 import { createSongMarkers } from "~/lib/editor/song-markers";
@@ -80,10 +88,12 @@ import {
   zoomAt,
 } from "~/lib/editor/view";
 import { songFileName } from "~/lib/file-names";
+import { codeOfLanguage } from "~/lib/languages";
+import { createLatest } from "~/lib/latest";
 import type { EditCommand } from "~/lib/native/channel";
 import { native } from "~/lib/native/client";
 import { errorMessage, isAbort } from "~/lib/native/errors";
-import type { ImportProgress, ProjectOverview, SungPitch } from "~/lib/native/types";
+import type { ImportProgress, ProjectOverview, SungPitch, Waveform } from "~/lib/native/types";
 
 const route = getRouteApi("/project/$id");
 
@@ -176,6 +186,12 @@ export default function ProjectScreen() {
     },
   };
   const [detailsOpen, setDetailsOpen] = createSignal(false);
+  const [helpOpen, setHelpOpen] = createSignal(false);
+  /** Help opens over the editor: a drag under way stops first. */
+  const openHelp = () => {
+    cancelGestures();
+    setHelpOpen(true);
+  };
   const allNotes = createMemo(() => drawnNotes(chart()));
   const notes = createMemo(() => allNotes().filter(sungShown));
   const lines = createMemo(() => lineSpans(chart()).filter(sungShown));
@@ -192,7 +208,7 @@ export default function ProjectScreen() {
   const breaks = createMemo(() => lineBreaks(chart()).filter(sungShown));
   /** What is sung in the vocals (null: none, or not there yet). */
   const [pitch, setPitch] = createSignal<SungPitch | null>(null);
-  const [showPitch, setShowPitch] = createSignal(true);
+  const [waveform, setWaveform] = createSignal<Waveform | null>(null);
   /** Opening isn't finished: the pitch is being prepared (shown after a moment, with its progress). */
   const [opening, setOpening] = createSignal<ImportProgress | null | undefined>(undefined);
 
@@ -211,6 +227,18 @@ export default function ProjectScreen() {
 
   const prefs = createEditorPrefs();
   const tones = createTones({ notes });
+  const singAlong = createSingAlong({ notes, length });
+  const toggleSingAlong = (on: boolean) => {
+    if (!on) return singAlong.stop();
+    singAlong.start().catch((error: unknown) => {
+      console.warn(error);
+      toast.add({
+        type: "error",
+        title: "Couldn't use the microphone",
+        description: microphoneProblem(error, platform),
+      });
+    });
+  };
   /** A time on the chart's grid. */
   const snap = (seconds: number) => onGrid(chart(), seconds);
   const loop = createLoop({ snap, length, onSeek: (seconds) => seek(seconds) });
@@ -234,6 +262,7 @@ export default function ProjectScreen() {
         if (back !== null) playback.seek(back);
         const now = back ?? time;
         if (prefs.tones()) tones.frame(now, playback.speed());
+        if (singAlong.on()) singAlong.frame(now, playback.speed());
         // Scrolled away, then the playhead came back on screen (or the view back to it): following goes on.
         if (scrolledAway && width() > 0 && onPage(view(), now, width())) scrolledAway = false;
         if (prefs.following() && !scrolledAway && width() > 0)
@@ -472,6 +501,10 @@ export default function ProjectScreen() {
     canMerge: () => editing.commands.canMerge(),
     merge: () => editing.commands.merge(),
     lineBreakAfter: () => breakEditing.addAfter(),
+    editLineLyrics: () => {
+      const first = selectedNotes().toSorted((a, b) => a.start - b.start)[0];
+      if (first) lineText.edit(first.lineId);
+    },
     singers: singerLabels,
     sungBy: () => editing.commands.sungBy(),
     assign: (index) => editing.commands.assign(index),
@@ -574,6 +607,16 @@ export default function ProjectScreen() {
     if (editing.pasteClip(event.clipboardData?.getData("text/plain"))) event.preventDefault();
   };
 
+  const lineText = createLineTextEditing({
+    doc,
+    chart,
+    syllabify: (words) => native.lyrics.syllabify({ language: codeOfLanguage(chart().song.language[0]), words }),
+    onRefused: (message) => toast.add({ title: message }),
+    onError: (error) =>
+      toast.add({ type: "error", title: "Couldn't change the lyrics", description: errorMessage(error) }),
+    beforeEdit: cancelGestures,
+  });
+
   let editArea: HTMLDivElement | undefined;
   let rollArea: HTMLDivElement | undefined;
 
@@ -599,13 +642,26 @@ export default function ProjectScreen() {
     }
   };
 
-  /** Follows the vocals' pitch again (new vocals), stopping the last one. */
-  let pitchController = new AbortController();
-  const followVocals = () => {
-    pitchController.abort();
-    pitchController = new AbortController();
-    void preparePitch(pitchController.signal);
+  /** The waveform lane's: stored ones come at once, a new one is worked out in a second or two. */
+  const waveformRun = createLatest();
+  const loadWaveform = () => {
+    const signal = waveformRun.next();
+    if (!media("vocals") && !media("audio")) return void setWaveform(null);
+    // The old one stays until the new one is there, so the lane doesn't come and go.
+    native.project.waveform({ id: overview().id }, { signal }).then(
+      (result) => {
+        if (!signal.aborted) setWaveform(result);
+      },
+      // Without it there is just no lane: an audio file that can't be read says so when it plays.
+      (error: unknown) => {
+        if (!signal.aborted) console.error(error);
+      },
+    );
   };
+
+  /** Follows the vocals' pitch again (new vocals), stopping the last one. */
+  const pitchRun = createLatest();
+  const followVocals = () => void preparePitch(pitchRun.next());
   // A replaced song, vocals or music plays from where it was; new vocals have their pitch followed.
   createEffect(playbackUrls, (urls, previous) => {
     if (!previous) return;
@@ -614,6 +670,7 @@ export default function ProjectScreen() {
       setPitch(null);
       followVocals();
     }
+    if (urls.vocals !== previous.vocals || urls.audio !== previous.audio) loadWaveform();
   });
 
   /** Separating the voice from the song again, while it runs. */
@@ -675,7 +732,9 @@ export default function ProjectScreen() {
 
   onSettled(() => {
     playback.load();
+    const stopKeyHints = listenForKeyHints();
     followVocals();
+    loadWaveform();
     const observer = new ResizeObserver(() => {
       if (!rollArea) return;
       const next = { width: Math.max(0, rollArea.clientWidth - GUTTER_PX), height: rollArea.clientHeight };
@@ -740,6 +799,9 @@ export default function ProjectScreen() {
       } else if (event.key === "." || event.key === ",") {
         event.preventDefault();
         goToLine(stepLine(lines(), playback.time(), event.key === "." ? 1 : -1));
+      } else if (event.key === "?") {
+        event.preventDefault();
+        openHelp();
       } else if ((event.key === "l" || event.key === "L") && !event.shiftKey && !event.repeat) {
         event.preventDefault();
         toggleLoop();
@@ -785,10 +847,7 @@ export default function ProjectScreen() {
       stopEditing();
       cancelGestures();
       autoScroll.end();
-      autoPitch.stop();
-      rangeJob.stop();
-      pitchController.abort();
-      separation?.abort();
+      stopWork();
       observer.disconnect();
       editArea?.removeEventListener("wheel", onWheel);
       window.removeEventListener("keydown", onKey);
@@ -798,15 +857,23 @@ export default function ProjectScreen() {
       document.removeEventListener("paste", onPaste);
       playback.dispose();
       tones.dispose();
+      singAlong.stop();
+      stopKeyHints();
     };
   });
 
-  const close = async () => {
-    // What still reads or writes the project stops before it closes.
+  /** Everything that still reads or writes the project in the background. */
+  const stopWork = () => {
     rangeJob.stop();
     autoPitch.stop();
     separation?.abort();
-    pitchController.abort();
+    pitchRun.abort();
+    waveformRun.abort();
+  };
+
+  const close = async () => {
+    // What still reads or writes the project stops before it closes.
+    stopWork();
     await native.project.close({ id: overview().id }).catch((error: unknown) => console.error(error));
     void navigate({ to: "/" });
   };
@@ -867,10 +934,22 @@ export default function ProjectScreen() {
       <TitleBar
         start={
           <>
-            <HistoryButton label={doc().undoLabel()} action="Undo" onClick={() => runEditCommand("undo")} testid="undo">
+            <HistoryButton
+              label={doc().undoLabel()}
+              action="Undo"
+              shortcut={keyOf("undo")}
+              onClick={() => runEditCommand("undo")}
+              testid="undo"
+            >
               <Undo2Icon />
             </HistoryButton>
-            <HistoryButton label={doc().redoLabel()} action="Redo" onClick={() => runEditCommand("redo")} testid="redo">
+            <HistoryButton
+              label={doc().redoLabel()}
+              action="Redo"
+              shortcut={keyOf("redo")}
+              onClick={() => runEditCommand("redo")}
+              testid="redo"
+            >
               <Redo2Icon />
             </HistoryButton>
             <ToolSwitch class="mx-3" tool={tools.tool()} onTool={tools.setTool} />
@@ -908,6 +987,9 @@ export default function ProjectScreen() {
           <ProblemsMenu problems={problems()} onShow={showProblem} />
         </div>
 
+        <IconButton label="Help" shortcut={keyOf("help")} onClick={openHelp} testid="help-open">
+          <CircleHelpIcon />
+        </IconButton>
         <ExportMenu busy={exporting()} onSongFolder={() => void chooseExport()} onUsdb={() => void exportUsdb()} />
         <Button variant="ghost" size="sm" onClick={() => void close()} data-testid="close-project">
           <XIcon />
@@ -962,7 +1044,8 @@ export default function ProjectScreen() {
                   view={view()}
                   width={width()}
                   height={size().height}
-                  pitch={showPitch() ? pitch() : null}
+                  pitch={prefs.pitch() ? pitch() : null}
+                  voice={singAlong.voice()}
                   selected={selectedIds()}
                   selectedBreaks={selectedBreaks()}
                   onBreakDown={breakDown}
@@ -993,13 +1076,32 @@ export default function ProjectScreen() {
                 />
               </NoteMenu>
             </div>
+            <Show when={prefs.waveform() && waveform()}>
+              {(shown) => <WaveformLane waveform={shown()} view={view()} width={width()} />}
+            </Show>
             <LyricsLane
               lines={visibleLines()}
               all={lines()}
               view={view()}
               duet={bothShown()}
               activeSinger={activeSinger()}
+              width={width()}
+              editing={lineText.editing()}
+              onEdit={lineText.edit}
+              onEditDone={(text, fromKey) => void lineText.finish(text, fromKey)}
             />
+            <Show when={prefs.video() && media("video")}>
+              {(url) => (
+                <VideoPreview
+                  url={url()}
+                  time={playback.time()}
+                  playing={playback.playing()}
+                  speed={playback.speed()}
+                  offset={chart().song.videoGap}
+                  onClose={() => prefs.setVideo(false)}
+                />
+              )}
+            </Show>
             <Show when={opening() !== undefined}>
               <OpeningOverlay progress={opening() ?? null} />
             </Show>
@@ -1027,8 +1129,14 @@ export default function ProjectScreen() {
         onPlay={togglePlay}
         length={length()}
         onZoom={(factor) => changeView(zoomAt(view(), factor, width() / 2, width(), length()))}
-        showPitch={pitch() ? showPitch() : undefined}
-        onShowPitch={setShowPitch}
+        showPitch={pitch() ? prefs.pitch() : undefined}
+        onShowPitch={prefs.setPitch}
+        showWaveform={waveform() ? prefs.waveform() : undefined}
+        onShowWaveform={prefs.setWaveform}
+        singAlong={singAlong.on()}
+        onSingAlong={toggleSingAlong}
+        showVideo={media("video") ? prefs.video() : undefined}
+        onShowVideo={prefs.setVideo}
         looping={loop.on()}
         onLoop={toggleLoop}
         following={prefs.following()}
@@ -1070,6 +1178,7 @@ export default function ProjectScreen() {
           />
         )}
       </Show>
+      <HelpDialog open={helpOpen()} onOpenChange={setHelpOpen} />
       <SongDetails
         open={detailsOpen()}
         onOpenChange={setDetailsOpen}
@@ -1084,6 +1193,7 @@ export default function ProjectScreen() {
           return lines().filter((line) => chosen.has(line.id));
         }}
         playheadTime={() => playback.time()}
+        audioLength={editingLength}
         onPlayFrom={(seconds) => {
           seek(seconds);
           playback.play();

@@ -1,27 +1,23 @@
 /**
  * The sung pitch the editor draws behind the notes: FCPE over the project's vocals, as fractional MIDI every 10 ms
- * (NaN where nothing is sung). Stored as `analysis` of kind "pitch" on the vocals, so it is computed once per vocals
- * file and is out of date when the vocals change (their checksum).
+ * (NaN where nothing is sung). Stored on the vocals (`analysis-store.ts`), so it is computed once per vocals file.
  */
-import { and, desc, eq } from "drizzle-orm";
-import { Effect, FileSystem, Path } from "effect";
+import { Effect } from "effect";
 
 import { CHART_STEPS } from "../../src/lib/chart-steps";
 import type { ImportProgress, SungPitch } from "../../src/lib/native/types";
-import { decodeMono } from "../charting/audio";
 import { type FullPitchTrack, HOP_SECONDS, PITCH_SAMPLE_RATE, pitchTrack } from "../charting/pitch-track";
-import { ChartFailed, mapFileError } from "../errors";
+import { ChartFailed } from "../errors";
 import { Models } from "../models/models";
 import { Native } from "../native/native";
 import { Tools } from "../tools/tools";
-import { orDiskFull, type Queryable } from "./database";
-import { listMedia, type MediaRow, writeMediaToFile } from "./media";
+import { decodeMedia, type F32Analysis, readF32Analysis, writeF32Analysis } from "./analysis-store";
+import type { Queryable } from "./database";
+import { listMedia, type MediaRow } from "./media";
 import type { ProjectSession } from "./projects";
-import { analysis } from "./schema";
 
-const PRODUCER = "fcpe";
-/** Changes when what is stored changes, so older tracks are computed again. */
-const PRODUCER_VERSION = "1";
+/** Its version changes when what is stored changes, so older tracks are worked out again. */
+const PITCH: F32Analysis = { kind: "pitch", producer: "fcpe", version: "1" };
 /** Quieter frames than this (dB) are left out: breaths and what the separation left of the band. */
 const QUIET_DB = -45;
 
@@ -34,48 +30,7 @@ export function sungMidi(track: FullPitchTrack): Float32Array {
 
 /** Stores the sung pitch of `vocals`, replacing what was stored for them. */
 export function writePitch(db: Queryable, vocals: MediaRow, midi: Float32Array) {
-  return Effect.gen(function* () {
-    yield* db
-      .delete(analysis)
-      .where(and(eq(analysis.kind, "pitch"), eq(analysis.inputSha256, vocals.sha256)))
-      .pipe(orDiskFull);
-    yield* db
-      .insert(analysis)
-      .values({
-        kind: "pitch",
-        inputMediaId: vocals.id,
-        inputSha256: vocals.sha256,
-        producer: PRODUCER,
-        producerVersion: PRODUCER_VERSION,
-        params: JSON.stringify({ hop: HOP_SECONDS, quietDb: QUIET_DB }),
-        encoding: "f32",
-        data: Buffer.from(midi.buffer, midi.byteOffset, midi.byteLength),
-      })
-      .pipe(orDiskFull);
-  });
-}
-
-/** The stored track for these vocals, or null. */
-function readStored(db: Queryable, vocals: MediaRow) {
-  return Effect.gen(function* () {
-    const [row] = yield* db
-      .select()
-      .from(analysis)
-      .where(
-        and(
-          eq(analysis.kind, "pitch"),
-          eq(analysis.inputSha256, vocals.sha256),
-          eq(analysis.producer, PRODUCER),
-          eq(analysis.producerVersion, PRODUCER_VERSION),
-        ),
-      )
-      .orderBy(desc(analysis.id))
-      .limit(1)
-      .pipe(Effect.orDie);
-    if (!row || row.encoding !== "f32") return null;
-    const bytes = Buffer.from(row.data);
-    return new Float32Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.byteLength / 4));
-  });
+  return writeF32Analysis(db, PITCH, vocals, midi, { hop: HOP_SECONDS, quietDb: QUIET_DB });
 }
 
 /** The frames as sent to the renderer: MIDI with one decimal, null where nothing is sung. */
@@ -98,11 +53,9 @@ export function sungPitch(
     const db = session.db;
     const vocals = (yield* listMedia(db)).find((row) => row.role === "vocals");
     if (!vocals) return null;
-    const stored = yield* readStored(db, vocals);
+    const stored = yield* readF32Analysis(db, PITCH, vocals);
     if (stored) return toSungPitch(stored);
 
-    const fs = yield* FileSystem.FileSystem;
-    const paths = yield* Path.Path;
     const { ffmpeg } = (yield* Tools.use((tools) => tools.ensure(["ffmpeg"]))).ffmpeg;
     if (!ffmpeg) return yield* new ChartFailed({ message: "FFmpeg couldn't be installed. Try again." });
     const model = yield* (yield* Models).ensure("chartPitch", (received, total) =>
@@ -110,12 +63,7 @@ export function sungPitch(
     );
     yield* onProgress({ step: FOLLOWING_THE_MELODY, done: 0, total: 0 });
     const addon = yield* (yield* Native).addon;
-    const folder = yield* fs
-      .makeTempDirectoryScoped({ prefix: "tunestudio-pitch-" })
-      .pipe(mapFileError("a temporary folder", "create"));
-    const file = paths.join(folder, `vocals${paths.extname(vocals.fileName) || ".audio"}`);
-    yield* writeMediaToFile(db, vocals, file);
-    const samples = yield* decodeMono(ffmpeg, file, PITCH_SAMPLE_RATE, folder);
+    const samples = yield* decodeMedia(db, vocals, ffmpeg, PITCH_SAMPLE_RATE);
     const f0 = yield* Effect.tryPromise({
       try: () => addon.trackPitch(model, samples),
       catch: (error) =>
@@ -124,5 +72,5 @@ export function sungPitch(
     const midi = sungMidi(pitchTrack(f0, samples));
     yield* writePitch(db, vocals, midi);
     return toSungPitch(midi);
-  }).pipe(Effect.scoped);
+  });
 }

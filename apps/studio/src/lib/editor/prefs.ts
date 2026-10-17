@@ -1,6 +1,7 @@
 /**
  * The editor's listening settings, the same in every project and remembered (localStorage): whether the view follows
- * the playhead (on at first), whether notes are heard as tones (off at first), and the song's and the tones' volume.
+ * the playhead (on at first), whether notes are heard as tones (off at first), whether the sung pitch and the waveform
+ * lane show (on at first) and the video (off at first), and the song's and the tones' volume.
  */
 import { Schema } from "effect";
 
@@ -38,12 +39,21 @@ const volumesFormat: StoredFormat<Volumes> = {
 export function createEditorPrefs() {
   const [following, setFollowing] = createStored("tunestudio.editor.follow", onOff, true);
   const [tones, setTones] = createStored("tunestudio.editor.tones", onOff, false);
+  const [pitch, setPitch] = createStored("tunestudio.editor.pitch", onOff, true);
+  const [waveform, setWaveform] = createStored("tunestudio.editor.waveform", onOff, true);
+  const [video, setVideo] = createStored("tunestudio.editor.video", onOff, false);
   const [volumes, setVolumes] = createStored("tunestudio.editor.volumes", volumesFormat, FULL);
   return {
     following,
     setFollowing,
     tones,
     setTones,
+    pitch,
+    setPitch,
+    waveform,
+    setWaveform,
+    video,
+    setVideo,
     volumes,
     setVolume: (channel: keyof Volumes, value: number) => setVolumes({ ...volumes(), [channel]: value }),
   };
