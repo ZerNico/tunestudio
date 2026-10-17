@@ -95,6 +95,7 @@ import {
   visibleSeconds,
   zoomAt,
 } from "~/lib/editor/view";
+import { setFlushHandler } from "~/lib/flush";
 import { codeOfLanguage } from "~/lib/languages";
 import { createLatest } from "~/lib/latest";
 import type { EditCommand } from "~/lib/native/channel";
@@ -664,6 +665,8 @@ export default function ProjectScreen() {
     if (urls.vocals !== previous.vocals || urls.audio !== previous.audio) loadWaveform();
   });
 
+  // Edits still saving are waited for before the window closes, the app quits or the page reloads.
+  onSettled(() => setFlushHandler(() => doc().saved()));
   // The File menu (macOS): exports, song details and closing, for this window's project.
   onSettled(() =>
     onMenuCommand((command) => {
