@@ -14,10 +14,11 @@ function setup(request: (ids: number[], signal: AbortSignal) => Promise<{ id: nu
   return createRoot(() => {
     const first = { saved: vi.fn(async () => {}) };
     const [doc, setDoc] = createSignal(first);
+    const [media, setMedia] = createSignal<unknown>(["vocals 1"]);
     const apply = vi.fn();
     const onMessage = vi.fn();
-    const job = createAutoPitchJob({ notes: () => notes, doc, request, apply, onMessage });
-    return { job, apply, onMessage, setDoc, first };
+    const job = createAutoPitchJob({ notes: () => notes, doc, media, request, apply, onMessage });
+    return { job, apply, onMessage, setDoc, setMedia, first };
   });
 }
 
@@ -75,5 +76,19 @@ describe("auto pitch job", () => {
     await vi.waitFor(() => expect(seen.aborted).toBe(false));
     job.stop();
     expect(seen.aborted).toBe(true);
+  });
+
+  it("drops a result for vocals replaced meanwhile (separated again)", async () => {
+    let answer!: (pitches: { id: number; pitch: number }[]) => void;
+    const { job, apply, setMedia } = setup(
+      () => new Promise<{ id: number; pitch: number }[]>((resolve) => (answer = resolve)),
+    );
+    job.run([1]);
+    await vi.waitFor(() => expect(answer).toBeDefined());
+    setMedia(["vocals 2"]);
+    flush();
+    answer([{ id: 1, pitch: 60 }]);
+    await vi.waitFor(() => expect(job.busy()).toBe(false));
+    expect(apply).not.toHaveBeenCalled();
   });
 });

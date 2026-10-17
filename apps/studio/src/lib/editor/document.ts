@@ -44,10 +44,12 @@ export function rowsFromChart(chart: EditorChart): ChartRows {
 
 /** The rows as the tree the editor draws: lines by their first note, notes by start (as the project orders them). */
 export function chartFromRows(rows: ChartRows): EditorChart {
-  const byLine = new Map<number, EditorLine["notes"]>();
+  const byLine = new Map<number, EditorLine["notes"][number][]>();
   for (const note of Object.values(rows.notes)) {
     const { lineId, ...rest } = note;
-    byLine.set(lineId, [...(byLine.get(lineId) ?? []), rest]);
+    const notes = byLine.get(lineId);
+    if (notes) notes.push(rest);
+    else byLine.set(lineId, [rest]);
   }
   const lines = Object.values(rows.lines).map((line) => ({
     line,

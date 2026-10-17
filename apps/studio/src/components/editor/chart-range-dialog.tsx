@@ -37,6 +37,7 @@ export function ChartRangeDialog(props: {
   const scope = createMemo(() => rangeScope(props.chart, singer(), props.range, props.duration));
   const [text, setText] = createSignal(untrack(() => scope()?.text ?? ""));
   let edited = false;
+  const [typed, setTyped] = createSignal(false);
   const lines = () => lyricLines(text());
   const problem = () => {
     const range = scope();
@@ -135,6 +136,7 @@ export function ChartRangeDialog(props: {
               disabled={props.job.busy()}
               onInput={(event) => {
                 edited = true;
+                setTyped(true);
                 props.job.clearError();
                 setText(event.currentTarget.value);
               }}
@@ -152,7 +154,8 @@ export function ChartRangeDialog(props: {
             </output>
           </Show>
           <Show when={!props.job.busy() && (props.job.error() || problem())}>
-            <p role="alert" class="m-0 text-xs text-destructive">
+            {/* Said out loud once it's news: after typing, or when charting failed; not as the dialog opens. */}
+            <p role={typed() || props.job.error() ? "alert" : undefined} class="m-0 text-xs text-destructive">
               {props.job.error() || problem()}
             </p>
           </Show>

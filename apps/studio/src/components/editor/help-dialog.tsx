@@ -43,10 +43,21 @@ const MOUSE: { term: string; says: string }[] = [
   },
   { term: "The line break lane", says: "Double-click to add a line break there." },
   {
+    term: "The ruler's markers",
+    says: "Drag the start and end handles, the preview flag or the medley band to move them. Drag the playhead's head to scrub.",
+  },
+  {
+    term: "A singer's chip (duets)",
+    says: "Click to sing as them, double-click to rename, right-click for Show only, Rename and Remove.",
+  },
+  {
     term: "A line's lyrics (below the roll)",
     says: "Double-click to edit the whole line as text: syllables with -, held notes as ~.",
   },
-  { term: "Right-click", says: "The note menu: everything the keys do, and more." },
+  {
+    term: "Right-click",
+    says: "The note menu: everything the keys do, and more. Shift+F10 opens it from the keyboard.",
+  },
   { term: `${MOD} + wheel, or pinch`, says: "Zoom at the pointer. The wheel scrolls through the song (Shift too)." },
 ];
 

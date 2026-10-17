@@ -39,6 +39,8 @@ export function createWindowDrop(onDrop: (drop: Drop) => void) {
       if (depth === 0) setDragging(false);
     };
     const drop = (event: DragEvent) => {
+      // Text dragged in or within a field drops there as usual.
+      if (!carriesFiles(event)) return;
       event.preventDefault();
       depth = 0;
       setDragging(false);

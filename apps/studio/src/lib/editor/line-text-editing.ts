@@ -29,8 +29,8 @@ export function createLineTextEditing<Selection>(options: {
   beforeEdit?: () => void;
 }) {
   const [editing, setEditing] = createSignal<EditedLine | null>(null);
-  /** The text being applied, until it is (or Esc cancels it). */
-  let applying: EditedLine | null = null;
+  /** The texts being applied, by line, until they are (or Esc cancels them). */
+  const applying = new Map<number, EditedLine>();
 
   return {
     editing,
@@ -50,17 +50,17 @@ export function createLineTextEditing<Selection>(options: {
     async finish(text: string | null, fromKey: boolean) {
       const opened = editing();
       if (text === null) {
-        applying = null;
+        if (opened) applying.delete(opened.lineId);
         return void setEditing(null);
       }
-      if (!opened || applying) return;
+      if (!opened || applying.has(opened.lineId)) return;
       if (text === opened.text) return void setEditing(null);
       const mine: EditedLine = { lineId: opened.lineId, text };
-      applying = mine;
+      applying.set(mine.lineId, mine);
       try {
         const words = wordsToSplit(text);
         const splits = words.length > 0 ? await options.syllabify(words) : [];
-        if (applying !== mine) return;
+        if (applying.get(mine.lineId) !== mine) return;
         const known = new Map(words.map((word, i) => [word, splits[i] ?? [word]]));
         const chart = options.chart();
         const problem = options
@@ -75,7 +75,7 @@ export function createLineTextEditing<Selection>(options: {
         options.onError(error);
         if (editing() === opened) setEditing(null);
       } finally {
-        if (applying === mine) applying = null;
+        if (applying.get(mine.lineId) === mine) applying.delete(mine.lineId);
       }
     },
   };

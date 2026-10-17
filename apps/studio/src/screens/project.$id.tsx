@@ -38,7 +38,15 @@ import { toast } from "~/components/ui/toast";
 import type { TimeRange } from "~/lib/chart-range";
 import { CHART_STEPS } from "~/lib/chart-steps";
 import { onMenuCommand, platform, revealLabel } from "~/lib/desktop";
-import { isTyping, pasteFromClipboard, runEditCommand, setEditHandler } from "~/lib/edit-commands";
+import {
+  controlKey,
+  inMenu,
+  openContextMenu,
+  isTyping,
+  pasteFromClipboard,
+  runEditCommand,
+  setEditHandler,
+} from "~/lib/edit-commands";
 import { createAutoPitchJob } from "~/lib/editor/auto-pitch-job";
 import { createAutoScroll } from "~/lib/editor/autoscroll";
 import { createBreakEditing } from "~/lib/editor/break-editing";
@@ -246,7 +254,8 @@ export default function ProjectScreen() {
     song: () => chart().song,
     length,
     snap,
-    lines,
+    // Every singer's, hidden or not: the medley is the song's.
+    lines: () => lineSpans(chart()),
     onChange: (label, patch) => doc().edit(label, (tx) => tx.updateSong(patch)),
     onSeek: (seconds) => seek(seconds),
   });
@@ -387,9 +396,10 @@ export default function ProjectScreen() {
     setSelection(problem.lineId === undefined ? notesOnly(problem.noteIds) : breaksOnly([problem.lineId]));
     if (!playback.playing()) seek(problem.start);
     const span = { start: problem.start, end: problem.end };
+    // As a scroll would: while playing, following waits until the playhead is back on the page.
     if (span.end - span.start >= visibleSeconds(view(), width()) * FIT_SHARE)
-      setView(fitRange(span.start, span.end, width(), length()));
-    else setView(revealSpan(view(), span, width(), length(), NOTE_LEAD));
+      changeView(fitRange(span.start, span.end, width(), length()));
+    else changeView(revealSpan(view(), span, width(), length(), NOTE_LEAD));
   };
   /** Moves the playhead to a line and brings it on screen, fitting it when it doesn't fit. */
   const goToLine = (line: { start: number; duration: number } | undefined, fit = false) => {
@@ -405,6 +415,7 @@ export default function ProjectScreen() {
   const autoPitch = createAutoPitchJob({
     notes,
     doc,
+    media: projectMedia,
     request: (ids, signal, onProgress) =>
       followProgress(() => native.project.autoPitch({ id: overview().id, notes: ids }, { signal }), signal, onProgress),
     apply: (pitches, asked) => editing.applyPitches(pitches, asked),
@@ -422,6 +433,8 @@ export default function ProjectScreen() {
   });
   // A range kept with looping off is drawn faintly and easy to miss, so only a looping one counts.
   const requestedRange = () => (loop.on() ? loop.range() : null) ?? spanOf(selectedNotes());
+  /** Auto pitch listens to the vocals: not without them, nor while they are made again. */
+  const canAutoPitch = () => !!media("vocals") && !chartingRange() && !autoPitch.busy() && separating() === undefined;
   // Without a range the button stays enabled and says what to do, as L does.
   const canChartRange = () =>
     !!media("vocals") && !gestureBusy() && !autoPitch.busy() && !chartingRange() && separating() === undefined;
@@ -442,7 +455,8 @@ export default function ProjectScreen() {
 
   const editing = createNoteEditing({
     onAutoPitch: (ids) => {
-      if (!chartingRange()) autoPitch.run(ids);
+      if (!media("vocals")) toast.add({ title: "Auto pitch listens to the vocals. Separate the voice first." });
+      else if (canAutoPitch()) autoPitch.run(ids);
     },
     onPitch: (midi) => {
       if (prefs.tones()) tones.preview(midi);
@@ -457,7 +471,9 @@ export default function ProjectScreen() {
     playheadTime: () => playback.time(),
     onReveal: (note) => {
       if (!playback.playing()) seek(note.start);
-      setView(revealSpan(view(), { start: note.start, end: note.start + note.duration }, width(), length(), NOTE_LEAD));
+      changeView(
+        revealSpan(view(), { start: note.start, end: note.start + note.duration }, width(), length(), NOTE_LEAD),
+      );
     },
     onRefused: (message) => toast.add({ title: message }),
     breaks,
@@ -494,7 +510,7 @@ export default function ProjectScreen() {
     },
     canChartRange,
     chartRange: openChartRange,
-    canAutoPitch: () => !chartingRange() && !autoPitch.busy() && selectedNotes().length > 0,
+    canAutoPitch: () => canAutoPitch() && selectedNotes().length > 0,
     autoPitch: () => editing.commands.autoPitch(),
     canSplitAtPlayhead: () => editing.commands.canSplitAtPlayhead(),
     splitAtPlayhead: () => editing.commands.splitAtPlayhead(),
@@ -621,24 +637,28 @@ export default function ProjectScreen() {
   let rollArea: HTMLDivElement | undefined;
 
   /**
-   * Makes sure the sung pitch is there before editing starts: stored ones come at once; otherwise it is worked out now
-   * (getting the pitch model first if needed), with "Opening the project…" over the editor. Opening never fails on it.
+   * Makes sure the sung pitch is there: stored ones come at once; otherwise it is worked out now (getting the pitch
+   * model first if needed). When the project opens, "Opening the project…" covers the editor meanwhile; for new vocals
+   * the editor stays usable and the pitch appears when it's ready. Neither fails on it.
    */
-  const preparePitch = async (signal: AbortSignal) => {
+  const preparePitch = async (signal: AbortSignal, opening: boolean) => {
     if (!media("vocals")) return;
-    const shown = setTimeout(() => setOpening((current) => current ?? null), 150);
+    const shown = opening ? setTimeout(() => setOpening((current) => current ?? null), 150) : undefined;
     try {
       const result = await followProgress(
         () => native.project.pitch({ id: overview().id }, { signal }),
         signal,
-        (progress) => setOpening(progress),
+        (progress) => {
+          if (opening) setOpening(progress);
+        },
       );
       if (!signal.aborted) setPitch(result);
     } catch (error) {
-      toast.add({ type: "error", title: "Couldn't follow the melody", description: errorMessage(error) });
+      if (!signal.aborted)
+        toast.add({ type: "error", title: "Couldn't follow the melody", description: errorMessage(error) });
     } finally {
       clearTimeout(shown);
-      if (!signal.aborted) setOpening(undefined);
+      if (opening && !signal.aborted) setOpening(undefined);
     }
   };
 
@@ -661,7 +681,7 @@ export default function ProjectScreen() {
 
   /** Follows the vocals' pitch again (new vocals), stopping the last one. */
   const pitchRun = createLatest();
-  const followVocals = () => void preparePitch(pitchRun.next());
+  const followVocals = (opening = false) => void preparePitch(pitchRun.next(), opening);
   // A replaced song, vocals or music plays from where it was; new vocals have their pitch followed.
   createEffect(playbackUrls, (urls, previous) => {
     if (!previous) return;
@@ -730,23 +750,41 @@ export default function ProjectScreen() {
     }),
   );
 
+  /**
+   * The first view, once there is room and something to show: the first line's start, or (an empty chart) the song's,
+   * once its length is known (before, the timeline is a second long). Returns whether it placed it now.
+   */
+  const placeFirstView = () => {
+    const first = lines()[0];
+    if (placed || width() <= 0 || (!first && playback.duration() <= 0)) return false;
+    placed = true;
+    const start = first ? Math.max(0, first.start - 1) : 0;
+    setView(fitRange(start, start + FIRST_VIEW_SECONDS, width(), length(), 0));
+    return true;
+  };
+  createEffect(
+    () => playback.duration(),
+    () => void placeFirstView(),
+  );
+  // The chart loaded again (a save failed): what pointed into the old one goes (ids, fields being typed in).
+  createEffect(doc, (_next, previous) => {
+    if (!previous) return;
+    cancelGestures();
+    editing.finishLyric(null);
+    void lineText.finish(null, true);
+    setSelection(NOTHING);
+  });
+
   onSettled(() => {
     playback.load();
     const stopKeyHints = listenForKeyHints();
-    followVocals();
+    followVocals(true);
     loadWaveform();
     const observer = new ResizeObserver(() => {
       if (!rollArea) return;
       const next = { width: Math.max(0, rollArea.clientWidth - GUTTER_PX), height: rollArea.clientHeight };
       setSize(next);
-      if (!placed && next.width > 0) {
-        placed = true;
-        const first = lines()[0];
-        const start = first ? Math.max(0, first.start - 1) : 0;
-        setView(fitRange(start, start + FIRST_VIEW_SECONDS, next.width, length(), 0));
-      } else {
-        setView((current) => clampView(current, next.width, length()));
-      }
+      if (!placeFirstView()) setView((current) => clampView(current, next.width, length()));
     });
     if (rollArea) observer.observe(rollArea);
 
@@ -764,7 +802,16 @@ export default function ProjectScreen() {
     editArea?.addEventListener("wheel", onWheel, { passive: false });
 
     const onKey = (event: KeyboardEvent) => {
-      if (isTyping(event.target)) return;
+      // Typing, a menu or list, or a focused control's own keys (Enter presses a button, a slider's arrows) aren't the
+      // editor's.
+      if (isTyping(event.target) || inMenu(event.target) || controlKey(event.target, event.key)) return;
+      // The right-click menu from the keyboard: the focused control's, else the selected notes'.
+      const focused = document.activeElement === document.body ? null : document.activeElement;
+      const target = focused ?? document.querySelector('[data-testid="roll-note"][data-selected="true"]');
+      if (openContextMenu(event, target)) {
+        event.preventDefault();
+        return;
+      }
       // On macOS the Edit menu takes Cmd+Z; Windows and Linux have no menu bar, so the keys come here.
       const command = event.ctrlKey && !event.altKey && platform !== "macos" ? undoKey(event) : null;
       if (command) {
@@ -788,6 +835,8 @@ export default function ProjectScreen() {
         event.preventDefault();
         return;
       }
+      // During a drag only Esc counts: the tool doesn't change under it.
+      if (gestureBusy()) return;
       if (!event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && tools.keyDown(event)) {
         event.preventDefault();
         return;
@@ -795,7 +844,8 @@ export default function ProjectScreen() {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       if (event.key === " ") {
         event.preventDefault();
-        togglePlay();
+        // Held, it doesn't play and pause over and over.
+        if (!event.repeat) togglePlay();
       } else if (event.key === "." || event.key === ",") {
         event.preventDefault();
         goToLine(stepLine(lines(), playback.time(), event.key === "." ? 1 : -1));
@@ -872,8 +922,11 @@ export default function ProjectScreen() {
   };
 
   const close = async () => {
-    // What still reads or writes the project stops before it closes.
+    // What still reads or writes the project stops before it closes, and the last edits are saved.
     stopWork();
+    await doc()
+      .saved()
+      .catch(() => {});
     await native.project.close({ id: overview().id }).catch((error: unknown) => console.error(error));
     void navigate({ to: "/" });
   };
@@ -881,6 +934,8 @@ export default function ProjectScreen() {
   const exportTo = async (folder: string, replace: boolean) => {
     setExporting(true);
     try {
+      // The file has the latest edits, saved first.
+      await doc().saved();
       const result = await native.project.exportSong({ id: overview().id, folder, replace });
       if (result.status === "exists") {
         setReplacing({ folder, existing: result.folder });
@@ -915,6 +970,7 @@ export default function ProjectScreen() {
       const song = chart().song;
       const path = await native.dialogs.chooseUsdbFile({ name: songFileName(song.artist, song.title) });
       if (!path) return;
+      await doc().saved();
       const { warnings } = await native.project.exportUsdb({ id: overview().id, path });
       toast.add({
         type: "success",
@@ -956,7 +1012,7 @@ export default function ProjectScreen() {
             <AutoPitchButton
               status={autoPitch.busy() ? (autoPitch.progress()?.step ?? null) : undefined}
               percent={percentOf(autoPitch.progress() ?? null) ?? null}
-              canStart={!chartingRange() && selectedNotes().length > 0}
+              canStart={canAutoPitch() && selectedNotes().length > 0}
               onStart={() => editing.commands.autoPitch()}
               onStop={() => autoPitch.stop()}
             />
@@ -1071,6 +1127,7 @@ export default function ProjectScreen() {
                   onSplit={(note, seconds, every) => editing.splitAt(note, seconds, every)}
                   onNoteDoubleClick={(note) => editing.noteDoubleClick(note)}
                   editingLyric={editing.editingLyric()}
+                  lyricNote={notes().find((note) => note.id === editing.editingLyric()) ?? null}
                   onLyricDone={(text, move) => editing.finishLyric(text, move)}
                   autoScroll={autoScroll}
                 />

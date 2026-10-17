@@ -38,6 +38,46 @@ export function isTyping(target: EventTarget | null): boolean {
   );
 }
 
+/** A menu or list is open with the keyboard in it: every key belongs to it (Delete, Space, the arrows). */
+export function inMenu(target: EventTarget | null): boolean {
+  return target instanceof Element && !!target.closest("[role=menu],[role=listbox],[role=menubar]");
+}
+
+/**
+ * Whether `key` on `target` belongs to a focused control rather than to the editor: Enter presses a button and Tab
+ * moves focus on, the arrows move a slider or a set of radios. Space stays the editor's (play and pause, as in every
+ * audio editor), and arrows on a plain button still move notes.
+ */
+export function controlKey(target: EventTarget | null, key: string): boolean {
+  if (!(target instanceof Element)) return false;
+  if (key === "Enter" || key === "Tab")
+    return !!target.closest(
+      "button,a[href],[role=button],[role=switch],[role=checkbox],[role=radio],[role=tab],[role=slider]",
+    );
+  if (key.startsWith("Arrow") || key === "Home" || key === "End")
+    return !!target.closest("[role=slider],[role=radio],[role=tab],[role=radiogroup],[role=tablist]");
+  return false;
+}
+
+/**
+ * Shift+F10 or the menu key opens the right-click menu of `target` (a singer chip, a break marker), as a right-click
+ * at its middle would: macOS has no key for it, and some menus have no other way in. Returns whether it did.
+ */
+export function openContextMenu(event: KeyboardEvent, target: Element | null): boolean {
+  if (!target || !(event.key === "ContextMenu" || (event.shiftKey && event.key === "F10"))) return false;
+  const box = target.getBoundingClientRect();
+  target.dispatchEvent(
+    new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      clientX: box.left + box.width / 2,
+      clientY: box.top + box.height / 2,
+      button: 2,
+    }),
+  );
+  return true;
+}
+
 /** Runs an Edit menu command (`text`: the system clipboard's, for Paste). */
 export function runEditCommand(command: EditCommand, text?: string) {
   const editor = handler && !isTyping(document.activeElement) ? handler : null;

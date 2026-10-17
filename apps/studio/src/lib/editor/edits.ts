@@ -162,7 +162,8 @@ export function lengthLimits(placed: Map<number, Placed>, ids: ReadonlySet<numbe
     min = Math.max(min, Math.min(0, step - note.duration));
     max = Math.min(max, note.after - (note.start + note.duration));
   }
-  return { min, max };
+  // Staying put is always allowed: a note already past its room (a stored break inside it) can still shrink.
+  return { min: Math.min(min, 0), max: Math.max(max, 0) };
 }
 
 /** How far (seconds) the selected notes' starts can move, their ends staying: from a stored break or 0, to a step long. */
@@ -175,7 +176,7 @@ export function startLimits(placed: Map<number, Placed>, ids: ReadonlySet<number
     min = Math.max(min, note.before - note.start);
     max = Math.min(max, Math.max(0, note.duration - step));
   }
-  return { min, max };
+  return { min: Math.min(min, 0), max: Math.max(max, 0) };
 }
 
 /** How many semitones the selected notes can go down (`min`, negative) and up (`max`) and stay in MIDI's range. */
@@ -469,7 +470,8 @@ export function addNote(
 
 /**
  * Splits a note at `time` (on the grid, a step or more from either end): the first part keeps the syllable, the second
- * holds it (`~`). Returns the second part, or null when the note is too short to split there.
+ * holds it (`~`, with the space after the word, if any). Returns the second part, or null when the note is too short
+ * to split there, or the split would fall in the next line.
  */
 export function splitNote(tx: EditRecorder, chart: EditorChart, id: number, time: number): number | null {
   const note = tx.note(id);
@@ -478,13 +480,21 @@ export function splitNote(tx: EditRecorder, chart: EditorChart, id: number, time
   const at = onGrid(chart, time);
   const end = note.start + note.duration;
   if (at < note.start + step - EPSILON || at > end - step + EPSILON) return null;
-  tx.updateNote(id, { duration: at - note.start });
+  // A note reaching into the next line can't be split there: its second part would start in that line's notes.
+  const lines = chart.singers
+    .find((singer) => singer.lines.some((line) => line.id === note.lineId))
+    ?.lines.filter((line) => line.notes.length > 0);
+  const next = lines?.[lines.findIndex((line) => line.id === note.lineId) + 1];
+  if (next && at > Math.min(...next.notes.map((item) => item.start)) - EPSILON) return null;
+  // A space after the word goes with its last part, so the held part doesn't start the next word.
+  const space = /\s*$/.exec(note.lyric)![0];
+  tx.updateNote(id, { duration: at - note.start, lyric: note.lyric.slice(0, note.lyric.length - space.length) });
   return tx.createNote({
     lineId: note.lineId,
     start: at,
     duration: onGrid(chart, end) - at,
     pitch: note.pitch,
-    lyric: "~",
+    lyric: `~${space}`,
     type: note.type,
   });
 }

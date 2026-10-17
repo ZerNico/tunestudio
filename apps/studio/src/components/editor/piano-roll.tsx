@@ -141,6 +141,8 @@ export function PianoRoll(props: {
   onNoteContextMenu?: (note: DrawnNote) => void;
   /** The note whose syllable is being typed, and what to do with the text (null: cancelled; Tab moves on). */
   editingLyric?: number | null;
+  /** That note, from all of them (not only those in view). */
+  lyricNote?: DrawnNote | null;
   onLyricDone: (text: string | null, move?: 1 | -1) => void;
   /** Scrolls the view while the selection box is at the roll's edge. */
   autoScroll?: AutoScroll;
@@ -189,15 +191,19 @@ export function PianoRoll(props: {
       valid: cut.valid,
     };
   };
-  /** Where the syllable being typed is edited: over its note, at least wide enough to type in. */
+  /**
+   * Where the syllable being typed is edited: over its note, at least wide enough to type in, and inside the roll when
+   * the note scrolls out of view (the field stays: typing goes on).
+   */
   const lyricField = () => {
-    const note = props.notes.find((item) => item.id === props.editingLyric);
-    if (!note) return null;
+    const note = props.lyricNote;
+    if (!note || note.id !== props.editingLyric) return null;
+    const width = Math.max(80, note.duration * props.view.pxPerSecond);
     return {
       lyric: note.lyric,
-      x: timeToX(props.view, note.start),
+      x: Math.min(Math.max(0, timeToX(props.view, note.start)), Math.max(0, props.width - width)),
       y: pitchToY(props.range, rowHeight(), note.pitch),
-      width: Math.max(80, note.duration * props.view.pxPerSecond),
+      width,
       height: Math.max(18, rowHeight()),
     };
   };

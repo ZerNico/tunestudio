@@ -52,7 +52,7 @@ export function SongDetails(props: {
       singers={props.chart.singers}
       otherHeaders={props.chart.song.otherHeaders}
       onChange={(label, patch) => edit(label, (tx) => tx.updateSong(patch))}
-      onSingerName={(id, name) => edit("Change singer's name", (tx) => tx.updateSinger(id, { name }))}
+      onSingerName={(id, name) => edit("Rename singer", (tx) => tx.updateSinger(id, { name }))}
       files={
         <SongFiles
           media={props.media}

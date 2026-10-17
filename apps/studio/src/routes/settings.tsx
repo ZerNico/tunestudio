@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/solid-router";
 
+import { RouteError } from "~/components/route-error";
 import { native } from "~/lib/native/client";
 import SettingsScreen from "~/screens/settings";
 
@@ -14,4 +15,5 @@ export const Route = createFileRoute("/settings")({
     return { settings, tools, models };
   },
   component: SettingsScreen,
+  errorComponent: RouteError,
 });

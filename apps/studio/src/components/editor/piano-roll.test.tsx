@@ -312,7 +312,7 @@ describe("PianoRoll tools", () => {
   });
 
   it("types a syllable in place: Enter keeps it, Tab goes on, Esc drops it", () => {
-    const { props } = roll({ editingLyric: 1 });
+    const { props } = roll({ editingLyric: 1, lyricNote: note(1, 11, "Som") });
     const input = screen.getByTestId("lyric-input") as HTMLInputElement;
     expect(input.value).toBe("Som");
     input.value = "Sonn";

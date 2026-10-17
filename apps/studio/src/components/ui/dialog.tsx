@@ -55,7 +55,7 @@ export function DialogContent(props: DialogContentProps) {
         data-slot="dialog-content"
         class={(state) =>
           cn(
-            "fixed top-1/2 left-1/2 z-[101] max-h-[calc(100dvh-50px)] w-[min(540px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 scrollbar-thin overflow-auto rounded-[13px] border border-popover-border bg-popover text-popover-foreground shadow-[0_32px_120px_#000a] transition-[filter] duration-100 outline-none data-nested-dialog-open:brightness-[.55] data-open:animate-in data-open:fade-in-0 data-open:zoom-in-[.98] data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-[.98]",
+            "fixed top-1/2 left-1/2 z-[101] flex max-h-[calc(100dvh-50px)] w-[min(540px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-[13px] border border-popover-border bg-popover text-popover-foreground shadow-[0_32px_120px_#000a] transition-[filter] duration-100 outline-none data-nested-dialog-open:brightness-[.55] data-open:animate-in data-open:fade-in-0 data-open:zoom-in-[.98] data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-[.98]",
             stateClass(props.class, state),
           )
         }
@@ -82,7 +82,7 @@ export function DialogHeader(props: JSX.HTMLAttributes<HTMLDivElement>) {
     <div
       data-slot="dialog-header"
       class={cn(
-        "flex flex-col gap-[9px] border-b border-popover-line px-[25px] pt-[25px] pr-16 pb-5",
+        "flex shrink-0 flex-col gap-[9px] border-b border-popover-line px-[25px] pt-[25px] pr-16 pb-5",
         props.class as string,
       )}
       {...rest}
@@ -93,7 +93,15 @@ export function DialogHeader(props: JSX.HTMLAttributes<HTMLDivElement>) {
 export function DialogBody(props: JSX.HTMLAttributes<HTMLDivElement>) {
   const rest = omit(props, "class");
   return (
-    <div data-slot="dialog-body" class={cn("flex flex-col gap-4 px-[25px] py-5", props.class as string)} {...rest} />
+    // The body scrolls on a small window; the header and the footer (with its buttons) stay.
+    <div
+      data-slot="dialog-body"
+      class={cn(
+        "flex min-h-0 flex-1 scrollbar-thin flex-col gap-4 overflow-y-auto px-[25px] py-5",
+        props.class as string,
+      )}
+      {...rest}
+    />
   );
 }
 
@@ -103,7 +111,7 @@ export function DialogFooter(props: JSX.HTMLAttributes<HTMLDivElement>) {
     <div
       data-slot="dialog-footer"
       class={cn(
-        "flex justify-end gap-[9px] rounded-b-[13px] border-t border-popover-line bg-sage-11 px-[25px] py-[17px]",
+        "flex shrink-0 justify-end gap-[9px] rounded-b-[13px] border-t border-popover-line bg-sage-11 px-[25px] py-[17px]",
         props.class as string,
       )}
       {...rest}

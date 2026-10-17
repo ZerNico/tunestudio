@@ -327,8 +327,18 @@ export function LyricsLane(props: {
   /** The typed text (null: cancelled); `fromKey` when Enter applied it (a refused text stays to be fixed). */
   onEditDone?: (text: string | null, fromKey: boolean) => void;
 }) {
-  const nextStart = (line: LineSpan) =>
-    props.all.find((other) => other.singer === line.singer && other.start > line.start)?.start ?? Infinity;
+  /** Where each line's singer's next line starts, by line (worked out once per change, not per line drawn). */
+  const nextStarts = createMemo(() => {
+    const next = new Map<number, number>();
+    const last = new Map<number, LineSpan>();
+    for (const line of props.all.toSorted((a, b) => a.start - b.start)) {
+      const before = last.get(line.singer);
+      if (before) next.set(before.id, line.start);
+      last.set(line.singer, line);
+    }
+    return next;
+  });
+  const nextStart = (line: LineSpan) => nextStarts().get(line.id) ?? Infinity;
   /** The room for a line's text, up to where the singer's next line starts. */
   const room = (line: LineSpan) =>
     Math.max(0, (Math.min(nextStart(line), line.start + 600) - line.start) * props.view.pxPerSecond - 6);
@@ -440,16 +450,17 @@ export function OverviewBar(props: {
           if (event.currentTarget.hasPointerCapture(event.pointerId)) props.onScrollTo(at(event.clientX));
         }}
       >
-        <For each={props.lines}>
+        <For each={props.lines} keyed={(line) => line.id}>
+          {/* Keyed: an edit updates its line's block instead of remaking every one. */}
           {(line) => (
             <div
-              data-singer={line.singer}
-              data-inactive={props.activeSinger !== undefined && line.singer !== props.activeSinger ? "" : undefined}
+              data-singer={line().singer}
+              data-inactive={props.activeSinger !== undefined && line().singer !== props.activeSinger ? "" : undefined}
               class="pointer-events-none absolute h-2 rounded-[2px] bg-primary-line data-inactive:opacity-40 data-[singer=2]:bg-violet-line"
               style={{
-                left: percent(line.start),
-                width: `max(2px, ${percent(line.duration)})`,
-                top: props.duet ? (line.singer === 2 ? "13px" : "4px") : "8px",
+                left: percent(line().start),
+                width: `max(2px, ${percent(line().duration)})`,
+                top: props.duet ? (line().singer === 2 ? "13px" : "4px") : "8px",
               }}
             />
           )}

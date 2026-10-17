@@ -1,5 +1,5 @@
 import { getRouteApi, useNavigate, useRouter } from "@tanstack/solid-router";
-import { createMemo, createSignal, onSettled } from "solid-js";
+import { createEffect, createMemo, createSignal, onSettled } from "solid-js";
 import FolderOpenIcon from "~icons/lucide/folder-open";
 
 import { AudioOption } from "~/components/home/audio-option";
@@ -171,14 +171,27 @@ export default function HomeScreen() {
     updateRail();
   };
 
-  // A project file the OS handed this window (double-clicked in Finder or Explorer) opens here.
+  /**
+   * A project file the OS handed this window (double-clicked in Finder or Explorer) opens here. While a new project is
+   * being made it waits (opening would end that, maybe mid-download or mid-save), and opens when that is done.
+   */
+  let waiting = false;
   const takeOpenRequest = async () => {
+    if (flow()) {
+      if (!waiting) toast.add({ title: "The project opens when you're done here." });
+      waiting = true;
+      return;
+    }
+    waiting = false;
     const path = await native.windows.takeOpenRequest().catch(() => null);
     if (path) await openProject(path);
   };
   onSettled(() => {
     void takeOpenRequest();
     return onOpenRequest(() => void takeOpenRequest());
+  });
+  createEffect(flow, (open) => {
+    if (!open && waiting) void takeOpenRequest();
   });
 
   // Recent in the rail of another screen comes here with #recent.
@@ -293,7 +306,8 @@ export default function HomeScreen() {
       />
 
       <FlowDialog flow={flow()} onClose={() => setFlow(null)} onOpened={showProject} />
-      <DropOverlay visible={dragging()} />
+      {/* A drop while a new project is being made is ignored, so it isn't invited. */}
+      <DropOverlay visible={dragging() && !flow()} />
     </div>
   );
 }

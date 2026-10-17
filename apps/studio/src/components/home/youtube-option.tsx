@@ -62,6 +62,10 @@ export function YoutubeOption(props: { onStart: (url: string, videoId: string) =
               }
             }}
             onBlur={() => setTouched(true)}
+            // With Start disabled, Enter doesn't submit: it says what's wrong instead.
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !videoId()) setTouched(true);
+            }}
           />
         </InputGroup>
         <Button type="submit" size="lg" disabled={!videoId()} data-testid="youtube-start">
@@ -73,7 +77,7 @@ export function YoutubeOption(props: { onStart: (url: string, videoId: string) =
       <p id="youtube-status" aria-live="polite" class="m-0 min-h-[2lh] text-[11px]">
         <Show
           when={invalid()}
-          fallback={<span class="text-faint-foreground">Works with youtube.com, youtu.be and Shorts links.</span>}
+          fallback={<span class="text-muted-foreground">Works with youtube.com, youtu.be and Shorts links.</span>}
         >
           <span class="text-destructive">That doesn't look like a YouTube video link.</span>
         </Show>

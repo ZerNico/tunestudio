@@ -2,7 +2,7 @@
  * Auto pitch from the editor's side (A, the wand, the note menu): one run at a time. It saves the edits so far (main
  * reads the chart as it is drawn), asks main for the notes' pitch (`request`; slow, with progress, stoppable), and
  * hands the result to `apply` with the notes as they were asked about, so notes changed meanwhile are left alone. A
- * result for a chart made anew meanwhile is dropped.
+ * result for a chart made anew, or for vocals replaced meanwhile (separated again), is dropped.
  */
 import { createSignal } from "solid-js";
 
@@ -18,6 +18,8 @@ export function createAutoPitchJob(options: {
   notes: () => readonly DrawnNote[];
   /** The chart being edited (a new one when the chart is loaded again), with its saving. */
   doc: () => { saved: () => Promise<void> };
+  /** The project's media (a new value when a file is replaced). */
+  media: () => unknown;
   /** Asks main; null when stopped. */
   request: (
     ids: number[],
@@ -44,6 +46,7 @@ export function createAutoPitchJob(options: {
         .map((note) => [note.id, { start: note.start, duration: note.duration, pitch: note.pitch }]),
     );
     const asking = options.doc();
+    const media = options.media();
     const mine = new AbortController();
     controller = mine;
     setProgress(null);
@@ -51,7 +54,7 @@ export function createAutoPitchJob(options: {
     try {
       await asking.saved();
       const pitches = await options.request(ids, mine.signal, setProgress);
-      if (!pitches || mine.signal.aborted || options.doc() !== asking) return;
+      if (!pitches || mine.signal.aborted || options.doc() !== asking || options.media() !== media) return;
       if (pitches.length === 0) options.onMessage({ title: "Nothing is sung there to take the pitch from." });
       else options.apply(pitches, asked);
     } catch (error) {

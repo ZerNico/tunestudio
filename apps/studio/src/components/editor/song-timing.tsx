@@ -63,7 +63,13 @@ function Row(props: {
         {props.value ?? <span class="font-sans text-muted-foreground">{props.unset}</span>}
       </span>
       <div class="flex gap-1">
-        <Button variant="outline" size="sm" disabled={props.canSet === false} onClick={() => props.onSet()}>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={props.canSet === false}
+          onClick={() => props.onSet()}
+          aria-label={`Set the ${props.label.toLowerCase()} to the ${props.setLabel.toLowerCase()}`}
+        >
           <CrosshairIcon />
           {props.setLabel}
         </Button>

@@ -19,7 +19,7 @@ export function AudioOption(props: { onChoose: () => void }) {
         <FileAudioIcon />
         Choose audio file
       </Button>
-      <p class="m-0 min-h-[2lh] text-[11px] text-faint-foreground">
+      <p class="m-0 min-h-[2lh] text-[11px] text-muted-foreground">
         Or drop it anywhere. MP3, M4A, FLAC, OGG, OPUS, WAV.
       </p>
     </StartOption>

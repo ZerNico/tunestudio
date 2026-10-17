@@ -35,7 +35,7 @@ import { createSignal } from "solid-js";
 import type { EditorChart } from "~/lib/native/types";
 
 import type { AutoScroll } from "./autoscroll";
-import { type DrawnNote, gridStep, type LineBreak, notesAt, onGrid } from "./chart";
+import { type DrawnNote, drawnNotes, gridStep, type LineBreak, notesAt, onGrid } from "./chart";
 import { type Clip, copyNotes, pasteNotes } from "./clipboard";
 import type { ChartDocument } from "./document";
 import { type DragMove, followDrag } from "./drag";
@@ -284,13 +284,15 @@ export function createNoteEditing(options: {
     });
   };
 
-  const step = (direction: 1 | -1) => {
+  /** Selects the next (or previous) note; false when there is none (Tab then moves focus on as usual). */
+  const step = (direction: 1 | -1): boolean => {
     const next = adjacentNote(options.notes(), selected(), direction, options.playheadTime());
-    if (!next) return;
+    if (!next) return false;
     anchor = next.id;
     singers.choose(next.singer);
     select([next.id]);
     options.onReveal(next);
+    return true;
   };
 
   /**
@@ -546,6 +548,8 @@ export function createNoteEditing(options: {
       if (event.shiftKey && part === "body") locked ??= Math.abs(dx) >= Math.abs(dy) ? "time" : "pitch";
       else locked = null;
       const seconds = locked === "pitch" ? 0 : snapDelta(dx / scale.pxPerSecond + scrolled, unit, time);
+      // Locked to time, the pitch doesn't change: nothing to step past the roll's edge for.
+      if (locked === "time") leaveEdge();
       const semitones =
         part !== "body" || locked === "time"
           ? 0
@@ -814,7 +818,8 @@ export function createNoteEditing(options: {
       pitches: readonly { id: number; pitch: number }[],
       asked: ReadonlyMap<number, { start: number; duration: number; pitch: number }>,
     ): number {
-      const now = new Map(options.notes().map((note) => [note.id, note]));
+      // Every singer's notes: one hidden meanwhile still gets its pitch.
+      const now = new Map(drawnNotes(options.doc().chart()).map((note) => [note.id, note]));
       const dragged = drag()?.ids;
       // Notes moved, resized or repitched meanwhile (or being dragged) are the user's now: they stay as they are.
       const changed = pitches.filter(({ id, pitch }) => {
@@ -891,10 +896,7 @@ export function createNoteEditing(options: {
         return true;
       }
       if (command || event.altKey) return false;
-      if (event.key === "Tab") {
-        step(event.shiftKey ? -1 : 1);
-        return true;
-      }
+      if (event.key === "Tab") return step(event.shiftKey ? -1 : 1);
       const ids = selected();
       const breaks = selectedBreaks();
       if (ids.length === 0 && breaks.length === 0) return false;

@@ -129,7 +129,9 @@ export function moveBreak(tx: EditRecorder, chart: EditorChart, lineId: number, 
     const target = note.start < at - EPSILON ? line.id : next.id;
     if (target === line.id) end = Math.max(end, note.start + note.duration);
     // Changing line isn't changing the note: it keeps its `edited`.
-    if (tx.note(note.id)?.lineId !== target) tx.updateNote(note.id, { lineId: target, edited: note.edited });
+    // Its `edited` as it is now (an auto pitch result may have landed during the drag).
+    const current = tx.note(note.id);
+    if (current && current.lineId !== target) tx.updateNote(note.id, { lineId: target, edited: current.edited });
   }
   tx.updateLine(line.id, { switchStart: Math.max(at, end), switchEnd: null });
   return true;

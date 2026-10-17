@@ -109,6 +109,7 @@ export function FlowView(props: {
     },
   );
   const stage = () => props.flow.current();
+  let next: HTMLButtonElement | undefined;
   return (
     <>
       {props.header(props.flow.index())}
@@ -118,7 +119,16 @@ export function FlowView(props: {
       </DialogBody>
       <DialogFooter class="items-center">
         <Show when={props.flow.running() ? stage().stoppable !== false : props.flow.index() > 0}>
-          <Button variant="outline" class="mr-auto" onClick={() => props.flow.back()} data-testid="flow-back">
+          <Button
+            variant="outline"
+            class="mr-auto"
+            onClick={() => {
+              props.flow.back();
+              // Back to the first stage, this button goes: the keyboard's place moves to the primary one.
+              if (props.flow.index() === 0) queueMicrotask(() => next?.focus());
+            }}
+            data-testid="flow-back"
+          >
             Back
           </Button>
         </Show>
@@ -128,8 +138,11 @@ export function FlowView(props: {
         >
           Cancel
         </DialogClose>
+        {/* Pressed, it stays focusable while the stage runs: keyboard and screen readers keep their place. */}
         <Button
+          ref={(element: HTMLButtonElement) => (next = element)}
           disabled={props.flow.running() || !stage().canAdvance()}
+          focusableWhenDisabled={props.flow.running()}
           onClick={() => void props.flow.advance()}
           data-testid="flow-next"
         >

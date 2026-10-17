@@ -281,7 +281,7 @@ function ProjectTile(props: { project: RecentProject; actions: RecentProjectActi
           <span aria-hidden="true" class="text-faint-foreground">
             ·
           </span>
-          <span class="shrink-0 text-faint-foreground">{formatRelativeTime(props.project.lastOpened)}</span>
+          <span class="shrink-0 text-muted-foreground">{formatRelativeTime(props.project.lastOpened)}</span>
         </span>
       </span>
     </button>

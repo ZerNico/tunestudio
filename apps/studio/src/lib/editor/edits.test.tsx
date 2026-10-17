@@ -55,11 +55,11 @@ const chart: EditorChart = {
   ],
 };
 
-function setup() {
+function setup(start: EditorChart = chart) {
   return createRoot(() => {
     const [selection, setSelection] = createSignal<number[]>([]);
     const doc = createChartDocument<number[]>({
-      chart,
+      chart: start,
       save: async () => {},
       onFailed: () => {},
       selection,
@@ -71,6 +71,28 @@ function setup() {
 
 const notesOf = (value: EditorChart) => value.singers.flatMap((singer) => singer.lines.flatMap((line) => line.notes));
 const find = (value: EditorChart, id: number) => notesOf(value).find((item) => item.id === id);
+
+describe("limits with a stored break inside a note", () => {
+  it("still lets the note shrink, never forcing a move", () => {
+    // Line 10's break is stored at 2.5 s; a note there from 2.4 s to 2.9 s already reaches past it.
+    const inside: EditorChart = {
+      ...chart,
+      singers: [
+        {
+          ...chart.singers[0]!,
+          lines: [
+            { ...chart.singers[0]!.lines[0]!, notes: [note(100, 1, "We "), note(105, 2.4, "on", 0.5)] },
+            chart.singers[0]!.lines[1]!,
+          ],
+        },
+      ],
+    };
+    const placed = placeNotes(inside, 10);
+    const limits = lengthLimits(placed, new Set([105]), 0.05);
+    expect(limits.max).toBe(0);
+    expect(limits.min).toBeLessThan(0);
+  });
+});
 
 describe("the gap", () => {
   it("moves every note, stored break and the medley with it, not the song's start, end or preview", () => {
@@ -417,5 +439,31 @@ describe("edits", () => {
     expect(canSplit(chart, { start: 1.5, duration: 0.3 }, 1.79)).toBe(false);
     const doc = setup();
     expect(doc.edit("Split", (tx) => void splitNote(tx, chart, 101, 1.52))).toBe(false);
+  });
+
+  it("gives the word's space to the held part, and won't split into the next line", () => {
+    const doc = setup();
+    let second: number | null = null;
+    // "We " (1 s to 1.3 s) at 1.15 s.
+    doc.edit("Split", (tx) => void (second = splitNote(tx, chart, 100, 1.15)));
+    flush();
+    expect(find(doc.chart(), 100)!.lyric).toBe("We");
+    expect(find(doc.chart(), second!)!.lyric).toBe("~ ");
+    // A note reaching past the next line's first note (3 s).
+    const reaching: EditorChart = {
+      ...chart,
+      singers: [
+        {
+          ...chart.singers[0]!,
+          lines: [
+            { ...chart.singers[0]!.lines[0]!, switchStart: null, notes: [note(100, 1, "We ", 2.5)] },
+            chart.singers[0]!.lines[1]!,
+          ],
+        },
+      ],
+    };
+    const reachingDoc = setup(reaching);
+    expect(reachingDoc.edit("Split", (tx) => void splitNote(tx, reaching, 100, 3.2))).toBe(false);
+    expect(reachingDoc.edit("Split", (tx) => void splitNote(tx, reaching, 100, 2))).toBe(true);
   });
 });

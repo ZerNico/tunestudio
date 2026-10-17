@@ -83,6 +83,18 @@ export function VideoPreview(props: {
         data-hidden={shown() ? undefined : ""}
         onLoadStart={() => setReady(false)}
         onLoadedMetadata={() => setReady(true)}
+        // A seek (scrubbing while paused) skipped the times that came meanwhile: catch up with the playhead.
+        onSeeked={() => {
+          if (video && ready())
+            setShown(
+              syncVideo(video, {
+                time: props.time,
+                playing: props.playing,
+                speed: props.speed,
+                offset: props.offset ?? 0,
+              }),
+            );
+        }}
         aria-label="Video"
       />
       {/* Hovered, it darkens a little, so its controls stand out. */}

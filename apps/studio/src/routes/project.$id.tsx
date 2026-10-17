@@ -1,5 +1,6 @@
 import { createFileRoute, redirect } from "@tanstack/solid-router";
 
+import { RouteError } from "~/components/route-error";
 import { ProjectNotOpen } from "~/lib/errors";
 import { native } from "~/lib/native/client";
 import ProjectScreen from "~/screens/project.$id";
@@ -22,4 +23,5 @@ export const Route = createFileRoute("/project/$id")({
     }
   },
   component: ProjectScreen,
+  errorComponent: RouteError,
 });

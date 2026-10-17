@@ -71,9 +71,14 @@ export function SongImportFlow(props: {
   const [draftId, setDraftId] = createSignal<string | null>(null);
   let saved = false;
   let disposed = false;
-  /** The separated voice is in a draft now; one that arrives after the dialog went away is thrown away. */
-  const keepDraft = (id: string) => {
-    if (disposed) discard(id);
+  /** Counts readings, so an answer for a chart chosen before another is dropped. */
+  let readings = 0;
+  /**
+   * The separated voice is in a draft now; one that arrives after the dialog went away, or for a chart read before
+   * the one chosen now (`reading`), is thrown away.
+   */
+  const keepDraft = (id: string, reading: number) => {
+    if (disposed || reading !== readings) discard(id);
     else setDraftId(id);
   };
 
@@ -82,13 +87,21 @@ export function SongImportFlow(props: {
     return current.status === "read" ? current.inspection : undefined;
   };
   const inspect = async (chart?: string) => {
+    const reading = ++readings;
+    // The voice separated from another chart's audio isn't this one's.
+    const id = draftId();
+    if (id) {
+      discard(id);
+      setDraftId(null);
+    }
     setReading({ status: "reading" });
     try {
       const found = await native.song.inspect({ path: props.path, ...(chart ? { chart } : {}) });
+      if (reading !== readings) return;
       setIncludeVideo(found.media.some((file) => file.role === "video" && file.found));
       setReading({ status: "read", inspection: found });
     } catch (failure) {
-      setReading({ status: "failed", message: errorMessage(failure) });
+      if (reading === readings) setReading({ status: "failed", message: errorMessage(failure) });
     }
   };
   onSettled(() => {
@@ -114,6 +127,7 @@ export function SongImportFlow(props: {
       setError(null);
       const found = inspection();
       if (!found || hasStems(found) || draftId()) return true;
+      const reading = readings;
       setModels(await native.models.status().catch(() => null));
       setSeparating(null);
       try {
@@ -121,10 +135,10 @@ export function SongImportFlow(props: {
           () => native.song.separate({ path: props.path, chart: found.chart }, { signal }),
           signal,
           setSeparating,
-          (late) => keepDraft(late.draftId),
+          (late) => keepDraft(late.draftId, reading),
         );
         if (!separated) return false;
-        keepDraft(separated.draftId);
+        keepDraft(separated.draftId, reading);
         return true;
       } catch (failure) {
         setError(errorMessage(failure));
