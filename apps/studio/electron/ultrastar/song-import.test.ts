@@ -96,7 +96,7 @@ describe("inspecting a song folder", () => {
   it("explains folders without a chart, unreadable charts and unsupported encodings", async () => {
     const { dir, run } = setup();
     const empty = writeSong(dir, "Empty", { "song.mp3": audio });
-    const broken = writeSong(dir, "Broken", { "song.txt": "#TITLE:x\n#BPM:120\n: 0 0 0 zero\nE\n" });
+    const broken = writeSong(dir, "Broken", { "song.txt": "#TITLE:x\n#BPM:120\n: 0 -1 0 negative\nE\n" });
     const encoding = writeSong(dir, "Encoding", { "song.txt": "#ENCODING:KLINGON\n#BPM:120\nE\n" });
 
     const noChart = await run(Effect.flip(inspectSong(empty)));
@@ -104,7 +104,7 @@ describe("inspecting a song folder", () => {
     expect(noChart.message).toBe("“Empty” has no UltraStar chart (.txt file).");
     const unreadable = await run(Effect.flip(inspectSong(broken)));
     expect(unreadable).toBeInstanceOf(ChartUnreadable);
-    expect(unreadable.message).toMatch(/^Couldn't read “song.txt”: Line 3: A note has no length/);
+    expect(unreadable.message).toMatch(/^Couldn't read “song.txt”: Line 3: A note has a negative length/);
     const unsupported = await run(Effect.flip(inspectSong(encoding)));
     expect(unsupported.message).toBe("Couldn't read “song.txt”: The chart's encoding “KLINGON” isn't supported.");
   });

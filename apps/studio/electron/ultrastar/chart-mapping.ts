@@ -72,9 +72,12 @@ export interface ProjectChart {
 /** The headers naming media files; the import reads them, the export writes them. */
 export const MEDIA_HEADERS = ["AUDIO", "MP3", "VOCALS", "INSTRUMENTAL", "VIDEO", "COVER", "BACKGROUND"] as const;
 
-/** Headers rewritten on export: the file is UTF-8, version 1.2.0, absolute timing. */
-/** Rewritten on export, or (P3's name) meaningless once P3's notes are copied into P1 and P2. */
-const REWRITTEN_HEADERS = new Set(["ENCODING", "VERSION", "RELATIVE", "P3", "DUETSINGERP3"]);
+/**
+ * Not kept: rewritten on export (the file is UTF-8, version 1.2.0, absolute timing), meaningless once P3's notes are
+ * copied into P1 and P2, or deprecated 0.x headers that mean nothing for singing. USDX 1.0 and later ignores
+ * `#NOTESGAP`, which only ever moved the beat click and grid lines, never notes; `#RESOLUTION` was an editor setting.
+ */
+const DROPPED_HEADERS = new Set(["ENCODING", "VERSION", "RELATIVE", "P3", "DUETSINGERP3", "NOTESGAP", "RESOLUTION"]);
 
 const SINGER_HEADERS: Record<string, number> = { P1: 1, P2: 2, DUETSINGERP1: 1, DUETSINGERP2: 2 };
 
@@ -135,9 +138,11 @@ export function chartToProject(document: ChartDocument): { chart: ProjectChart; 
 
   for (const [key, value] of Object.entries(document.metadata)) {
     const trimmed = value.trim();
+    // An empty value is no header in the v1 format.
+    if (!trimmed) continue;
     if (key === "TITLE") song.title = trimmed;
     else if (key === "ARTIST") song.artist = trimmed;
-    else if (key === "BPM" || key === "GAP" || REWRITTEN_HEADERS.has(key)) continue;
+    else if (key === "BPM" || key === "GAP" || DROPPED_HEADERS.has(key)) continue;
     else if ((MEDIA_HEADERS as readonly string[]).includes(key)) continue;
     else if (key === "LANGUAGE") {
       song.language = trimmed
@@ -166,6 +171,12 @@ export function chartToProject(document: ChartDocument): { chart: ProjectChart; 
           unit === "seconds" ? number : unit === "milliseconds" ? number / 1000 : ticksToSeconds(number, grid);
       }
     } else keep(key, value);
+  }
+  // `#AUTHOR` is an old name for `#CREATOR`. A different one next to `#CREATOR` stays as it is.
+  const author = song.extraHeaders.findIndex(([key]) => key === "AUTHOR");
+  if (author >= 0 && (song.creator === null || song.creator === song.extraHeaders[author]![1].trim())) {
+    song.creator = song.extraHeaders[author]![1].trim();
+    song.extraHeaders.splice(author, 1);
   }
 
   // Notes without a player marker sing as P1. Lines keep their order of first appearance.
@@ -256,8 +267,12 @@ export function projectToChart(chart: ProjectChart, mediaHeaders: MediaHeaders):
 
   set("TITLE", song.title);
   set("ARTIST", song.artist);
-  // A solo chart keeps P1's name, as it was imported; a lone P2's would name a singer the file doesn't have.
-  for (const singer of singing) if (duet || singer.index === 1) set(`P${singer.index}`, singer.name);
+  // A solo chart keeps P1's name, as it was imported; a lone P2's would name a singer the file doesn't have. A duet
+  // must name both (v1 format), so an unnamed singer is called by their part, as usdb_syncer does.
+  for (const singer of singing) {
+    if (duet) set(`P${singer.index}`, singer.name?.trim() || `P${singer.index}`);
+    else if (singer.index === 1) set("P1", singer.name);
+  }
   set("LANGUAGE", song.language.join(", "));
   set("EDITION", song.edition);
   set("GENRE", song.genre);
@@ -268,12 +283,20 @@ export function projectToChart(chart: ProjectChart, mediaHeaders: MediaHeaders):
   set("GAP", song.gap * 1000);
   set("VIDEOGAP", song.videoGap);
   set("START", song.start);
-  set("END", song.end === null ? null : song.end * 1000);
+  // USDX reads #END as whole milliseconds and ignores one with decimals.
+  set("END", song.end === null ? null : Math.round(song.end * 1000));
   set("PREVIEWSTART", song.previewStart);
-  set("MEDLEYSTARTBEAT", song.medleyStart === null ? null : Math.round(secondsToTicks(song.medleyStart, grid)));
-  set("MEDLEYENDBEAT", song.medleyEnd === null ? null : Math.round(secondsToTicks(song.medleyEnd, grid)));
+  // Each medley header needs the other, and USDX drops both when the medley ends before it starts.
+  if (song.medleyStart !== null && song.medleyEnd !== null) {
+    const start = Math.round(secondsToTicks(song.medleyStart, grid));
+    const end = Math.round(secondsToTicks(song.medleyEnd, grid));
+    if (start < end) {
+      set("MEDLEYSTARTBEAT", start);
+      set("MEDLEYENDBEAT", end);
+    }
+  }
   for (const [key, value] of song.extraHeaders) {
-    if (key in metadata) continue;
+    if (key in metadata || DROPPED_HEADERS.has(key)) continue;
     const tags = key === "VIDEO" ? parseMetaTags(value) : null;
     if (tags) set(key, formatMetaTags(sourceMetaTags(tags, song)));
     else metadata[key] = value;

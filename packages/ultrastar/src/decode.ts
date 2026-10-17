@@ -1,4 +1,5 @@
 import { UltraStarError } from "./types";
+import { isVersion1 } from "./validation";
 
 function headers(text: string): [key: string, value: string][] {
   return text
@@ -8,6 +9,11 @@ function headers(text: string): [key: string, value: string][] {
       const match = /^#([^:]+):(.*)$/s.exec(raw.trimStart());
       return match ? [[match[1]!.trim().toUpperCase(), match[2]!] as [string, string]] : [];
     });
+}
+
+/** The file's `#VERSION`, when it has one. */
+function version(text: string): string | undefined {
+  return headers(text).find(([key]) => key === "VERSION")?.[1];
 }
 
 function encodingError(message: string): UltraStarError {
@@ -21,7 +27,8 @@ function encodingError(message: string): UltraStarError {
 function declaredstring(text: string, bom?: string): string | undefined {
   let encoding: string | undefined;
   for (const [key, value] of headers(text)) {
-    if (key !== "ENCODING") continue;
+    // An empty value counts as no header.
+    if (key !== "ENCODING" || !value.trim()) continue;
     let label = value
       .trim()
       .toLowerCase()
@@ -53,8 +60,9 @@ function decodeStrict(bytes: Uint8Array, encoding: string): string {
 /**
  * Decodes a chart file's bytes to text: a BOM wins (UTF-8, UTF-16 LE/BE), then a declared
  * `#ENCODING`, then UTF-8, and undeclared legacy charts that aren't valid UTF-8 fall back to
- * Windows-1252. Unsupported, conflicting or wrong declarations throw an `UltraStarError` with
- * the code `UNSUPPORTED_ENCODING`.
+ * Windows-1252. A `#VERSION:1.x` file is UTF-8 whatever its `#ENCODING` says, as in USDX: bytes
+ * that aren't UTF-8 there become U+FFFD, which the parser warns about. Unsupported, conflicting
+ * or wrong declarations throw an `UltraStarError` with the code `UNSUPPORTED_ENCODING`.
  */
 export function decodeChart(bytes: Uint8Array): string {
   const bom =
@@ -67,7 +75,7 @@ export function decodeChart(bytes: Uint8Array): string {
           : undefined;
   if (bom) {
     const text = decodeStrict(bytes, bom);
-    declaredstring(text, bom);
+    if (!isVersion1(version(text))) declaredstring(text, bom);
     return text;
   }
   let utf8: string | undefined;
@@ -77,7 +85,9 @@ export function decodeChart(bytes: Uint8Array): string {
     // Not UTF-8: an undeclared legacy chart, read as Windows-1252 below.
   }
   // Header names are ASCII, so any single-byte reading finds the declaration.
-  const encoding = declaredstring(utf8 ?? new TextDecoder("windows-1252").decode(bytes));
+  const ascii = utf8 ?? new TextDecoder("windows-1252").decode(bytes);
+  if (isVersion1(version(ascii))) return utf8 ?? new TextDecoder("utf-8").decode(bytes);
+  const encoding = declaredstring(ascii);
   if (!encoding) return utf8 ?? new TextDecoder("windows-1252").decode(bytes);
   const text = decodeStrict(bytes, encoding);
   if (declaredstring(text) !== encoding) {

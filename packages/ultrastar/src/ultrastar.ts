@@ -18,7 +18,7 @@ import {
   type NoteType,
   type ParseResult,
 } from "./types";
-import { isRelativeModeUnsupported, validateDocument } from "./validation";
+import { isRelativeModeUnsupported, isVersion1, validateDocument } from "./validation";
 
 const SYMBOL_TYPES: Record<string, NoteType> = {
   ":": "normal",
@@ -97,7 +97,11 @@ function singBoth(notes: ChartNote[], lineBreaks: ChartLineBreak[]) {
   );
 }
 
-/** Absolute UltraStar TXT only. Rejects relative timing and unknown body records; P3 becomes copies in P1 and P2. */
+/**
+ * Absolute UltraStar TXT only. Rejects relative timing; skips what follows `E` and body records it doesn't know, as
+ * USDX does. Before `#VERSION:1.0.0`, P3 is a part for both singers and becomes copies in P1 and P2. From 1.0.0 on it
+ * is a third voice, which is refused.
+ */
 export function parseUltraStar(text: string): ParseResult {
   if (typeof text !== "string") throw new UltraStarError("Chart input must be text.");
   const metadata: Record<string, string> = {};
@@ -111,6 +115,11 @@ export function parseUltraStar(text: string): ParseResult {
   let inBody = false;
   let ended = false;
   let grid: ChartGrid | undefined;
+  let version1 = false;
+  // Lines left out, by kind, for one warning each: tempo changes (B), other unknown records, zero-length notes.
+  const tempoChanges: number[] = [];
+  const unknownRecords: number[] = [];
+  const zeroLength: number[] = [];
   const track = () => {
     let state = tracks.get(player);
     if (!state) {
@@ -129,24 +138,25 @@ export function parseUltraStar(text: string): ParseResult {
       });
     const line = raw.trimStart();
     if (!line.trim()) continue;
-    if (ended)
-      throw new UltraStarError("There is more after the end marker (E). Only one chart per file is supported.", {
-        line: lineNumber,
-      });
     if (line.startsWith("#")) {
       if (inBody) throw new UltraStarError("Headers must precede notes and player records.", { line: lineNumber });
       const match = /^#([^:]+):(.*)$/s.exec(line);
       if (!match) throw new UltraStarError("A header isn't written as #NAME:value.", { line: lineNumber });
       const key = match[1]!.trim().toUpperCase();
       if (!/^[A-Z0-9_][A-Z0-9_-]*$/.test(key)) throw new UltraStarError("Invalid header name.", { line: lineNumber });
+      const value = match[2]!;
       if (Object.prototype.hasOwnProperty.call(metadata, key)) {
-        if (metadata[key] !== match[2])
-          throw new UltraStarError(`#${key} is there twice, with different values. Keep one.`, {
-            line: lineNumber,
-          });
-        warnings.push(`Line ${lineNumber}: duplicate #${key} header retained once.`);
+        // An empty value counts as no header, so it neither conflicts with the other nor replaces it.
+        if (!value.trim()) continue;
+        if (metadata[key]!.trim()) {
+          if (metadata[key] !== value)
+            throw new UltraStarError(`#${key} is there twice, with different values. Keep one.`, {
+              line: lineNumber,
+            });
+          warnings.push(`Line ${lineNumber}: duplicate #${key} header retained once.`);
+        }
       }
-      metadata[key] = match[2]!;
+      metadata[key] = value;
       if (key === "RELATIVE" && isRelativeModeUnsupported(metadata)) {
         throw new UltraStarError("Charts with relative timing (#RELATIVE) aren't supported.", {
           line: lineNumber,
@@ -156,6 +166,7 @@ export function parseUltraStar(text: string): ParseResult {
       continue;
     }
     if (!grid) {
+      version1 = isVersion1(metadata.VERSION);
       try {
         grid = gridFromMetadata(metadata);
       } catch (error) {
@@ -167,16 +178,24 @@ export function parseUltraStar(text: string): ParseResult {
     }
     inBody = true;
     if (/^E[ \t]*$/.test(line)) {
+      // The v1 format says everything after the end is ignored.
       ended = true;
-      continue;
+      if (source.slice(index + 1).some((rest) => rest.trim()))
+        warnings.push(`Line ${lineNumber}: the text after the end marker (E) was left out.`);
+      break;
     }
     if (line.startsWith("P")) {
       const match = /^P[ \t]*([123])[ \t]*$/.exec(line);
-      if (!match)
-        throw new UltraStarError("Only P1, P2 and P3 (both singers) are supported.", {
+      if (match?.[1] === "3" && version1)
+        throw new UltraStarError("This chart has a third singer (P3). Only two singers are supported.", {
           line: lineNumber,
           code: "UNSUPPORTED_PLAYER",
         });
+      if (!match)
+        throw new UltraStarError(
+          version1 ? "Only P1 and P2 are supported." : "Only P1, P2 and P3 (both singers) are supported.",
+          { line: lineNumber, code: "UNSUPPORTED_PLAYER" },
+        );
       if (!explicitPlayers && notes.length) {
         warnings.push(`Line ${lineNumber}: notes preceding the first player marker were assigned to player 1.`);
         for (const note of notes) note.player = 1;
@@ -216,6 +235,11 @@ export function parseUltraStar(text: string): ParseResult {
       }
       continue;
     }
+    if (!/^[:*FRG]/.test(line)) {
+      // USDX skips records it doesn't know, like the tempo changes (B) of old charts.
+      (line.startsWith("B") ? tempoChanges : unknownRecords).push(lineNumber);
+      continue;
+    }
     const match = /^([:*FRG])[ \t]+([+-]?\d+)[ \t]+([+-]?\d+)[ \t]+([+-]?\d+)(?:[ \t](.*))?$/s.exec(line);
     if (!match)
       throw new UltraStarError(
@@ -223,9 +247,16 @@ export function parseUltraStar(text: string): ParseResult {
         { line: lineNumber, code: "UNSUPPORTED_RECORD" },
       );
     const start = integer(match[2]!, "Note start", lineNumber);
-    const length = integer(match[3]!, "Note length", lineNumber);
+    let length = integer(match[3]!, "Note length", lineNumber);
     const pitch = integer(match[4]!, "Note pitch", lineNumber) + 60;
-    if (length <= 0) throw new UltraStarError("A note has no length.", { line: lineNumber });
+    if (length < 0) throw new UltraStarError("A note has a negative length.", { line: lineNumber });
+    let type = SYMBOL_TYPES[match[1]!]!;
+    if (length === 0) {
+      // USDX sings a zero-length note as freestyle. Notes here are at least a beat long.
+      zeroLength.push(lineNumber);
+      length = 1;
+      type = "freestyle";
+    }
     if (!Number.isSafeInteger(pitch) || !Number.isSafeInteger(start + length))
       throw new UltraStarError("Note pitch or end exceeds the safe integer range.", { line: lineNumber });
     const state = track();
@@ -240,7 +271,7 @@ export function parseUltraStar(text: string): ParseResult {
       duration: endSeconds - startSeconds,
       pitch,
       lyric: match[5] ?? "",
-      type: SYMBOL_TYPES[match[1]!]!,
+      type,
       lineId: state.lineId,
       ...(explicitPlayers ? { player } : {}),
     });
@@ -261,7 +292,23 @@ export function parseUltraStar(text: string): ParseResult {
   const diagnostics = validateDocument(document);
   if (diagnostics.some((item) => item.severity === "error")) throw new DocumentValidationError(diagnostics);
   if (!ended) warnings.push("The end marker (E) is missing.");
-  if (metadata.GAP === undefined) warnings.push("There is no #GAP, so it is 0.");
+  if (!metadata.GAP?.trim()) warnings.push("There is no #GAP, so it is 0.");
+  if (tempoChanges.length)
+    warnings.push(
+      `Line ${tempoChanges[0]}: tempo changes (B) were left out, as UltraStar Deluxe does. Notes after them keep the song's BPM.`,
+    );
+  if (unknownRecords.length)
+    warnings.push(
+      unknownRecords.length === 1
+        ? `Line ${unknownRecords[0]}: a line that isn't a note, line break or singer was left out.`
+        : `Line ${unknownRecords[0]}: ${unknownRecords.length} lines that aren't notes, line breaks or singers were left out.`,
+    );
+  if (zeroLength.length)
+    warnings.push(
+      zeroLength.length === 1
+        ? `Line ${zeroLength[0]}: a note with no length became a freestyle note one beat long.`
+        : `Line ${zeroLength[0]}: ${zeroLength.length} notes with no length became freestyle notes one beat long.`,
+    );
   if (text.includes("�"))
     warnings.push("Some characters are damaged (�). The file may have been saved in another encoding.");
   if (explicitPlayers) {
@@ -308,6 +355,7 @@ export function serializeUltraStarWithDiagnostics(document: ChartDocument): Seri
     if (!Number.isSafeInteger(tick)) throw new UltraStarError("A line break is too far into the song.");
     return tick;
   };
+  let twoPoint = false;
   for (const player of players) {
     if (explicitPlayers) output.push(`P${player}`);
     const notes = document.notes.filter((note) => (note.player ?? 1) === player).toSorted((a, b) => a.start - b.start);
@@ -326,20 +374,23 @@ export function serializeUltraStarWithDiagnostics(document: ChartDocument): Seri
           `${NOTE_TYPE_SYMBOLS[note.type]} ${timing.start} ${timing.duration} ${note.pitch - 60} ${note.lyric}`,
         );
       }
-      const saved = breaks.get(line[0]!.lineId);
+      // A break only ends a line another one follows. The v1 format has no break after the last.
       const next = lines[index + 1];
-      const nextStart = next ? quantizeNoteTiming(next[0]!.start, next[0]!.duration, grid).start : undefined;
+      if (!next) continue;
+      const saved = breaks.get(line[0]!.lineId);
       if (saved) {
-        const start = breakTick(saved.start);
-        const end = saved.end === undefined ? undefined : breakTick(saved.end);
-        output.push(`- ${start}${end === undefined ? "" : ` ${end}`}`);
-      } else if (nextStart !== undefined) {
+        // The v1 format has one beat per break. One inside the last note would cut it from its line on reimport.
+        output.push(`- ${Math.max(breakTick(saved.start), lastEnd)}`);
+        if (saved.end !== undefined && breakTick(saved.end) !== breakTick(saved.start)) twoPoint = true;
+      } else {
         // The default the editor draws, so the file reads the same in every game and editor.
+        const nextStart = quantizeNoteTiming(next[0]!.start, next[0]!.duration, grid).start;
         output.push(`- ${defaultBreakTick(lastEnd, nextStart, grid)}`);
       }
     }
   }
   output.push("E");
+  if (twoPoint) warnings.push("Line breaks with two times are saved with their first time only.");
   return { text: `${output.join("\n")}\n`, warnings };
 }
 
