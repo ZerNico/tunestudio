@@ -100,6 +100,8 @@ export interface SelectionBox {
 export function PianoRoll(props: {
   notes: DrawnNote[];
   breaks: LineBreak[];
+  /** In a duet, the singer edits go to: the other one's notes and breaks are dimmed, and below where they overlap. */
+  activeSinger?: number;
   /** What is sung, drawn behind the notes (null: not shown). */
   pitch?: SungPitch | null;
   range: PitchRange;
@@ -157,6 +159,8 @@ export function PianoRoll(props: {
     rows: () => props.range,
   });
   const rowHeight = () => props.height / rowCount(props.range);
+  const inactive = (singer: number) =>
+    props.activeSinger !== undefined && singer !== props.activeSinger ? "" : undefined;
   /** Where the drag's label goes: just above the pressed note, as it is drawn now. */
   const dragLabel = () => {
     const drag = props.drag;
@@ -316,6 +320,7 @@ export function PianoRoll(props: {
             <>
               <div
                 data-singer={item.singer}
+                data-inactive={inactive(item.singer)}
                 data-auto={item.auto ? "" : undefined}
                 data-selected={props.selectedBreaks?.has(item.lineId) ? "true" : undefined}
                 class="pointer-events-none absolute inset-y-0 roll-break"
@@ -324,12 +329,14 @@ export function PianoRoll(props: {
               />
               {/*
                 The line is pressed and dragged as its marker is (with Select), in a narrow strip that leaves the gap
-                to the roll; notes, drawn later, stay on top. A double-click there adds a note: only the marker
-                removes a break.
+                to the roll; notes, drawn later, stay on top. A double-click there adds a note. The other singer's grip
+                goes under the active singer's grips and notes.
               */}
               <Show when={props.tool === "select" && props.onBreakDown}>
                 <div
-                  class="absolute inset-y-0 w-1 -translate-x-1/2 cursor-ew-resize"
+                  data-singer={item.singer}
+                  data-inactive={inactive(item.singer)}
+                  class="absolute inset-y-0 z-[1] w-1 -translate-x-1/2 cursor-ew-resize data-inactive:z-0"
                   style={{ left: `${breakX(props.view, item.time) + 0.5}px` }}
                   onPointerDown={(event) => {
                     if (event.button !== 0) return;
@@ -375,6 +382,7 @@ export function PianoRoll(props: {
             return (
               <div
                 data-singer={note().singer}
+                data-inactive={inactive(note().singer)}
                 data-type={note().type}
                 data-selected={props.selected.has(note().id) ? "true" : undefined}
                 data-overlap={props.overlapping.has(note().id) ? "" : undefined}

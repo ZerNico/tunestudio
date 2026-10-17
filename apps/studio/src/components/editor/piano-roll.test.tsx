@@ -329,7 +329,7 @@ describe("PianoRoll tools", () => {
 
 describe("BreakLane", () => {
   it("presses, selects and double-clicks markers, adds where the lane is double-clicked, and labels a drag", () => {
-    const props = { onDown: vi.fn(), onDoubleClick: vi.fn(), onLaneDoubleClick: vi.fn() };
+    const props = { onDown: vi.fn(), onDoubleClick: vi.fn(), onLaneDoubleClick: vi.fn(), onResetTiming: vi.fn() };
     const breaks = [{ lineId: 7, singer: 1, time: 11.5, auto: true, gapStart: 11.5, gapEnd: 12 }];
     render(() => (
       <BreakLane

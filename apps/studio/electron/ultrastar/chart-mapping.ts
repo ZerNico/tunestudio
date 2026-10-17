@@ -3,6 +3,7 @@ import {
   type ChartLineBreak,
   type ChartNote,
   type ChartGrid,
+  defaultBreakTick,
   gridFromMetadata,
   type NoteType,
   parseDecimal,
@@ -72,7 +73,8 @@ export interface ProjectChart {
 export const MEDIA_HEADERS = ["AUDIO", "MP3", "VOCALS", "INSTRUMENTAL", "VIDEO", "COVER", "BACKGROUND"] as const;
 
 /** Headers rewritten on export: the file is UTF-8, version 1.2.0, absolute timing. */
-const REWRITTEN_HEADERS = new Set(["ENCODING", "VERSION", "RELATIVE"]);
+/** Rewritten on export, or (P3's name) meaningless once P3's notes are copied into P1 and P2. */
+const REWRITTEN_HEADERS = new Set(["ENCODING", "VERSION", "RELATIVE", "P3", "DUETSINGERP3"]);
 
 const SINGER_HEADERS: Record<string, number> = { P1: 1, P2: 2, DUETSINGERP1: 1, DUETSINGERP2: 2 };
 
@@ -194,6 +196,18 @@ export function chartToProject(document: ChartDocument): { chart: ProjectChart; 
     });
   }
   if (singers.size === 0) singers.set(1, { index: 1, name: singerNames.get(1) || null, lines: [] });
+  // A break exactly where the default rule puts it is default timing: it follows the gap as notes are edited, and
+  // exports the same.
+  const tick = (seconds: number) => Math.round(secondsToTicks(seconds, grid));
+  for (const singer of singers.values()) {
+    singer.lines.forEach((line, i) => {
+      const next = singer.lines[i + 1];
+      if (!next || line.switchStart === null || line.switchEnd !== null) return;
+      const lastEnd = Math.max(...line.notes.map((note) => tick(note.start + note.duration)));
+      if (tick(line.switchStart) === defaultBreakTick(lastEnd, tick(next.notes[0]!.start), grid))
+        line.switchStart = null;
+    });
+  }
 
   return { chart: { song, singers: [...singers.values()].toSorted((a, b) => a.index - b.index) }, warnings };
 }
@@ -202,6 +216,23 @@ export function chartToProject(document: ChartDocument): { chart: ProjectChart; 
 export function headerNumber(value: number): string {
   const text = String(Number(value.toPrecision(15)));
   return text.includes("e") ? value.toFixed(9).replace(/\.?0+$/, "") : text;
+}
+
+/**
+ * The singers an export writes: the ones with notes. A duet whose second singer has none yet (being built in the
+ * editor) is exported as a solo chart, so games don't see a singer with nothing to sing.
+ */
+export function singingSingers(chart: ProjectChart): ProjectChart["singers"] {
+  return chart.singers.filter((singer) => singer.lines.some((line) => line.notes.length > 0));
+}
+
+/** What an export says when a singer is left out for having no notes. */
+export function emptySingerWarnings(chart: ProjectChart): string[] {
+  if (chart.singers.length < 2) return [];
+  const singing = singingSingers(chart);
+  return chart.singers
+    .filter((singer) => !singing.includes(singer))
+    .map((singer) => `${singer.name || `P${singer.index}`} has no notes, so the song is exported as a solo chart.`);
 }
 
 /** The media headers an export writes, by header name. */
@@ -215,7 +246,8 @@ export type MediaHeaders = Partial<Record<(typeof MEDIA_HEADERS)[number], string
 export function projectToChart(chart: ProjectChart, mediaHeaders: MediaHeaders): ChartDocument {
   const { song } = chart;
   const grid: ChartGrid = { bpm: song.bpm, gap: song.gap * 1000 };
-  const duet = chart.singers.length > 1;
+  const singing = singingSingers(chart);
+  const duet = singing.length > 1;
   const metadata: Record<string, string> = { VERSION: "1.2.0" };
   const set = (key: string, value: string | number | null | undefined) => {
     if (value === null || value === undefined || value === "") return;
@@ -224,7 +256,8 @@ export function projectToChart(chart: ProjectChart, mediaHeaders: MediaHeaders):
 
   set("TITLE", song.title);
   set("ARTIST", song.artist);
-  for (const singer of chart.singers) set(`P${singer.index}`, singer.name);
+  // A solo chart keeps P1's name, as it was imported; a lone P2's would name a singer the file doesn't have.
+  for (const singer of singing) if (duet || singer.index === 1) set(`P${singer.index}`, singer.name);
   set("LANGUAGE", song.language.join(", "));
   set("EDITION", song.edition);
   set("GENRE", song.genre);
@@ -248,7 +281,7 @@ export function projectToChart(chart: ProjectChart, mediaHeaders: MediaHeaders):
 
   const notes: ChartNote[] = [];
   const lineBreaks: ChartLineBreak[] = [];
-  for (const singer of chart.singers) {
+  for (const singer of singing.length > 0 ? singing : chart.singers) {
     for (const [lineIndex, line] of singer.lines.entries()) {
       const lineId = `line-${singer.index}-${lineIndex}`;
       if (line.switchStart !== null) {

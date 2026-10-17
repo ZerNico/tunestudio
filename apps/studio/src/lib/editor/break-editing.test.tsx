@@ -139,4 +139,67 @@ describe("break editing", () => {
     expect(onRefused).toHaveBeenCalledWith("Put the line break between two notes of a line.");
     expect(lines()).toHaveLength(2);
   });
+
+  it("adds a break with a double-click for whichever shown singer has a line there, the active one first", () => {
+    const duet: EditorChart = {
+      ...chart,
+      singers: [
+        ...chart.singers,
+        {
+          id: 2,
+          index: 2,
+          name: null,
+          lines: [{ id: 20, switchStart: null, switchEnd: null, notes: [note(200, 5), note(201, 6)] }],
+        },
+      ],
+    };
+    const onSinger = vi.fn();
+    const { doc, editing } = createRoot(() => {
+      const [selection, setSelection] = createSignal<Selection>(notesOnly([]));
+      const doc = createChartDocument<Selection>({
+        chart: duet,
+        save: async () => {},
+        onFailed: () => {},
+        selection,
+        setSelection,
+      });
+      const editing = createBreakEditing({
+        doc: () => doc,
+        selection,
+        setSelection,
+        singer: () => 1,
+        singers: () => [1, 2],
+        onSinger,
+        playheadTime: () => 0,
+        onRefused: () => {},
+      });
+      return { doc, editing };
+    });
+    // P1 is active, but only P2 sings at 5.5 s.
+    editing.laneDoubleClick(5.5);
+    flush();
+    expect(doc.chart().singers[1]!.lines.map((line) => line.notes.map((n) => n.id))).toEqual([[200], [201]]);
+    expect(onSinger).toHaveBeenCalledWith(2);
+    // Where P1 has a line, it gets the break and stays active.
+    editing.laneDoubleClick(1.6);
+    flush();
+    expect(doc.chart().singers[0]!.lines).toHaveLength(3);
+    expect(onSinger).toHaveBeenCalledOnce();
+  });
+
+  it("resets a stored break's timing to the default rule, undoably", () => {
+    const { editing, doc } = setup();
+    const stored = lineBreaks(doc.chart()).find((item) => item.lineId === 10)!;
+    expect(stored.auto).toBe(false);
+    editing.resetTiming(stored);
+    flush();
+    expect(lineBreaks(doc.chart()).find((item) => item.lineId === 10)!.auto).toBe(true);
+    expect(doc.undoLabel()).toBe("Reset line break timing");
+    // Already default: nothing to do.
+    editing.resetTiming(lineBreaks(doc.chart()).find((item) => item.lineId === 10)!);
+    expect(doc.undoLabel()).toBe("Reset line break timing");
+    doc.undo();
+    flush();
+    expect(doc.chart().singers[0]!.lines[0]!.switchStart).toBe(2.5);
+  });
 });

@@ -40,7 +40,7 @@ export type EditorLine = typeof EditorLine.Type;
 export const EditorSinger = Schema.Struct({
   id: Schema.Number,
   /** 1 or 2 (P1, P2 in a duet). */
-  index: Schema.Number,
+  index: Schema.Literals([1, 2]),
   name: Schema.NullOr(Schema.String),
   lines: Schema.Array(EditorLine),
 });

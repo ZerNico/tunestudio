@@ -118,6 +118,28 @@ test("line breaks are selected with the notes, move with them, and are grabbed o
   await expect(notes.nth(0)).not.toHaveAttribute("data-selected", "true");
 });
 
+test("a dragged line break keeps its time until Reset timing in its menu", async () => {
+  await openSong();
+  const { page } = studio;
+  const marker = page.getByTestId("break-marker");
+  // The fixture's break is at the default spot: default timing, drawn as an outline.
+  await expect(marker).toHaveAttribute("data-auto", "");
+  const box = (await marker.boundingBox())!;
+  const area = { x: box.x - 160, y: box.y - 40, width: 320, height: 160 };
+  await page.screenshot({ path: test.info().outputPath("break-default.png"), clip: area });
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 - 20, box.y + box.height / 2, { steps: 4 });
+  await page.mouse.up();
+  await expect(marker).not.toHaveAttribute("data-auto");
+  await page.mouse.move(0, 0);
+  await page.screenshot({ path: test.info().outputPath("break-stored.png"), clip: { ...area, x: area.x - 20 } });
+  await marker.click({ button: "right" });
+  await page.getByTestId("break-menu").getByRole("menuitem", { name: "Reset timing" }).click();
+  await expect(marker).toHaveAttribute("data-auto", "");
+  await expect(page.getByTestId("undo")).toHaveAttribute("aria-label", "Undo Reset line break timing");
+});
+
 test("the note menu acts on the selection, pastes on empty space, and auto pitch has a button", async () => {
   await openSong();
   const { page } = studio;
@@ -196,6 +218,126 @@ test("charts lyrics for a reviewed ruler range and leaves notes intact on failur
   await expect(page.getByTestId("undo")).toBeDisabled();
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(dialog).toBeHidden();
+});
+
+test("makes a duet: adds and names a singer, gives them a line, hides them, exports and undoes", async () => {
+  await openSong();
+  const { app, page } = studio;
+  const notes = page.getByTestId("roll-note");
+  await page.getByRole("button", { name: "Add singer", exact: true }).click();
+  const name = page.getByRole("textbox", { name: "Name of P2" });
+  await expect(name).toBeFocused();
+  await name.fill("Ben");
+  await name.press("Enter");
+  await expect(page.getByRole("button", { name: "Ben, P2" })).toHaveAttribute("aria-pressed", "true");
+  // Renamed again from the chip's context menu.
+  await page.getByRole("button", { name: "Ben, P2" }).click({ button: "right" });
+  await page.getByTestId("singer-menu").getByRole("menuitem", { name: "Rename" }).click();
+  await expect(name).toBeFocused();
+  await name.fill("Benji");
+  await name.press("Enter");
+  await expect(page.getByRole("button", { name: "Benji, P2" })).toBeVisible();
+
+  // The first line ("Hello world") goes to Ben with Sung by.
+  await notes.nth(0).click();
+  await notes.nth(2).click({ modifiers: ["Shift"] });
+  await expect(page.getByRole("button", { name: "Sung by P1" })).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "Sung by Benji" }).click();
+  await expect(page.getByTestId("undo")).toHaveAttribute("aria-label", "Undo Move 3 notes to Benji");
+  await expect(notes.and(page.locator('[data-singer="2"]'))).toHaveCount(3);
+  await page.mouse.move(0, 0);
+  await page.screenshot({ path: test.info().outputPath("duet.png"), animations: "disabled" });
+
+  // Hidden, Ben's notes are out of the roll; shown again, they're back.
+  await page.getByRole("button", { name: "Hide Benji" }).click();
+  await expect(notes).toHaveCount(2);
+  await page.getByRole("button", { name: "Show Benji" }).click();
+  await expect(notes).toHaveCount(5);
+
+  const exports = path.join(song.dir, "Exports");
+  fs.mkdirSync(exports);
+  await answerDialogs(app, exports);
+  await page.getByTestId("export-song").click();
+  await page.getByTestId("export-folder").click();
+  await expect(page.getByText("Exported for games")).toBeVisible();
+  const chart = fs.readFileSync(
+    path.join(exports, "Test Artist - Night Signals", "Test Artist - Night Signals.txt"),
+    "utf8",
+  );
+  expect(chart).toContain("#P2:Benji\n");
+  expect(chart).toMatch(/\nP1\n[\s\S]*\nP2\n/);
+
+  // The move undone: the notes are P1's again, selected, and P1 is the active singer.
+  await page.getByTestId("undo").click();
+  await expect(notes.and(page.locator('[data-singer="2"]'))).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "P1, P1" })).toHaveAttribute("aria-pressed", "true");
+  // Both renames and add undone: solo again.
+  for (let i = 0; i < 3; i++) await page.getByTestId("undo").click();
+  await expect(page.getByRole("button", { name: "Add singer", exact: true })).toBeVisible();
+  await expect(notes.and(page.locator('[data-singer="2"]'))).toHaveCount(0);
+});
+
+test("in a duet, clicks where the singers coincide go to the active singer, even over the other's selection", async () => {
+  await openSong();
+  const { page } = studio;
+  const notes = page.getByTestId("roll-note");
+  const p1 = (locator: ReturnType<typeof page.getByTestId>) => locator.and(page.locator('[data-singer="1"]'));
+  const p2 = (locator: ReturnType<typeof page.getByTestId>) => locator.and(page.locator('[data-singer="2"]'));
+  /** The test id and singer of what the browser hits at the middle of `box` (what a click there would press). */
+  const hitAt = (box: { x: number; y: number; width: number; height: number }) =>
+    page.evaluate(
+      ({ x, y }) => {
+        const element = document.elementFromPoint(x, y)?.closest("[data-testid]");
+        return { testid: element?.getAttribute("data-testid"), singer: element?.getAttribute("data-singer") };
+      },
+      { x: box.x + box.width / 2, y: box.y + box.height / 2 },
+    );
+
+  await page.getByRole("button", { name: "Add singer", exact: true }).click();
+  await page.getByRole("textbox", { name: "Name of P2" }).press("Enter");
+  // Both lines copied to P2: the copies (and the break between them) lie exactly on P1's, selected; P2 is active.
+  await notes.nth(0).click();
+  await notes.nth(4).click({ modifiers: ["Shift"] });
+  await notes.nth(0).click({ button: "right" });
+  await page
+    .getByTestId("note-menu")
+    .getByRole("menuitem", { name: /^Copy to/ })
+    .click();
+  await expect(p2(notes)).toHaveCount(5);
+  await expect(p2(notes).first()).toHaveAttribute("data-selected", "true");
+
+  // P1 chosen: P2's copies stay selected (drawn so) but dimmed under P1's notes, so a click picks P1's note.
+  await page.getByRole("button", { name: "P1, P1" }).click();
+  await expect(p2(notes).first()).toHaveAttribute("data-inactive", "");
+  await expect(p2(notes).first()).toHaveAttribute("data-selected", "true");
+  const note = (await p1(notes).first().boundingBox())!;
+  // Hovered too (the pointer over both), P2's selected copy stays under.
+  await page.mouse.move(note.x + note.width / 2, note.y + note.height / 2);
+  expect(await hitAt(note)).toEqual({ testid: "roll-note", singer: "1" });
+  await page.mouse.click(note.x + note.width / 2, note.y + note.height / 2);
+  await expect(p1(notes).first()).toHaveAttribute("data-selected", "true");
+  await expect(p2(notes).first()).not.toHaveAttribute("data-selected", "true");
+  await expect(page.getByRole("button", { name: "P1, P1" })).toHaveAttribute("aria-pressed", "true");
+
+  // The line breaks where the singers' lines end together: P1's marker and grip take the press, not P2's.
+  const markers = page.getByTestId("break-marker");
+  const marker = (await p1(markers).first().boundingBox())!;
+  const other = (await p2(markers).first().boundingBox())!;
+  expect(Math.abs(marker.x - other.x)).toBeLessThan(1);
+  await page.mouse.move(marker.x + marker.width / 2, marker.y + marker.height / 2);
+  expect(await hitAt(marker)).toEqual({ testid: "break-marker", singer: "1" });
+  await page.mouse.click(marker.x + marker.width / 2, marker.y + marker.height / 2);
+  await expect(p1(markers).first()).toHaveAttribute("data-selected", "true");
+  await expect(p2(markers).first()).not.toHaveAttribute("data-selected", "true");
+  const grips = page.getByTestId("line-break-grip");
+  const grip = (await p1(grips).first().boundingBox())!;
+  // At the roll's top, above the notes (the rows leave room), where only the grips are.
+  const top = { ...grip, y: grip.y + 4, height: 0 };
+  expect(await hitAt(top)).toEqual({ testid: "line-break-grip", singer: "1" });
+  await page.keyboard.press("Escape");
+  await page.mouse.click(top.x + top.width / 2, top.y);
+  await expect(p1(markers).first()).toHaveAttribute("data-selected", "true");
+  await expect(p2(markers).first()).not.toHaveAttribute("data-selected", "true");
 });
 
 test("a drag on the ruler loops a range, L loops the selected notes, a double-click removes the range", async () => {

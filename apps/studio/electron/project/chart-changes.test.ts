@@ -240,7 +240,12 @@ describe("applyChartChanges", () => {
         yield* db.transaction((tx) =>
           applyChartChanges(tx, [
             { table: "song", before: { tags: [] }, after: { tags: ["live", "acoustic"] } },
-            { table: "singer", id: singer.id, before: { name: singer.name }, after: { name: "Mia" } },
+            {
+              table: "singer",
+              id: singer.id,
+              before: { index: 1, name: singer.name },
+              after: { index: 1, name: "Mia" },
+            },
           ]),
         );
         const after = yield* readEditorChart(db);
@@ -248,9 +253,87 @@ describe("applyChartChanges", () => {
         expect(after.singers[0]!.name).toBe("Mia");
         expect((yield* readChart(db)).song.extraHeaders).toContainEqual(["TAGS", "live, acoustic"]);
         const stale = yield* Effect.flip(
-          applyChartChanges(db, [{ table: "singer", id: singer.id, before: { name: null }, after: { name: "Kai" } }]),
+          applyChartChanges(db, [
+            { table: "singer", id: singer.id, before: { index: 1, name: null }, after: { index: 1, name: "Kai" } },
+          ]),
         );
         expect(stale._tag).toBe("ChartOutOfStep");
+      }),
+    ),
+  );
+
+  it.effect("adds a second singer with a line and a note, and undoes it in reverse", () =>
+    withProject((db, before) =>
+      Effect.gen(function* () {
+        const changes: ChartChange[] = [
+          { table: "singer", id: 900, before: null, after: { index: 2, name: "Kai" } },
+          { table: "line", id: 901, before: null, after: { singerId: 900, switchStart: null, switchEnd: null } },
+          {
+            table: "note",
+            id: 902,
+            before: null,
+            after: { lineId: 901, start: 1, duration: 0.5, pitch: 60, lyric: "Hey", type: "normal", edited: true },
+          },
+        ];
+        yield* db.transaction((tx) => applyChartChanges(tx, changes));
+        const duet = yield* readEditorChart(db);
+        expect(duet.singers.map((singer) => [singer.index, singer.name])).toEqual([
+          [1, null],
+          [2, "Kai"],
+        ]);
+        expect(duet.singers[1]!.lines[0]!.notes[0]!.lyric).toBe("Hey");
+        yield* db.transaction((tx) => applyChartChanges(tx, inverse(changes)));
+        expect(yield* readEditorChart(db)).toEqual(before);
+      }),
+    ),
+  );
+
+  it.effect("removes P1 after its rows and makes P2 the first singer, undone exactly", () =>
+    withProject((db) =>
+      Effect.gen(function* () {
+        const added: ChartChange[] = [
+          { table: "singer", id: 900, before: null, after: { index: 2, name: "Kai" } },
+          { table: "line", id: 901, before: null, after: { singerId: 900, switchStart: null, switchEnd: null } },
+        ];
+        yield* db.transaction((tx) => applyChartChanges(tx, added));
+        const before = yield* readEditorChart(db);
+        const first = before.singers[0]!;
+        const changes: ChartChange[] = [
+          ...first.lines.flatMap((line) =>
+            line.notes.map((n) => ({ table: "note", id: n.id, before: fields(n, line.id), after: null }) as const),
+          ),
+          ...first.lines.map(
+            (line) =>
+              ({
+                table: "line",
+                id: line.id,
+                before: { singerId: first.id, switchStart: line.switchStart, switchEnd: line.switchEnd },
+                after: null,
+              }) as const,
+          ),
+          { table: "singer", id: first.id, before: { index: 1, name: null }, after: null },
+          { table: "singer", id: 900, before: { index: 2, name: "Kai" }, after: { index: 1, name: "Kai" } },
+        ];
+        yield* db.transaction((tx) => applyChartChanges(tx, changes));
+        const solo = yield* readEditorChart(db);
+        expect(solo.singers.map((singer) => [singer.id, singer.index])).toEqual([[900, 1]]);
+        yield* db.transaction((tx) => applyChartChanges(tx, inverse(changes)));
+        expect(yield* readEditorChart(db)).toEqual(before);
+      }),
+    ),
+  );
+
+  it.effect("refuses to delete a singer that still has lines", () =>
+    withProject((db, before) =>
+      Effect.gen(function* () {
+        const singer = before.singers[0]!;
+        const error = yield* Effect.flip(
+          db.transaction((tx) =>
+            applyChartChanges(tx, [{ table: "singer", id: singer.id, before: { index: 1, name: null }, after: null }]),
+          ),
+        );
+        expect(error._tag).toBe("ChartOutOfStep");
+        expect(yield* readEditorChart(db)).toEqual(before);
       }),
     ),
   );

@@ -76,6 +76,8 @@ import {
   type Selection,
   toggled,
 } from "./selection";
+import { otherSinger, singerLabel, singerOf, transferNotes } from "./singers";
+import { createSingersView, type SingersView } from "./singers-view";
 import { pitchName } from "./view";
 
 /** Held past the roll's top or bottom, a dragged note goes a semitone further this often (ms), the rows growing along. */
@@ -198,6 +200,8 @@ export function createNoteEditing(options: {
   viewStart?: () => number;
   /** The line breaks as drawn, by time. */
   breaks: () => LineBreak[];
+  /** The active singer (new notes and paste go to them) and the hidden ones; one of its own when not given. */
+  singers?: SingersView;
   /** Moving one break on its own, across notes too (`break-editing.ts`): a drag of its marker, or ← / →. */
   oneBreak?: {
     follow: (item: LineBreak, press: PointerPress, pxPerSecond: number) => void;
@@ -206,8 +210,7 @@ export function createNoteEditing(options: {
 }) {
   /** Where the last plain or Cmd-click was, for Shift-click ranges. */
   let anchor: number | null = null;
-  /** The singer (index) of the last note pressed: new notes go to them. */
-  let lastSinger: number | null = null;
+  const singers = options.singers ?? createSingersView(() => options.doc().chart());
   const [drag, setDrag] = createSignal<DragPreview | null>(null);
   /** A note being drawn (Draw tool), as it would be added. */
   const [drawing, setDrawing] = createSignal<{ start: number; duration: number; pitch: number } | null>(null);
@@ -285,19 +288,16 @@ export function createNoteEditing(options: {
     const next = adjacentNote(options.notes(), selected(), direction, options.playheadTime());
     if (!next) return;
     anchor = next.id;
-    lastSinger = next.singer;
+    singers.choose(next.singer);
     select([next.id]);
     options.onReveal(next);
   };
 
   /**
-   * The singer new notes go to: the last one whose note was pressed (so a double-click, whose first click deselects,
-   * still adds to it), else the first.
+   * The singer new notes go to: the active one, which pressing a note makes its singer (so a double-click, whose first
+   * click deselects, still adds to it).
    */
-  const singerFor = (): number | null => {
-    const singers = chart().singers;
-    return (singers.find((singer) => singer.index === lastSinger) ?? singers[0])?.id ?? null;
-  };
+  const singerFor = (): number | null => singers.id();
 
   /** Adds a note, selects it and starts typing its syllable. */
   const add = (start: number, duration: number, pitch: number) => {
@@ -357,6 +357,63 @@ export function createNoteEditing(options: {
       if (merged === null) options.onRefused("Select notes next to each other in one line to merge them.");
     },
     canMerge: () => canMerge(chart(), new Set(selected())),
+    /** In a duet: which singers (indexes) sing the selected notes (none selected: empty). */
+    sungBy(): number[] {
+      const ids = new Set(selected());
+      return chart()
+        .singers.filter((singer) => singer.lines.some((line) => line.notes.some((note) => ids.has(note.id))))
+        .map((singer) => singer.index);
+    },
+    /**
+     * Sung by: the selected notes go to the singer with this index (those of the other singer move; the notes keep
+     * their times), and the singer becomes the active one.
+     */
+    assign(index: number) {
+      const current = chart();
+      const to = current.singers.find((singer) => singer.index === index);
+      const ids = new Set(selected());
+      const from = to && otherSinger(current, to.id);
+      const moving = from ? from.lines.flatMap((line) => line.notes).filter((note) => ids.has(note.id)) : [];
+      if (!to || moving.length === 0) return;
+      const kept = [...ids].filter((id) => !moving.some((note) => note.id === id));
+      // Empty when no edit ran (the document stopped after a failed save).
+      const done: { result?: ReturnType<typeof transferNotes> } = {};
+      options
+        .doc()
+        .edit(
+          `Move ${count(moving.length)} to ${singerLabel(to)}`,
+          (tx) => (done.result = transferNotes(tx, current, new Set(moving.map((note) => note.id)), { copy: false })),
+          {
+            selectionAfter: () =>
+              notesOnly(done.result && "ids" in done.result ? [...kept, ...done.result.ids] : [...ids]),
+          },
+        );
+      if (done.result && "refused" in done.result) options.onRefused(done.result.refused);
+      else if (done.result) singers.choose(to.index);
+    },
+    /** The singer Copy to would copy the selected notes to: the other one of a duet, if they are one singer's. */
+    copyTarget() {
+      const current = chart();
+      const from = singerOf(current, new Set(selected()));
+      return from ? otherSinger(current, from.id) : null;
+    },
+    /** Copies the selected notes to the other singer, for both to sing them (independent copies, as the file has). */
+    copyToOther() {
+      const ids = selected();
+      const to = commands.copyTarget();
+      if (ids.length === 0 || !to) return;
+      const current = chart();
+      const done: { result?: ReturnType<typeof transferNotes> } = {};
+      options
+        .doc()
+        .edit(
+          `Copy ${count(ids.length)} to ${singerLabel(to)}`,
+          (tx) => (done.result = transferNotes(tx, current, new Set(ids), { copy: true })),
+          { selectionAfter: () => notesOnly(done.result && "ids" in done.result ? done.result.ids : ids) },
+        );
+      if (done.result && "refused" in done.result) options.onRefused(done.result.refused);
+      else if (done.result) singers.choose(to.index);
+    },
     autoPitch() {
       const ids = selected();
       if (ids.length) options.onAutoPitch?.(ids);
@@ -627,7 +684,7 @@ export function createNoteEditing(options: {
 
     /** Split tool: a click on `note` at `time` splits it there, or every note at that time with Shift. */
     splitAt(note: DrawnNote, time: number, every: boolean) {
-      lastSinger = note.singer;
+      singers.choose(note.singer);
       const targets = every ? notesAt(options.notes(), time) : [note];
       split(targets, time);
     },
@@ -659,7 +716,7 @@ export function createNoteEditing(options: {
      */
     noteDown(note: DrawnNote, press: PointerPress, part: NotePart = "body", scale?: RollScale) {
       cancelDrag?.();
-      lastSinger = note.singer;
+      singers.choose(note.singer);
       const breaks = selectedBreaks();
       if (press.metaKey || press.ctrlKey) {
         anchor = note.id;
@@ -687,7 +744,7 @@ export function createNoteEditing(options: {
      */
     breakDown(item: LineBreak, press: PointerPress, pxPerSecond: number) {
       cancelDrag?.();
-      lastSinger = item.singer;
+      singers.choose(item.singer);
       const ids = selected();
       const breaks = selectedBreaks();
       if (press.metaKey || press.ctrlKey) select(ids, toggled(breaks, item.lineId));
@@ -785,7 +842,7 @@ export function createNoteEditing(options: {
     /** A right-click on a note: the menu is for the selection, which it joins unless it is in it already. */
     menuOpen(note: DrawnNote) {
       cancelDrag?.();
-      lastSinger = note.singer;
+      singers.choose(note.singer);
       if (selected().includes(note.id)) return;
       anchor = note.id;
       select([note.id]);

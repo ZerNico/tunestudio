@@ -9,7 +9,7 @@ import { ChartUnreadable, type FileError, mapFileError, type ProjectDamaged, quo
 import { readChart } from "../project/chart";
 import { listMedia, type MediaRow, writeMediaToFile } from "../project/media";
 import type { ProjectSession } from "../project/projects";
-import { type MediaHeaders, projectToChart } from "./chart-mapping";
+import { emptySingerWarnings, type MediaHeaders, projectToChart } from "./chart-mapping";
 import { usdbText } from "./usdb";
 
 /** The file name suffix and headers for each media role, as UltraStar song folders name them. */
@@ -81,6 +81,7 @@ export function exportSong(
           }`,
         }),
     });
+    warnings.unshift(...emptySingerWarnings(chart));
 
     const id = randomUUID().slice(0, 8);
     const staging = paths.join(folder, `.${base}.export-${id}`);

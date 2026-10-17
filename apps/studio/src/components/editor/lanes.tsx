@@ -1,6 +1,7 @@
 import type { JSX } from "@solidjs/web";
 import { For, Show } from "solid-js";
 
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "~/components/ui/context-menu";
 import type { AutoScroll } from "~/lib/editor/autoscroll";
 import type { BreakDrag } from "~/lib/editor/break-editing";
 import type { LineBreak, LineSpan } from "~/lib/editor/chart";
@@ -168,10 +169,50 @@ export function TimeRuler(props: {
   );
 }
 
+/** One break's marker (the trigger of its menu: `trigger` are the menu's props for it). */
+function BreakMarker(props: {
+  trigger: JSX.HTMLAttributes<HTMLSpanElement>;
+  item: LineBreak;
+  view: TimeView;
+  selected: boolean;
+  inactive: boolean;
+  onDown: (event: PointerEvent) => void;
+  onDoubleClick: () => void;
+}) {
+  return (
+    <span
+      {...props.trigger}
+      data-singer={props.item.singer}
+      data-inactive={props.inactive ? "" : undefined}
+      data-auto={props.item.auto ? "" : undefined}
+      data-selected={props.selected ? "true" : undefined}
+      aria-selected={props.selected ? "true" : "false"}
+      title={
+        props.item.auto
+          ? "Line break (default timing). Drag to move, double-click to remove, right-click for more."
+          : "Line break. Drag to move, double-click to remove, right-click for more."
+      }
+      class="absolute top-1 break-marker h-3 w-2 -translate-x-1/2 cursor-ew-resize rounded-[2px]"
+      // Centred on the break's line in the roll.
+      style={{ left: `${breakX(props.view, props.item.time) + 0.5}px` }}
+      onPointerDown={(event) => {
+        if (event.button !== 0) return;
+        event.stopPropagation();
+        props.onDown(event);
+      }}
+      onDblClick={(event) => {
+        event.stopPropagation();
+        props.onDoubleClick();
+      }}
+      data-testid="break-marker"
+    />
+  );
+}
+
 /**
- * The line breaks above the roll, as markers at their switch times (fainter when the chart doesn't store one; singer
+ * The line breaks above the roll, as markers at their switch times (outlined when the chart doesn't store one; singer
  * 2's lighter). A marker is pressed to select and drag it, double-clicked to remove it; a double-click on the lane adds
- * one. A dragged break is drawn where it would go, with its label.
+ * one; right-clicking one resets its timing or removes it. A dragged break is drawn where it would go, with its label.
  */
 export function BreakLane(props: {
   breaks: LineBreak[];
@@ -182,35 +223,38 @@ export function BreakLane(props: {
   onDown: (item: LineBreak, event: PointerEvent) => void;
   onDoubleClick: (item: LineBreak) => void;
   onLaneDoubleClick: (seconds: number) => void;
+  /** Reset timing, from a marker's menu: back to the default rule. */
+  onResetTiming: (item: LineBreak) => void;
+  /** In a duet, the singer edits go to: the other one's breaks are dimmed. */
+  activeSinger?: number;
 }) {
   return (
     <Lane class="h-5 bg-bar" testid="break-lane" onDoubleClick={(x) => props.onLaneDoubleClick(xToTime(props.view, x))}>
       <For each={props.breaks} keyed={(item) => item.lineId}>
         {(item) => (
-          <span
-            data-singer={item().singer}
-            data-auto={item().auto ? "" : undefined}
-            data-selected={props.selected.has(item().lineId) ? "true" : undefined}
-            aria-selected={props.selected.has(item().lineId) ? "true" : "false"}
-            title={
-              item().auto
-                ? "Line break (default timing). Drag to move, double-click to remove."
-                : "Line break. Drag to move, double-click to remove."
-            }
-            class="absolute top-1 h-3 w-2 -translate-x-1/2 cursor-ew-resize rounded-[2px] break-marker"
-            // Centred on the break's line in the roll.
-            style={{ left: `${breakX(props.view, item().time) + 0.5}px` }}
-            onPointerDown={(event) => {
-              if (event.button !== 0) return;
-              event.stopPropagation();
-              props.onDown(item(), event);
-            }}
-            onDblClick={(event) => {
-              event.stopPropagation();
-              props.onDoubleClick(item());
-            }}
-            data-testid="break-marker"
-          />
+          <ContextMenu>
+            <ContextMenuTrigger
+              render={(triggerProps: JSX.HTMLAttributes<HTMLSpanElement>) => (
+                <BreakMarker
+                  trigger={triggerProps}
+                  item={item()}
+                  view={props.view}
+                  selected={props.selected.has(item().lineId)}
+                  inactive={props.activeSinger !== undefined && item().singer !== props.activeSinger}
+                  onDown={(event) => props.onDown(item(), event)}
+                  onDoubleClick={() => props.onDoubleClick(item())}
+                />
+              )}
+            />
+            <ContextMenuContent class="min-w-[180px]" data-testid="break-menu">
+              <ContextMenuItem disabled={item().auto} onClick={() => props.onResetTiming(item())}>
+                Reset timing
+              </ContextMenuItem>
+              <ContextMenuItem variant="destructive" onClick={() => props.onDoubleClick(item())}>
+                Remove line break
+              </ContextMenuItem>
+            </ContextMenuContent>
+          </ContextMenu>
         )}
       </For>
       <Show when={props.drag}>
@@ -229,7 +273,14 @@ export function BreakLane(props: {
 }
 
 /** Each line's text under its notes (singer 2 on a second row in a duet), cut where the next line starts. */
-export function LyricsLane(props: { lines: LineSpan[]; all: LineSpan[]; view: TimeView; duet: boolean }) {
+export function LyricsLane(props: {
+  lines: LineSpan[];
+  all: LineSpan[];
+  view: TimeView;
+  duet: boolean;
+  /** In a duet, the singer edits go to: the other one's text is muted. */
+  activeSinger?: number;
+}) {
   const nextStart = (line: LineSpan) =>
     props.all.find((other) => other.singer === line.singer && other.start > line.start)?.start ?? Infinity;
   /** The room for a line's text, up to where the singer's next line starts. */
@@ -241,7 +292,9 @@ export function LyricsLane(props: { lines: LineSpan[]; all: LineSpan[]; view: Ti
         {(line) => (
           <span
             data-singer={line.singer}
-            class="pointer-events-none absolute top-1.5 truncate pl-0.5 text-[11px] leading-4 text-foreground data-[singer=2]:top-6 data-[singer=2]:text-violet-text"
+            data-row={props.duet && line.singer === 2 ? "2" : undefined}
+            data-inactive={props.activeSinger !== undefined && line.singer !== props.activeSinger ? "" : undefined}
+            class="pointer-events-none absolute top-1.5 truncate pl-0.5 text-[11px] leading-4 text-foreground data-inactive:opacity-45 data-[row=2]:top-6 data-[singer=2]:text-violet-text"
             style={{
               left: `${timeToX(props.view, line.start)}px`,
               "max-width": `${room(line)}px`,
@@ -269,6 +322,8 @@ export function OverviewBar(props: {
   width: number;
   playhead: number;
   duet: boolean;
+  /** In a duet, the singer edits go to: the other one's lines are dimmed. */
+  activeSinger?: number;
   /** Centres the view on this time. */
   onScrollTo: (seconds: number) => void;
   /** The medley band (`song-markers.ts`), when the song has one. */
@@ -314,7 +369,8 @@ export function OverviewBar(props: {
           {(line) => (
             <div
               data-singer={line.singer}
-              class="pointer-events-none absolute h-2 rounded-[2px] bg-primary-line data-[singer=2]:bg-violet-line"
+              data-inactive={props.activeSinger !== undefined && line.singer !== props.activeSinger ? "" : undefined}
+              class="pointer-events-none absolute h-2 rounded-[2px] bg-primary-line data-inactive:opacity-40 data-[singer=2]:bg-violet-line"
               style={{
                 left: percent(line.start),
                 width: `max(2px, ${percent(line.duration)})`,

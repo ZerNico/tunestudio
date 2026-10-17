@@ -12,7 +12,7 @@ import {
   ticksToSeconds,
 } from "@tunestudio/ultrastar";
 
-import { headerNumber, type ProjectChart, projectToChart } from "./chart-mapping";
+import { emptySingerWarnings, headerNumber, type ProjectChart, projectToChart, singingSingers } from "./chart-mapping";
 import { formatMetaTags, type MetaTags, parseMetaTags, sourceMetaTags, youtubeIdOf } from "./meta-tags";
 
 /**
@@ -86,7 +86,9 @@ export function usdbText(chart: ProjectChart, files: UsdbFiles): { text: string;
   const bpm = usdbBpm(song.bpm);
   const gap = Math.round(song.gap * 1000);
   const grid = { bpm, gap };
-  const duet = chart.singers.length > 1;
+  const singing = singingSingers(chart);
+  const duet = singing.length > 1;
+  warnings.push(...emptySingerWarnings(chart));
 
   // Meta tags kept from a USDB import (covers, crops); the song's own fields replace theirs.
   const kept = song.extraHeaders.find(([key]) => key === "VIDEO")?.[1];
@@ -97,7 +99,7 @@ export function usdbText(chart: ProjectChart, files: UsdbFiles): { text: string;
     song,
   );
   if (!song.youtubeId && !song.youtubeAudioId) warnings.push("The song has no YouTube source.");
-  for (const singer of chart.singers) if (duet && singer.name) tags.push([`p${singer.index}`, singer.name]);
+  for (const singer of singing) if (duet && singer.name) tags.push([`p${singer.index}`, singer.name]);
   if (song.previewStart !== null) tags.push(["preview", headerNumber(Math.round(song.previewStart * 1000) / 1000)]);
   if (song.medleyStart !== null && song.medleyEnd !== null) {
     const beat = (seconds: number) => Math.round(secondsToTicks(seconds, grid));

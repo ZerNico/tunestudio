@@ -471,6 +471,7 @@
   text-shadow: 0 1px 1px #0009;
   box-shadow: 0 1px 2px #0004;
   transition: background-color 0.1s, border-color 0.1s;
+  z-index: 1;
   &:hover { background-color: var(--note-hover); border-color: var(--note-hover-border); color: #fff; z-index: 4; }
   &[data-singer="2"] { background-color: var(--note-2); border-color: var(--note-2-border); color: var(--violet-text); }
   &[data-singer="2"]:hover { background-color: var(--note-2-hover); }
@@ -504,24 +505,35 @@
   &[data-selected="true"]::after { right: 2px; }
   /* A problem shows whatever else the note is (selected, golden). */
   &[data-overlap] { border-color: var(--destructive) !important; }
+  /* The other singer of a duet: dimmed (unless selected, which still shows), and under the active singer's notes and
+     break grips even when selected or hovered, so clicks where they overlap go to the active singer. */
+  &[data-inactive], &[data-inactive]:hover, &[data-inactive][data-selected="true"] { z-index: 0; }
+  &[data-inactive]:not([data-selected="true"]) { opacity: 0.35; }
+  &[data-inactive]:not([data-selected="true"]):hover { opacity: 0.6; }
   &[data-pending] { animation: note-pending 1.1s ease-in-out infinite alternate; }
   @media (prefers-reduced-motion: reduce) { &[data-pending] { opacity: 0.55; } }
 }
 
-/* A line break in the piano roll: data-singer, data-auto (no switch stored: fainter), data-selected="true" (solid and
-   light, so it stands apart from the green playhead and notes). */
+/* A line break in the piano roll: data-singer, data-selected="true" (solid and light, so it stands apart from the green
+   playhead and notes). Default timing (data-auto) looks the same: only its marker says so. */
 @utility roll-break {
   border-left: 1px dashed var(--violet);
   &[data-singer="2"] { border-left-color: var(--violet-text); }
-  &[data-auto] { opacity: 0.45; }
+  &[data-inactive] { opacity: 0.25; }
   &[data-selected="true"] { border-left: 2px solid var(--foreground); opacity: 1; margin-left: -0.5px; }
 }
 
-/* A line break's marker in the lane above the roll, with the same data attributes as `roll-break`. */
+/* A line break's marker in the lane above the roll, with the same data attributes as `roll-break`; default timing
+   (data-auto) is an outline. */
 @utility break-marker {
   background-color: var(--violet);
+  /* The other singer's markers (data-inactive) go under the active singer's where they coincide, even selected. */
+  z-index: 1;
+  &[data-inactive] { z-index: 0; }
   &[data-singer="2"] { background-color: var(--violet-text); }
-  &[data-auto] { opacity: 0.45; }
+  &[data-auto]:not([data-selected="true"]) { background-color: transparent; box-shadow: inset 0 0 0 1.5px var(--violet); }
+  &[data-auto][data-singer="2"]:not([data-selected="true"]) { box-shadow: inset 0 0 0 1.5px var(--violet-text); }
+  &[data-inactive] { opacity: 0.25; }
   &[data-selected="true"] {
     background-color: var(--foreground);
     opacity: 1;

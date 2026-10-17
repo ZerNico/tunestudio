@@ -484,6 +484,87 @@ describe("note editing", () => {
     expect(notes().find((item) => item.pitch === 72)).toMatchObject({ singer: 2, lineId: 20 });
   });
 
+  it("gives the selected notes to a singer (Sung by), who becomes the one new notes go to, or copies them", () => {
+    const duet: EditorChart = {
+      ...chart,
+      singers: [...chart.singers, { id: 2, index: 2, name: "Ben", lines: [] }],
+    };
+    const { click, editing, notes, selection, doc } = setup(0, duet);
+    click(102);
+    expect(editing.commands.sungBy()).toEqual([1]);
+    editing.commands.assign(2);
+    flush();
+    const moved = notes().find((item) => item.lyric === "on")!;
+    expect(moved.singer).toBe(2);
+    expect(editing.commands.sungBy()).toEqual([2]);
+    expect(selection().notes).toEqual([moved.id]);
+    expect(doc.undoLabel()).toBe("Move note to Ben");
+    editing.emptyDoubleClick({ time: 5, pitch: 72 });
+    flush();
+    expect(notes().find((item) => item.pitch === 72)?.singer).toBe(2);
+
+    // Both singers' notes selected: all of them go to P1.
+    click(100);
+    click(moved.id, { metaKey: true });
+    expect(editing.commands.sungBy()).toEqual([1, 2]);
+    expect(editing.commands.copyTarget()).toBeNull();
+    editing.commands.assign(1);
+    flush();
+    expect(
+      notes()
+        .filter((item) => item.lyric === "We " || item.lyric === "on")
+        .map((item) => item.singer),
+    ).toEqual([1, 1]);
+
+    // Copy to: independent copies for the other singer.
+    click(100);
+    expect(editing.commands.copyTarget()?.name).toBe("Ben");
+    editing.commands.copyToOther();
+    flush();
+    expect(
+      notes()
+        .filter((item) => item.lyric === "We ")
+        .map((item) => item.singer),
+    ).toEqual([1, 2]);
+  });
+
+  it("gives a mixed selection to one singer in one step, keeping it all selected, and refuses overlaps", () => {
+    const duet: EditorChart = {
+      ...chart,
+      singers: [
+        ...chart.singers,
+        {
+          id: 2,
+          index: 2,
+          name: "Ben",
+          lines: [{ id: 20, switchStart: null, switchEnd: null, notes: [note(201, 1.6, "on"), note(200, 5, "la")] }],
+        },
+      ],
+    };
+    const { click, editing, notes, selection, doc, onRefused } = setup(0, duet);
+    // "on" at 1.6 s overlaps P1's "walk" (1.5 s): refused, nothing changes.
+    click(101);
+    click(201, { metaKey: true });
+    editing.commands.assign(1);
+    flush();
+    expect(onRefused).toHaveBeenCalledWith("P1 already sings there.");
+    expect(doc.undoLabel()).toBeNull();
+    expect(selection().notes).toEqual([101, 201]);
+
+    click(102);
+    click(200, { metaKey: true });
+    editing.commands.assign(1);
+    flush();
+    const moved = notes().find((item) => item.lyric === "la")!;
+    expect(moved.singer).toBe(1);
+    expect(selection().notes.toSorted()).toEqual([102, moved.id].toSorted());
+    expect(doc.undoLabel()).toBe("Move note to P1");
+    doc.undo();
+    flush();
+    expect(doc.chart()).toEqual(duet);
+    expect(selection().notes).toEqual([102, 200]);
+  });
+
   it("stops a drag without changing anything when cancelled (before an undo)", () => {
     const { drag, editing, find, doc } = setup();
     drag(101, "body", [[50, 0]], false);

@@ -3,7 +3,7 @@ import { asc } from "drizzle-orm";
 import { Effect } from "effect";
 
 import type { EditorChart, EditorLine, EditorNote, EditorSinger } from "../../src/lib/native/types";
-import type { ProjectDamaged } from "../errors";
+import { ProjectDamaged } from "../errors";
 import { readSong } from "./chart";
 import type { Queryable } from "./database";
 import { lines, notes, singers } from "./schema";
@@ -39,12 +39,12 @@ export function readEditorChart(db: Queryable): Effect.Effect<EditorChart, Proje
         edited: row.edited,
       });
     }
-    const editorSingers: EditorSinger[] = singerRows.map((row) => ({
-      id: row.id,
-      index: row.index,
-      name: row.name,
-      lines: bySinger.get(row.id) ?? [],
-    }));
+    const editorSingers: EditorSinger[] = [];
+    for (const row of singerRows) {
+      if (row.index !== 1 && row.index !== 2)
+        return yield* new ProjectDamaged({ message: "The project's singers are damaged." });
+      editorSingers.push({ id: row.id, index: row.index, name: row.name, lines: bySinger.get(row.id) ?? [] });
+    }
     return {
       bpm: songRow.bpm,
       gap: songRow.gap,

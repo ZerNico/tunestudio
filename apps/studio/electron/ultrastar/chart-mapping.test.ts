@@ -1,7 +1,7 @@
 import { parseUltraStar, serializeUltraStar } from "@tunestudio/ultrastar";
 import { describe, expect, it } from "vitest";
 
-import { chartToProject, headerNumber, projectToChart } from "./chart-mapping";
+import { chartToProject, emptySingerWarnings, headerNumber, projectToChart } from "./chart-mapping";
 
 const chart = (lines: string[]) => parseUltraStar(`${lines.join("\n")}\nE\n`).document;
 
@@ -55,6 +55,17 @@ describe("chartToProject", () => {
     expect(warnings).toHaveLength(2);
   });
 
+  it("keeps a break at the default spot as default timing, and writes it back the same", () => {
+    // Two steps before the next line (beat 10) is the default for an 8-beat gap: beat 8. The last line has no break.
+    const lines = ["#BPM:300", ": 0 2 0 a", "- 8", ": 10 2 0 b", "- 15", ": 20 2 0 c", "- 24 26", ": 30 2 0 d"];
+    const { chart: project } = chartToProject(chart(lines));
+    expect(project.singers[0]!.lines.map((line) => line.switchStart === null)).toEqual([true, false, false, true]);
+    const text = serializeUltraStar(projectToChart(project, {}));
+    expect(text).toContain("\n- 8\n");
+    expect(text).toContain("\n- 15\n");
+    expect(text).toContain("\n- 24 26\n");
+  });
+
   it("prefers #P1 over #DUETSINGERP1 and groups lines per singer", () => {
     const { chart: project } = chartToProject(
       chart(["#BPM:300", "#DUETSINGERP1:Old", "#P1:New", "P2", ": 0 2 0 b", "P1", ": 0 2 0 a", "- 3", ": 4 2 0 c"]),
@@ -63,6 +74,19 @@ describe("chartToProject", () => {
       [1, "New", 2],
       [2, null, 1],
     ]);
+  });
+
+  it("imports a part for both singers (P3) as notes of both, without its name header", () => {
+    const { chart: project } = chartToProject(
+      chart(["#BPM:300", "#P1:Anna", "#P2:Ben", "#P3:Both", "P1", ": 0 2 0 a", "P2", ": 0 2 5 b", "P3", ": 8 2 3 c"]),
+    );
+    expect(
+      project.singers.map((singer) => [singer.name, singer.lines.map((line) => line.notes.map((n) => n.lyric))]),
+    ).toEqual([
+      ["Anna", [["a"], ["c"]]],
+      ["Ben", [["b"], ["c"]]],
+    ]);
+    expect(project.song.extraHeaders.map(([key]) => key)).not.toContain("P3");
   });
 
   it("gives an empty chart one singer", () => {
@@ -116,6 +140,22 @@ describe("projectToChart", () => {
     expect(projectToChart(project, { VIDEO: "clip.mp4" }).metadata.VIDEO).toBe("clip.mp4");
     project.song.extraHeaders = [["VIDEO", "a=dQw4w9WgXcQ,v=kPBzTxZQG5Q"]];
     expect(projectToChart(project, {}).metadata.VIDEO).toBeUndefined();
+  });
+
+  it("exports a duet whose second singer has no notes as a solo chart, and says so", () => {
+    const { chart: project } = chartToProject(chart(["#BPM:300", "#P1:Anna", ": 0 2 0 a"]));
+    const solo = serializeUltraStar(projectToChart(project, {}));
+    project.singers.push({ index: 2, name: "Ben", lines: [{ switchStart: null, switchEnd: null, notes: [] }] });
+    expect(serializeUltraStar(projectToChart(project, {}))).toBe(solo);
+    expect(emptySingerWarnings(project)).toEqual(["Ben has no notes, so the song is exported as a solo chart."]);
+
+    // Only P2 sings: its notes, without a player marker or a name for a singer the file doesn't have.
+    project.singers[0]!.lines = [];
+    project.singers[1]!.lines[0]!.notes.push({ start: 1, duration: 0.4, pitch: 60, lyric: "b", type: "normal" });
+    const text = serializeUltraStar(projectToChart(project, {}));
+    expect(text).not.toMatch(/^P\d|#P[12]:/m);
+    expect(text).toContain("\n: 20 8 0 b\n");
+    expect(emptySingerWarnings(project)).toEqual(["Anna has no notes, so the song is exported as a solo chart."]);
   });
 
   it("formats header numbers without float noise", () => {

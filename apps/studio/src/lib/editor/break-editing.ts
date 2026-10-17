@@ -2,8 +2,8 @@
  * Editing one line break (`breaks.ts` has the rules): dragging it, or ← / → with just it selected, moves it, across
  * notes too (they change line). A drag is a preview (`drag`, with a label) until it is let go, then one edit; Esc
  * cancels. A double-click on a marker removes it, one on the lane adds a break there; B adds one at the playhead, in
- * the nearest gap. New breaks go to the singer whose note was touched last. What a press selects, and moving or
- * deleting a selection, is `note-editing.ts`'s.
+ * the nearest gap. B adds to the active singer; a double-click to whichever shown singer has a line there, the active one
+ * first. What a press selects, and moving or deleting a selection, is `note-editing.ts`'s.
  */
 
 import { createSignal } from "solid-js";
@@ -38,6 +38,10 @@ export function createBreakEditing(options: {
   setSelection: (selection: Selection) => void;
   /** The singer (id) new breaks go to. */
   singer: () => number | null;
+  /** In a duet: the singers (ids) a double-click on the lane may add a break for, the active one first. */
+  singers?: () => number[];
+  /** A double-click added a break for this singer (id): it becomes the active one. */
+  onSinger?: (singerId: number) => void;
   playheadTime: () => number;
   onRefused: (message: string) => void;
   /** Where pointer moves and releases are heard during a drag (the window; tests pass their own). */
@@ -70,15 +74,29 @@ export function createBreakEditing(options: {
   };
 
   const add = (time: number) => {
-    const singerId = options.singer();
+    const active = options.singer();
+    const candidates = options.singers?.() ?? (active === null ? [] : [active]);
     const current = chart();
     let added: ReturnType<typeof addBreak> = null;
-    if (singerId !== null) {
-      options.doc().edit("Add line break", (tx) => void (added = addBreak(tx, current, singerId, time)), {
-        selectionAfter: () => (added ? renamed(added.split, added.created, null) : options.selection()),
-      });
+    let singerId: number | null = null;
+    if (candidates.length > 0) {
+      options.doc().edit(
+        "Add line break",
+        (tx) => {
+          // addBreak changes nothing when the singer has no line to split there.
+          for (const candidate of candidates) {
+            added = addBreak(tx, current, candidate, time);
+            if (added) {
+              singerId = candidate;
+              break;
+            }
+          }
+        },
+        { selectionAfter: () => (added ? renamed(added.split, added.created, null) : options.selection()) },
+      );
     }
     if (!added) options.onRefused("Put the line break between two notes of a line.");
+    else if (singerId !== null && singerId !== active) options.onSinger?.(singerId);
   };
 
   /** How many notes a break at `time` moves to the other line. */
@@ -155,6 +173,14 @@ export function createBreakEditing(options: {
     /** A double-click on a marker removes it. */
     breakDoubleClick(item: LineBreak) {
       remove(item.lineId);
+    },
+
+    /** Reset timing (a marker's menu): the break follows the default rule again, as the gap around it changes. */
+    resetTiming(item: LineBreak) {
+      if (item.auto) return;
+      options
+        .doc()
+        .edit("Reset line break timing", (tx) => tx.updateLine(item.lineId, { switchStart: null, switchEnd: null }));
     },
 
     /** A double-click on the lane adds a break there. */

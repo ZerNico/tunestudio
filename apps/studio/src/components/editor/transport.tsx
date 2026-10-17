@@ -88,6 +88,8 @@ export function Transport(props: {
   onTones: (tones: boolean) => void;
   volumes: Volumes;
   onVolume: (channel: keyof Volumes, volume: number) => void;
+  /** The singers (`SingerSwitch`): which one edits go to, shown or hidden, and Add singer. */
+  singers?: JSX.Element;
 }) {
   /** The song's volume before muting, to go back to. */
   let beforeMute = 1;
@@ -205,6 +207,15 @@ export function Transport(props: {
           testid="volume-tones"
         />
       </div>
+      {/* Read once: the element is made by the read. */}
+      <Show when={props.singers}>
+        {(singers) => (
+          <>
+            <div class="h-4 w-px bg-bar-border" aria-hidden="true" />
+            {singers()}
+          </>
+        )}
+      </Show>
       <div class="ml-auto flex items-center gap-1">
         <Show when={props.showPitch !== undefined}>
           <IconButton

@@ -91,6 +91,40 @@ describe("tones", () => {
     expect(context.oscillators.at(-1)!.stop).toBeCloseTo(0.15, 9);
   });
 
+  it("stops hidden notes, including scheduled ones, and plays the rest when shown again", () => {
+    const context = new FakeContext();
+    const first = { ...note(1, 0, 60), duration: 4 };
+    const second = { ...note(2, 0, 67), duration: 4 };
+    const upcoming = note(3, 1.1, 69);
+    const all = [first, second, upcoming];
+    let shown = all;
+    const tones = createTones({ notes: () => shown, context: () => context as never });
+    tones.frame(1, 1);
+    expect(context.oscillators).toHaveLength(3);
+
+    shown = [first];
+    context.currentTime = 0.05;
+    tones.frame(1.05, 1);
+    expect(context.oscillators.slice(0, 3).every((item) => item.stopped)).toBe(true);
+    expect(context.oscillators).toHaveLength(4);
+    expect(context.oscillators[3]).toMatchObject({ frequency: midiToHz(60), start: 0.05, stop: 3 });
+
+    context.currentTime = 0.1;
+    tones.frame(1.1, 1);
+    expect(context.oscillators).toHaveLength(4);
+
+    shown = all;
+    context.currentTime = 1;
+    tones.frame(2, 1);
+    expect(context.oscillators[3]!.stopped).toBe(true);
+    expect(context.oscillators).toHaveLength(6);
+    expect(context.oscillators.slice(4)).toEqual([
+      { frequency: midiToHz(60), start: 1, stop: 3, stopped: false },
+      { frequency: midiToHz(67), start: 1, stop: 3, stopped: false },
+    ]);
+    tones.dispose();
+  });
+
   it("previews a pitch at once", () => {
     const { tones, started } = setup([]);
     tones.preview(65);

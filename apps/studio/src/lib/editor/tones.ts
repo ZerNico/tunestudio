@@ -47,7 +47,7 @@ function firstFrom(notes: readonly ToneNote[], time: number): number {
 }
 
 export function createTones(options: {
-  /** The notes, sorted by start. */
+  /** The notes, sorted by start. A new array restarts scheduling (for example, after hiding a singer). */
   notes: () => readonly ToneNote[];
   /** Makes the audio context (on first use: browsers want it made after a user gesture). */
   context?: () => AudioContext;
@@ -94,7 +94,7 @@ export function createTones(options: {
   };
 
   /** Where playback tones are: the song time scheduled up to, and the time and context time of the last frame. */
-  let scheduled: { until: number; time: number; at: number } | null = null;
+  let scheduled: { until: number; time: number; at: number; notes: readonly ToneNote[] } | null = null;
 
   const stop = () => {
     for (const oscillator of sounding) oscillator.stop();
@@ -113,8 +113,8 @@ export function createTones(options: {
       const { context: ctx } = audio();
       const now = ctx.currentTime;
       const expected = scheduled ? scheduled.time + (now - scheduled.at) * rate : time;
-      if (scheduled && Math.abs(time - expected) > JUMP) stop();
       const notes = options.notes();
+      if (scheduled && (Math.abs(time - expected) > JUMP || scheduled.notes !== notes)) stop();
       let from: number;
       if (!scheduled) {
         // Starting (or after a jump): notes already sounding play their rest.
@@ -130,7 +130,7 @@ export function createTones(options: {
         const note = notes[i]!;
         if (voiced(note.type)) tone(note.pitch, now + Math.max(0, note.start - time) / rate, note.duration / rate);
       }
-      scheduled = { until: Math.max(until, from), time, at: now };
+      scheduled = { until: Math.max(until, from), time, at: now, notes };
     },
 
     /** How loud the tones are, 0-1. */

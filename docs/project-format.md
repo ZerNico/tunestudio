@@ -51,8 +51,9 @@ From a song folder or its `.txt`:
 
 1. Decode the chart: BOM, `#ENCODING`, UTF-8, and the Windows-1252 fallback for undeclared legacy
    charts. Unsupported or conflicting declarations fail with a clear message.
-2. Parse it: headers, notes, line breaks, duets (`P1`/`P2`). Relative-timing charts and ambiguous
-   singer records fail explicitly. Unknown headers go to `extra_headers`.
+2. Parse it: headers, notes, line breaks, duets (`P1`/`P2`). A part for both singers (`P3`) is
+   copied into P1 and P2, and its `#P3` name is dropped. Relative-timing charts, `P4` and up, and a
+   `P3` line overlapping a singer's line fail explicitly. Unknown headers go to `extra_headers`.
 3. Copy the media the chart references (`#AUDIO`/`#MP3`, `#VOCALS`, `#INSTRUMENTAL`, `#COVER`,
    `#BACKGROUND`, and `#VIDEO` when "Include video" is on) from the song folder into `media`.
    Only files inside that folder are read. A referenced file that is missing is a warning,
@@ -80,7 +81,8 @@ these fields, so edits and clearing a field override the imported metadata.
 Writes `<Artist> - <Title>/` into a folder the user picks:
 
 - `<Artist> - <Title>.txt`, UTF-8, `#VERSION:1.2.0`, all modelled headers plus `extra_headers`,
-  integer-beat notes on the chart's BPM grid, duets as `P1`/`P2`.
+  integer-beat notes on the chart's BPM grid, duets as `P1`/`P2`. A singer without notes is left
+  out (the song exports as a solo chart, with a warning), and so is a lone P2's `#P2` name.
 - The media, byte-for-byte as stored, with their headers pointing at them: the audio as
   `<Artist> - <Title>.<ext>` (`#AUDIO` and `#MP3`), `[VOC]` / `[INSTR]` stems (`#VOCALS`,
   `#INSTRUMENTAL`), `[CO]` cover, `[BG]` background, video as `<Artist> - <Title>.<ext>`.

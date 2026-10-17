@@ -296,7 +296,8 @@ describe("importing a song", () => {
     expect(result.chart.singers).toHaveLength(1);
     const [first, second] = result.chart.singers[0]!.lines;
     expect(first!.notes.map((note) => note.lyric)).toEqual(["Hel", "lo ", "world"]);
-    expect(first!.switchStart).toBeCloseTo(1.2505 + 18 * (15 / 240), 10);
+    // Its "- 18" is where the default rule puts the break anyway: default timing, written back the same.
+    expect(first!.switchStart).toBeNull();
     expect(second!.notes.map((note) => [note.type, note.pitch])).toEqual([
       ["freestyle", 60],
       ["rap", 60],

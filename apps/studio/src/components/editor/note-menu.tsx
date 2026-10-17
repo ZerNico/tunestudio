@@ -1,6 +1,6 @@
 /**
  * The piano roll's right-click menu. On a note it is for the selection (the note joins it unless it is in it already):
- * every action the keys have, with its key, so the menu also teaches them. On empty space: Chart range, Paste and Select all.
+ * every action the keys have, with its key, so the menu also teaches them (in a duet, who sings the notes too). On empty space: Chart range, Paste and Select all.
  */
 import type { JSX } from "@solidjs/web";
 import { createSignal, For, Show } from "solid-js";
@@ -10,9 +10,13 @@ import DeleteIcon from "~icons/lucide/delete";
 import {
   ContextMenu,
   ContextMenuContent,
+  ContextMenuGroup,
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuShortcut,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "~/components/ui/context-menu";
 import { platform } from "~/lib/desktop";
@@ -29,6 +33,14 @@ export interface NoteMenuActions {
   splitAtPlayhead: () => void;
   canMerge: () => boolean;
   merge: () => void;
+  /** The singers of a duet (none: solo), for Sung by. */
+  singers: () => { index: number; label: string }[];
+  /** Which singers (indexes) sing the selected notes. */
+  sungBy: () => number[];
+  assign: (index: number) => void;
+  /** The singer Copy to copies to (null: the selection is both singers'), named. */
+  copyTarget: () => string | null;
+  copyToOther: () => void;
   flagOn: (flag: NoteFlag) => boolean;
   toggleFlag: (flag: NoteFlag) => void;
   cut: () => void;
@@ -86,6 +98,41 @@ export function NoteMenu(props: { actions: NoteMenuActions; children: JSX.Elemen
             Merge
             <ContextMenuShortcut>M</ContextMenuShortcut>
           </ContextMenuItem>
+          <Show when={props.actions.singers().length > 1}>
+            <ContextMenuSeparator />
+            <ContextMenuSub>
+              <ContextMenuSubTrigger>Sung by</ContextMenuSubTrigger>
+              <ContextMenuSubContent class="min-w-[160px]">
+                <ContextMenuGroup aria-label="Sung by">
+                  <For each={props.actions.singers()}>
+                    {(singer) => {
+                      const only = () => props.actions.sungBy().every((index) => index === singer.index);
+                      return (
+                        <ContextMenuItem
+                          role="menuitemradio"
+                          aria-checked={only() ? "true" : "false"}
+                          onClick={() => props.actions.assign(singer.index)}
+                        >
+                          <span
+                            data-singer={singer.index}
+                            class="size-2 rounded-full bg-primary data-[singer=2]:bg-violet-text"
+                            aria-hidden="true"
+                          />
+                          {singer.label}
+                          <Show when={only()}>
+                            <CheckIcon class="ml-auto size-3 text-primary" aria-hidden="true" />
+                          </Show>
+                        </ContextMenuItem>
+                      );
+                    }}
+                  </For>
+                </ContextMenuGroup>
+              </ContextMenuSubContent>
+            </ContextMenuSub>
+            <ContextMenuItem disabled={!props.actions.copyTarget()} onClick={() => props.actions.copyToOther()}>
+              Copy to {props.actions.copyTarget() ?? "the other singer"}
+            </ContextMenuItem>
+          </Show>
           <ContextMenuSeparator />
           <For each={NOTE_FLAGS}>
             {(item) => (

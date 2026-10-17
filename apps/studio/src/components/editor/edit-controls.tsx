@@ -175,3 +175,43 @@ export function MergeButton(props: { canMerge: boolean; onMerge: () => void }) {
     </IconButton>
   );
 }
+
+/**
+ * Sung by, in a duet with notes selected: which singer sings them (neither pressed when they're both singers'), and a
+ * click gives them all to the other one.
+ */
+export function SungBySwitch(props: {
+  singers: { index: number; label: string }[];
+  sungBy: number[];
+  onAssign: (index: number) => void;
+}) {
+  return (
+    <div class="ml-2 flex items-center gap-1.5" data-testid="sung-by">
+      <span class="text-[11px] text-muted-foreground">Sung by</span>
+      <ToggleGroup
+        variant="segment"
+        size="segment"
+        spacing={0.5}
+        aria-label="Sung by"
+        value={props.sungBy.length === 1 ? [String(props.sungBy[0])] : []}
+        onValueChange={(value: unknown[]) => {
+          if (value.length > 0) props.onAssign(Number(value.at(-1)));
+        }}
+      >
+        {/* Keyed: the screen makes new label objects on every edit, and a focused button must stay. */}
+        <For each={props.singers} keyed={(singer) => singer.index}>
+          {(singer) => (
+            <ToggleGroupItem value={String(singer().index)} aria-label={`Sung by ${singer().label}`}>
+              <span
+                data-singer={singer().index}
+                class="size-2 rounded-full bg-primary data-[singer=2]:bg-violet-text"
+                aria-hidden="true"
+              />
+              {singer().label}
+            </ToggleGroupItem>
+          )}
+        </For>
+      </ToggleGroup>
+    </div>
+  );
+}

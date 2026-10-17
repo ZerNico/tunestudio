@@ -113,7 +113,7 @@ describe("chart document", () => {
   it("changes song details and a singer's name as edits, saved with what they were and undone", async () => {
     const { doc, save } = setup();
     doc.edit("Change title", (tx) => tx.updateSong({ title: "Day Signals", tags: ["live"] }));
-    doc.edit("Change singer's name", (tx) => tx.updateSinger(1, "Mia"));
+    doc.edit("Change singer's name", (tx) => tx.updateSinger(1, { name: "Mia" }));
     // The same again changes nothing.
     expect(doc.edit("Change title", (tx) => tx.updateSong({ title: "Day Signals" }))).toBe(false);
     flush();
@@ -128,12 +128,59 @@ describe("chart document", () => {
           after: { title: "Day Signals", tags: ["live"] },
         },
       ],
-      [{ table: "singer", id: 1, before: { name: null }, after: { name: "Mia" } }],
+      [{ table: "singer", id: 1, before: { index: 1, name: null }, after: { index: 1, name: "Mia" } }],
     ]);
     doc.undo();
     doc.undo();
     flush();
     expect(doc.chart().song.title).toBe("Night Signals");
     expect(doc.chart().singers[0]!.name).toBeNull();
+  });
+
+  it("adds a singer before its rows and removes one after them, with exact undo and redo", async () => {
+    const { doc, save } = setup();
+    let added = 0;
+    doc.edit("Add singer", (tx) => {
+      added = tx.createSinger({ index: 2, name: "Kai" });
+      const line = tx.createLine({ singerId: added, switchStart: null, switchEnd: null });
+      tx.createNote({ lineId: line, start: 2, duration: 0.5, pitch: 60, lyric: "Hey", type: "normal" });
+    });
+    flush();
+    const duet = doc.chart();
+    expect(duet.singers.map((singer) => [singer.index, singer.name])).toEqual([
+      [1, null],
+      [2, "Kai"],
+    ]);
+    expect(added).toBeGreaterThan(102);
+
+    // P1 goes: its notes, then lines, then the singer, and P2 becomes P1.
+    doc.edit("Remove singer", (tx) => {
+      for (const line of duet.singers[0]!.lines) {
+        for (const n of line.notes) tx.deleteNote(n.id);
+        tx.deleteLine(line.id);
+      }
+      tx.deleteSinger(1);
+      tx.updateSinger(added, { index: 1 });
+      expect(tx.singer(1)).toBeUndefined();
+    });
+    flush();
+    expect(doc.chart().singers.map((singer) => [singer.id, singer.index, singer.name])).toEqual([[added, 1, "Kai"]]);
+    await doc.saved();
+    const removal = save.mock.calls[1]![0]!;
+    expect(removal.slice(-2)).toEqual([
+      { table: "singer", id: 1, before: { index: 1, name: null }, after: null },
+      { table: "singer", id: added, before: { index: 2, name: "Kai" }, after: { index: 1, name: "Kai" } },
+    ]);
+
+    doc.undo();
+    flush();
+    expect(doc.chart()).toEqual(duet);
+    doc.undo();
+    flush();
+    expect(doc.chart()).toEqual(chart);
+    doc.redo();
+    doc.redo();
+    flush();
+    expect(doc.chart().singers.map((singer) => singer.id)).toEqual([added]);
   });
 });

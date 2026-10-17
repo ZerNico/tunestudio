@@ -127,8 +127,73 @@ describe("UltraStar parsing", () => {
     expect(result.warnings.join(" ")).toContain("assigned to player 1");
   });
 
-  it.each(["P3", "P0", "P4", "P1 2", "P1:", "Pboth"])("rejects ambiguous/unsupported track %s", (marker) => {
-    expect(() => parse(`${marker}\n: 0 4 0 a\nE`)).toThrow(/P1 and P2/);
+  it.each(["P0", "P4", "P1 2", "P1:", "Pboth"])("rejects unsupported track %s", (marker) => {
+    expect(() => parse(`${marker}\n: 0 4 0 a\nE`)).toThrow(/P1, P2 and P3/);
+  });
+
+  it("copies a part for both singers (P3) into P1 and P2, with its line breaks", () => {
+    const result = parseUltraStar(
+      headers + "P1\n: 0 4 0 one\nP2\n: 0 4 7 two\nP3\n: 8 4 2 both \n: 12 4 3 now\n- 17\n: 20 4 4 again\nE",
+    );
+    const { notes, lineBreaks } = result.document;
+    const sung = (player: number) => notes.filter((item) => item.player === player).map((item) => item.lyric);
+    expect(sung(1)).toEqual(["one", "both ", "now", "again"]);
+    expect(sung(2)).toEqual(["two", "both ", "now", "again"]);
+    expect(notes.some((item) => item.player === 3)).toBe(false);
+    // Each copy has its own lines; the P3 break is in both.
+    const lineOf = (player: number, lyric: string) =>
+      notes.find((n) => n.player === player && n.lyric === lyric)!.lineId;
+    expect(lineOf(1, "now")).not.toBe(lineOf(2, "now"));
+    expect(
+      lineBreaks!.filter((item) => item.lineId === lineOf(1, "now") || item.lineId === lineOf(2, "now")),
+    ).toHaveLength(2);
+    expect(result.warnings).toContain("Notes for both singers (P3) were copied to P1 and P2.");
+    expect(result.warnings.join(" ")).not.toContain("Singer 3");
+
+    const output = serializeUltraStar(result.document);
+    expect(output).not.toContain("P3");
+    expect(parseUltraStar(output).document.notes).toHaveLength(8);
+  });
+
+  it("ends a singer's line at a part for both (P3) between their parts, without a break before it", () => {
+    const { notes } = parse("P1\n: 0 4 0 a\nP3\n: 8 4 0 b\n- 14\nP1\n: 16 4 0 c\nE");
+    const p1 = notes.filter((item) => item.player === 1).toSorted((x, y) => x.start - y.start);
+    expect(p1.map((item) => item.lyric)).toEqual(["a", "b", "c"]);
+    expect(new Set(p1.map((item) => item.lineId)).size).toBe(3);
+  });
+
+  it("puts a singer's break that lands past a P3 part back at the default spot", () => {
+    const document = parse("P1\n: 0 4 0 a\n- 30\n: 40 4 0 c\nP3\n: 10 4 0 b\nE");
+    const a = document.notes.find((item) => item.lyric === "a")!;
+    expect(document.lineBreaks?.find((item) => item.lineId === a.lineId)).toBeUndefined();
+    const output = serializeUltraStar(document);
+    expect(output).not.toContain("- 30");
+  });
+
+  it.each([
+    ["P1, P3, P2, then P1 again", "P1\n: 0 4 0 a\nP3\n: 8 4 0 b\nP2\n: 16 4 0 c\nP1\n: 24 4 0 d\nE"],
+    ["P2, P3, P1, then P2 again", "P2\n: 0 4 0 a\nP3\n: 8 4 0 b\nP1\n: 16 4 0 c\nP2\n: 24 4 0 d\nE"],
+  ])("imports %s: no singer's line goes on across the shared part", (_name, body) => {
+    const { notes } = parse(body);
+    for (const player of [1, 2]) {
+      const sung = notes.filter((item) => item.player === player);
+      const shared = sung.find((item) => item.lyric === "b")!;
+      expect(sung.filter((item) => item.lineId === shared.lineId)).toEqual([shared]);
+    }
+  });
+
+  it("makes a P3-only file a duet of two identical parts", () => {
+    const { notes } = parse("P3\n: 0 4 0 a\n: 4 4 1 b\nE");
+    expect(notes.map((item) => [item.player, item.lyric])).toEqual([
+      [1, "a"],
+      [1, "b"],
+      [2, "a"],
+      [2, "b"],
+    ]);
+  });
+
+  it("refuses a P3 part that overlaps a line of one singer", () => {
+    expect(() => parse("P1\n: 0 8 0 long\nP3\n: 4 4 0 both\nE")).toThrow(/P3\) overlaps the lines of P1/);
   });
 
   it.each(["YES", "yes", "1", "TRUE", "maybe", ""])("rejects relative mode %j", (mode) => {

@@ -11,12 +11,14 @@ import {
   ChartRangeButton,
   HistoryButton,
   MergeButton,
+  SungBySwitch,
   ToolSwitch,
 } from "~/components/editor/edit-controls";
 import { BreakLane, LyricsLane, OverviewBar, TimeRuler } from "~/components/editor/lanes";
 import { NoteMenu, type NoteMenuActions } from "~/components/editor/note-menu";
 import { GUTTER_PX, PianoRoll } from "~/components/editor/piano-roll";
 import { Playhead } from "~/components/editor/playhead";
+import { SingerSwitch } from "~/components/editor/singer-switch";
 import type { ArtworkActions } from "~/components/editor/song-artwork";
 import { SongDetails } from "~/components/editor/song-details";
 import type { MediaActions } from "~/components/editor/song-files";
@@ -57,6 +59,8 @@ import { createNoteEditing, previewChart } from "~/lib/editor/note-editing";
 import { createPlayback } from "~/lib/editor/playback";
 import { createEditorPrefs } from "~/lib/editor/prefs";
 import { breaksOnly, NOTHING, notesOnly, type Selection } from "~/lib/editor/selection";
+import { addSinger, removeSinger, singerLabel, singerOf } from "~/lib/editor/singers";
+import { createSingersView } from "~/lib/editor/singers-view";
 import { createSongMarkers } from "~/lib/editor/song-markers";
 import { createTones } from "~/lib/editor/tones";
 import { createTools } from "~/lib/editor/tools";
@@ -145,6 +149,9 @@ export default function ProjectScreen() {
     }),
   );
   const chart = () => doc().chart();
+  /** In a duet: the singer edits go to, and the singers hidden from view (not saved: hidden notes are left alone). */
+  const singersView = createSingersView(chart);
+  const sungShown = (item: { singer: number }) => !singersView.isHidden(item.singer);
   /**
    * The media as changed since the project opened (a new cover or background), if they were: the overview is only
    * read when the project opens, and reading it again would start the editor over.
@@ -168,8 +175,9 @@ export default function ProjectScreen() {
     },
   };
   const [detailsOpen, setDetailsOpen] = createSignal(false);
-  const notes = createMemo(() => drawnNotes(chart()));
-  const lines = createMemo(() => lineSpans(chart()));
+  const allNotes = createMemo(() => drawnNotes(chart()));
+  const notes = createMemo(() => allNotes().filter(sungShown));
+  const lines = createMemo(() => lineSpans(chart()).filter(sungShown));
   const selectedIds = createMemo(() => new Set(selection().notes));
   const selectedBreaks = createMemo(() => new Set(selection().breaks));
   const selectedNotes = createMemo(() => notes().filter((note) => selectedIds().has(note.id)));
@@ -177,7 +185,10 @@ export default function ProjectScreen() {
   const longestNote = createMemo(() => longest(notes()));
   const longestLine = createMemo(() => longest(lines()));
   const duet = () => chart().singers.length > 1;
-  const breaks = createMemo(() => lineBreaks(chart()));
+  /** Both singers of a duet shown: the other one is dimmed, and gets the lyrics lane's second row. */
+  const bothShown = () => duet() && chart().singers.every((singer) => !singersView.isHidden(singer.index));
+  const activeSinger = () => (bothShown() ? singersView.index() : undefined);
+  const breaks = createMemo(() => lineBreaks(chart()).filter(sungShown));
   /** What is sung in the vocals (null: none, or not there yet). */
   const [pitch, setPitch] = createSignal<SungPitch | null>(null);
   const [showPitch, setShowPitch] = createSignal(true);
@@ -195,7 +206,7 @@ export default function ProjectScreen() {
   let scrolledAway = false;
   let placed = false;
   const width = () => size().width;
-  const length = () => Math.max(playback.duration(), chartEnd(notes()) + 1, 1);
+  const length = () => Math.max(playback.duration(), chartEnd(allNotes()) + 1, 1);
 
   const prefs = createEditorPrefs();
   const tones = createTones({ notes });
@@ -271,11 +282,24 @@ export default function ProjectScreen() {
       flush();
     },
   });
+  /** Notes stay inside the audio (not `length`, which grows with them); no limit until its length is known. */
+  const editingLength = () => (playback.duration() > 0 ? playback.duration() : Infinity);
   const breakEditing = createBreakEditing({
     autoScroll,
     viewStart: () => view().start,
     doc,
-    singer: () => editing.activeSinger(),
+    singer: () => singersView.id(),
+    singers: () => {
+      const active = singersView.id();
+      const shown = chart()
+        .singers.filter((singer) => !singersView.isHidden(singer.index))
+        .map((singer) => singer.id);
+      return shown.toSorted((a, b) => Number(b === active) - Number(a === active));
+    },
+    onSinger: (id) => {
+      const singer = chart().singers.find((item) => item.id === id);
+      if (singer) singersView.choose(singer.index);
+    },
     playheadTime: () => playback.time(),
     selection,
     setSelection,
@@ -327,6 +351,8 @@ export default function ProjectScreen() {
   const problems = createMemo(() => chartProblems(chart(), playback.duration()));
   /** Selects a problem's notes (or line break) and brings them on screen, fitting them when they don't fit. */
   const showProblem = (problem: ChartProblem) => {
+    // Its notes may be a hidden singer's.
+    singersView.showAll();
     setSelection(problem.lineId === undefined ? notesOnly(problem.noteIds) : breaksOnly([problem.lineId]));
     if (!playback.playing()) seek(problem.start);
     const span = { start: problem.start, end: problem.end };
@@ -396,8 +422,7 @@ export default function ProjectScreen() {
     notes,
     selection,
     setSelection,
-    // Notes stay inside the audio (not `length`, which grows with them); no limit until its length is known.
-    length: () => (playback.duration() > 0 ? playback.duration() : Infinity),
+    length: editingLength,
     playheadTime: () => playback.time(),
     onReveal: (note) => {
       if (!playback.playing()) seek(note.start);
@@ -406,6 +431,7 @@ export default function ProjectScreen() {
     onRefused: (message) => toast.add({ title: message }),
     breaks,
     oneBreak: breakEditing,
+    singers: singersView,
   });
 
   const visibleBreaks = createMemo(() => {
@@ -415,12 +441,15 @@ export default function ProjectScreen() {
     // its own where it would go.
     const moving = editing.drag();
     const dragged = breakEditing.drag();
-    return (moving ? lineBreaks(previewChart(chart(), moving)) : breaks())
+    return (moving ? lineBreaks(previewChart(chart(), moving)).filter(sungShown) : breaks())
       .map((item) =>
         dragged?.lineId === item.lineId ? Object.assign({}, item, { time: dragged.time, auto: false }) : item,
       )
       .filter((item) => item.time >= from && item.time <= to);
   });
+  /** A duet's singers by name, for Sung by (none in a solo chart). */
+  const singerLabels = () =>
+    duet() ? chart().singers.map((singer) => ({ index: singer.index, label: singerLabel(singer) })) : [];
   const breakDown = (item: LineBreak, event: PointerEvent) => editing.breakDown(item, event, view().pxPerSecond);
   /** The note a right-click is on, until the note menu opens (it is told on the way up). */
   let menuNote: DrawnNote | null = null;
@@ -434,12 +463,20 @@ export default function ProjectScreen() {
     },
     canChartRange,
     chartRange: openChartRange,
-    canAutoPitch: () => !chartingRange() && !autoPitch.busy() && selectedIds().size > 0,
+    canAutoPitch: () => !chartingRange() && !autoPitch.busy() && selectedNotes().length > 0,
     autoPitch: () => editing.commands.autoPitch(),
     canSplitAtPlayhead: () => editing.commands.canSplitAtPlayhead(),
     splitAtPlayhead: () => editing.commands.splitAtPlayhead(),
     canMerge: () => editing.commands.canMerge(),
     merge: () => editing.commands.merge(),
+    singers: singerLabels,
+    sungBy: () => editing.commands.sungBy(),
+    assign: (index) => editing.commands.assign(index),
+    copyTarget: () => {
+      const target = editing.commands.copyTarget();
+      return target ? singerLabel(target) : null;
+    },
+    copyToOther: () => editing.commands.copyToOther(),
     flagOn: (flag) => editing.commands.flagOn(flag),
     toggleFlag: (flag) => editing.commands.toggleFlag(flag),
     cut: () => runEditCommand("cut"),
@@ -447,6 +484,55 @@ export default function ProjectScreen() {
     paste: () => pasteFromClipboard(),
     remove: () => editing.commands.remove(),
     selectAll: () => editing.commands.selectAll(),
+  };
+
+  /** Hides or shows singers: what is hidden leaves the selection, so no command acts on notes out of view. */
+  const showSingers = (change: () => void) => {
+    cancelGestures();
+    change();
+    flush();
+    const ids = new Set(notes().map((note) => note.id));
+    const ends = new Set(breaks().map((item) => item.lineId));
+    const current = selection();
+    setSelection({
+      notes: current.notes.filter((id) => ids.has(id)),
+      breaks: current.breaks.filter((id) => ends.has(id)),
+    });
+  };
+  /** After undo or redo: what the step selected comes into view, and its singer is made active. */
+  const followHistory = () => {
+    flush();
+    const current = chart();
+    const ids = new Set(selection().notes);
+    const ends = new Set(selection().breaks);
+    const touched = current.singers.filter((singer) =>
+      singer.lines.some((line) => ends.has(line.id) || line.notes.some((note) => ids.has(note.id))),
+    );
+    if (touched.some((singer) => singersView.isHidden(singer.index))) singersView.showAll();
+    const singer = singerOf(current, ids);
+    if (singer) singersView.choose(singer.index);
+  };
+  /** Add singer: the second one, made active, its chip ready for a name. */
+  const addSecondSinger = (): number | null => {
+    cancelGestures();
+    const current = chart();
+    let id: number | null = null;
+    doc().edit("Add singer", (tx) => (id = addSinger(tx, current)));
+    const added = id === null ? undefined : chart().singers.find((singer) => singer.id === id);
+    if (added) singersView.choose(added.index);
+    return id;
+  };
+  /** Removes a singer, its notes deleted or moved to the other one (`merge`). */
+  const removeOneSinger = (id: number, merge: boolean) => {
+    const singer = chart().singers.find((item) => item.id === id);
+    if (!singer || chartingRange() || autoPitch.busy()) return;
+    cancelGestures();
+    const current = chart();
+    let moved: number[] = [];
+    doc().edit(`Remove ${singerLabel(singer)}`, (tx) => (moved = removeSinger(tx, current, id, { merge })), {
+      selectionAfter: () => notesOnly(moved),
+    });
+    singersView.showAll();
   };
 
   /**
@@ -670,10 +756,12 @@ export default function ProjectScreen() {
       undo: () => {
         cancelGestures();
         doc().undo();
+        followHistory();
       },
       redo: () => {
         cancelGestures();
         doc().redo();
+        followHistory();
       },
       // The Edit menu's Cut, Copy and Paste (macOS); the keys elsewhere come as clipboard events (`onCopy`).
       // A drag in progress stops first here too (it was worked out for the chart before).
@@ -731,7 +819,7 @@ export default function ProjectScreen() {
       toast.add({
         type: "success",
         title: "Exported for games",
-        description: result.folder,
+        description: [result.folder, ...result.warnings].join(" "),
         actionProps: { children: revealLabel, onClick: () => reveal(result.folder) },
       });
     } catch (error) {
@@ -786,12 +874,19 @@ export default function ProjectScreen() {
             <AutoPitchButton
               status={autoPitch.busy() ? (autoPitch.progress()?.step ?? null) : undefined}
               percent={percentOf(autoPitch.progress() ?? null) ?? null}
-              canStart={!chartingRange() && selectedIds().size > 0}
+              canStart={!chartingRange() && selectedNotes().length > 0}
               onStart={() => editing.commands.autoPitch()}
               onStop={() => autoPitch.stop()}
             />
             <ChartRangeButton canStart={canChartRange()} onStart={openChartRange} />
             <MergeButton canMerge={editing.commands.canMerge()} onMerge={() => editing.commands.merge()} />
+            <Show when={duet() && selectedNotes().length > 0}>
+              <SungBySwitch
+                singers={singerLabels()}
+                sungBy={editing.commands.sungBy()}
+                onAssign={(index) => editing.commands.assign(index)}
+              />
+            </Show>
           </>
         }
       >
@@ -827,7 +922,8 @@ export default function ProjectScreen() {
             view={view()}
             width={width()}
             playhead={playback.time()}
-            duet={duet()}
+            duet={bothShown()}
+            activeSinger={activeSinger()}
             onScrollTo={(seconds) => changeView({ ...view(), start: seconds - visibleSeconds(view(), width()) / 2 })}
             markers={songMarkers}
           />
@@ -848,12 +944,15 @@ export default function ProjectScreen() {
               onDown={breakDown}
               onDoubleClick={(item) => breakEditing.breakDoubleClick(item)}
               onLaneDoubleClick={(seconds) => breakEditing.laneDoubleClick(seconds)}
+              onResetTiming={(item) => breakEditing.resetTiming(item)}
+              activeSinger={activeSinger()}
             />
             <div ref={(element) => (rollArea = element)} class="flex min-h-0 flex-1">
               <NoteMenu actions={noteMenu}>
                 <PianoRoll
                   onNoteContextMenu={(note) => (menuNote = note)}
                   notes={visibleNotes()}
+                  activeSinger={activeSinger()}
                   breaks={visibleBreaks()}
                   range={range()}
                   view={view()}
@@ -890,7 +989,13 @@ export default function ProjectScreen() {
                 />
               </NoteMenu>
             </div>
-            <LyricsLane lines={visibleLines()} all={lines()} view={view()} duet={duet()} />
+            <LyricsLane
+              lines={visibleLines()}
+              all={lines()}
+              view={view()}
+              duet={bothShown()}
+              activeSinger={activeSinger()}
+            />
             <Show when={opening() !== undefined}>
               <OpeningOverlay progress={opening() ?? null} />
             </Show>
@@ -928,6 +1033,21 @@ export default function ProjectScreen() {
         onTones={prefs.setTones}
         volumes={prefs.volumes()}
         onVolume={prefs.setVolume}
+        singers={
+          <SingerSwitch
+            singers={chart().singers}
+            active={singersView.index()}
+            isHidden={singersView.isHidden}
+            busy={!!chartingRange() || autoPitch.busy()}
+            onChoose={(index) => singersView.choose(index)}
+            onHidden={(index, hide) => showSingers(() => singersView.setHidden(index, hide))}
+            onSolo={(index) => showSingers(() => singersView.solo(index))}
+            onShowAll={() => singersView.showAll()}
+            onAdd={addSecondSinger}
+            onRename={(id, name) => doc().edit("Rename singer", (tx) => tx.updateSinger(id, { name }))}
+            onRemove={removeOneSinger}
+          />
+        }
       />
 
       <Show when={chartingRange()}>

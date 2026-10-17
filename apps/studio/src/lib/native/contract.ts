@@ -251,8 +251,8 @@ export const SongFields = Schema.Struct({
 });
 export type SongFields = typeof SongFields.Type;
 
-/** A duet singer's name (`#P1`, `#P2`; null: none). */
-export const SingerFields = Schema.Struct({ name: Schema.NullOr(Schema.String) });
+/** A singer: P1 or P2 (`index`), and its name (`#P1`, `#P2`; null: none). */
+export const SingerFields = Schema.Struct({ index: Schema.Literals([1, 2]), name: Schema.NullOr(Schema.String) });
 export type SingerFields = typeof SingerFields.Type;
 
 /**
@@ -273,7 +273,12 @@ export const ChartChange = Schema.Union([
     after: Schema.NullOr(LineFields),
   }),
   Schema.Struct({ table: Schema.Literal("song"), before: SongFields, after: SongFields }),
-  Schema.Struct({ table: Schema.Literal("singer"), id: Schema.Number, before: SingerFields, after: SingerFields }),
+  Schema.Struct({
+    table: Schema.Literal("singer"),
+    id: Schema.Number,
+    before: Schema.NullOr(SingerFields),
+    after: Schema.NullOr(SingerFields),
+  }),
 ]);
 export type ChartChange = typeof ChartChange.Type;
 

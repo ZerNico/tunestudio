@@ -176,6 +176,18 @@ describe("usdbText", () => {
     expect(text).toContain("\r\nP2\r\n");
   });
 
+  it("leaves a singer without notes out: no [DUET], no name tag, a warning", () => {
+    const chart = song();
+    chart.singers = [
+      { ...chart.singers[0]!, name: "Mia" },
+      { index: 2, name: "Kai", lines: [] },
+    ];
+    const { text, warnings } = usdbText(chart, NONE);
+    expect(text).toContain("#TITLE:Sommerregen\r\n");
+    expect(text).not.toMatch(/p2=|\r\nP[12]\r\n/);
+    expect(warnings).toContain("Kai has no notes, so the song is exported as a solo chart.");
+  });
+
   it("warns when usdb_syncer can't know where the audio is", () => {
     const { text, warnings } = usdbText(song({ youtubeId: null }), NONE);
     expect(text).not.toContain("#VIDEO");

@@ -71,29 +71,56 @@ type PasteNote =
   | { start: number; existing: { id: number; lineId: number; edited: boolean } }
   | { start: number; pasted: number };
 
+/** A line's switch as stored (both null: automatic). */
+type Switch = { switchStart: number | null; switchEnd: number | null };
+
 /** A line break after a paste: its time, the line it was (null: the clip's), and the switch the line before it gets. */
 interface PasteBreak {
   time: number;
   from: EditorLine | null;
-  write: { switchStart: number | null; switchEnd: number | null };
+  write: Switch;
 }
 
 /**
- * The singer's line breaks after a paste of `pasted` (on the grid, by start), sorted; two with no note starting between
- * them are one, the singer's own winning (there's no line without notes).
+ * A note going in, where it is to be (`insertNotes`). Without `edited` it counts as changed by hand, as a pasted
+ * one does.
+ */
+export interface PlacedNote {
+  start: number;
+  duration: number;
+  pitch: number;
+  lyric: string;
+  type: NoteType;
+  edited?: boolean;
+}
+
+/**
+ * A line break going in with the notes, at `time`. `stored` is the switch it had (notes moved to the other singer):
+ * kept while it stays at `time` (an automatic one always); without it, the break is stored where it lands.
+ */
+export interface PlacedBreak {
+  time: number;
+  stored?: Switch;
+}
+
+/**
+ * The singer's line breaks after a paste of `pasted` (by start), sorted; two with no note starting between them are
+ * one, the singer's own winning (there's no line without notes).
  * - The singer's own stay where they are; a stored one a pasted note covers goes to the nearer edge of the notes
  *   there. A default one among the pasted notes (worked out for the gap before the paste) goes to their nearer end, or
  *   the other, when no note of the singer's starts on the way (it would change line); else it stays.
- * - The clip's (`copied`, times) keep their distance to the pasted notes, but stay after the notes there before them
- *   and before those after them, and out of any note (one before the notes to the start of the notes there, one after
- *   them to their end).
+ * - The clip's (`copied`) keep their distance to the pasted notes, but stay after the notes there before them and
+ *   before those after them, and out of any note (one before the notes to the start of the notes there, one after
+ *   them to their end). Each is stored where it lands, unless it has a `stored` switch to keep.
  */
 export function breaksAfterPaste(
   lines: readonly EditorLine[],
   drawn: ReadonlyMap<number, number>,
   pasted: readonly { start: number; duration: number }[],
-  copied: readonly number[],
+  copied: readonly PlacedBreak[],
   end: number,
+  /** Notes moved over from a removed singer: where they overlap the singer's own, those are one line. */
+  together = false,
 ): PasteBreak[] {
   const existing = lines.flatMap((line) => line.notes);
   const spans = occupied([...existing, ...pasted]);
@@ -104,6 +131,16 @@ export function breaksAfterPaste(
     if (toward) return span[toward];
     return time - span.start <= span.end - time ? span.start : span.end;
   };
+  /**
+   * Out of a stretch where pasted notes overlap the singer's own (a removed singer's, moved over), which has to be one
+   * line: a break inside it would leave lines that interleave.
+   */
+  const apart = (time: number) => {
+    const span = spanAt(spans, time);
+    const inside = (note: { start: number; duration: number }) =>
+      note.start < span!.end - EPSILON && note.start + note.duration > span!.start + EPSILON;
+    return together && span && existing.some(inside) && pasted.some(inside) ? outside(time) : time;
+  };
   const first = pasted[0]!.start;
   const last = Math.max(...pasted.map((note) => note.start + note.duration));
   const reach = Math.max(...existing.filter((note) => note.start < first - EPSILON).map((n) => n.start + n.duration));
@@ -113,27 +150,35 @@ export function breaksAfterPaste(
     const time = drawn.get(line.id)!;
     const kept = { switchStart: line.switchStart, switchEnd: line.switchEnd };
     if (line.switchStart === null) {
-      if (time <= first + EPSILON || time >= last - EPSILON) return { time, from: line, write: kept };
+      if (time <= first + EPSILON || time >= last - EPSILON) return { time: apart(time), from: line, write: kept };
       const ends = time - first <= last - time ? [first, last] : [last, first];
       const free = ends.find((edge) => !existing.some((note) => between(note.start, time, edge)));
-      return { time: free ?? time, from: line, write: kept };
+      return { time: apart(free ?? time), from: line, write: kept };
     }
     const moved = outside(time);
     return { time: moved, from: line, write: moved === time ? kept : { switchStart: moved, switchEnd: null } };
   });
-  const theirs = copied.map((time): PasteBreak => {
+  const starts = [...existing, ...pasted].map((note) => note.start).toSorted((a, b) => a - b);
+  const startsBetween = (a: number, b: number) => starts.some((start) => start >= a - EPSILON && start < b - EPSILON);
+  /** The switch a clip's break gets: its stored one while it stays put (its end only while no line starts first). */
+  const write = (at: number, { time, stored }: PlacedBreak): Switch => {
+    if (stored?.switchStart === null) return { switchStart: null, switchEnd: null };
+    if (!stored || Math.abs(at - time) > EPSILON) return { switchStart: at, switchEnd: null };
+    const keepsEnd = stored.switchEnd !== null && !startsBetween(at, stored.switchEnd);
+    return { switchStart: stored.switchStart, switchEnd: keepsEnd ? stored.switchEnd : null };
+  };
+  const theirs = copied.map((item): PasteBreak => {
+    const { time } = item;
     const at =
       time <= first + EPSILON
         ? outside(Math.min(first, Math.max(time, reach)), "start")
         : time >= last - EPSILON
           ? outside(Math.max(last, Math.min(time, next)), "end")
           : outside(time);
-    return { time: at, from: null, write: { switchStart: at, switchEnd: null } };
+    return { time: at, from: null, write: write(at, item) };
   });
 
   // Two breaks with no note starting between them are one.
-  const starts = [...existing, ...pasted].map((note) => note.start).toSorted((a, b) => a - b);
-  const startsBetween = (a: number, b: number) => starts.some((start) => start >= a - EPSILON && start < b - EPSILON);
   const result: PasteBreak[] = [];
   for (const item of [...own, ...theirs].toSorted((a, b) => a.time - b.time)) {
     const previous = result.at(-1);
@@ -161,13 +206,8 @@ function stretches(notes: readonly PasteNote[], breaks: readonly PasteBreak[]) {
 }
 
 /**
- * Pastes a clip's notes for the singer from `at` (on the grid), as one edit: the notes go to the line they start in,
- * between the breaks `breaksAfterPaste` works out. Each stretch keeps the line most of its notes were in, else gets a
- * new one; lines left without notes go, and only lines whose break changed are written. Notes past the song's end are
- * cut short there or left out. Returns the new notes' ids (none when nothing fits).
- *
- * New lines are made before their notes, and emptied ones deleted after theirs moved, so the edit applies (and undoes)
- * in order.
+ * Pastes a clip's notes for the singer from `at` (on the grid), as one edit (`insertNotes`). Notes past the song's end
+ * are cut short there or left out. Returns the new notes' ids (none when nothing fits).
  */
 export function pasteNotes(
   tx: EditRecorder,
@@ -175,8 +215,6 @@ export function pasteNotes(
   clip: Clip,
   target: { singerId: number; at: number; length: number },
 ): number[] {
-  const singer = chart.singers.find((item) => item.id === target.singerId);
-  if (!singer) return [];
   const step = gridStep(chart);
   const at = onGrid(chart, target.at);
   const end = gridFloor(chart, target.length);
@@ -188,12 +226,37 @@ export function pasteNotes(
     const stop = Math.min(end, Math.max(start + step, onGrid(chart, start + note.duration)));
     return [{ ...note, start, duration: stop - start }];
   });
-  if (pasted.length === 0) return [];
+  const breaks = clip.breaks.map((offset) => ({ time: onGrid(chart, at + offset) }));
+  return insertNotes(tx, chart, target.singerId, pasted, breaks, { end });
+}
 
+/**
+ * Puts notes in for the singer where they are (by start), with line breaks, as one edit: the notes go to the line they
+ * start in, between the breaks `breaksAfterPaste` works out. Each stretch keeps the line most of its notes were in,
+ * else gets a new one; lines left without notes go, and only lines whose break changed are written. Returns the new
+ * notes' ids, in the order given.
+ *
+ * New lines are made before their notes, and emptied ones deleted after theirs moved, so the edit applies (and undoes)
+ * in order.
+ */
+export function insertNotes(
+  tx: EditRecorder,
+  chart: EditorChart,
+  singerId: number,
+  pasted: readonly PlacedNote[],
+  copied: readonly PlacedBreak[],
+  options: {
+    /** The song's end: breaks after the notes stay before it. */
+    end: number;
+    /** Notes moved over from a removed singer: where they overlap the singer's own, those are one line. */
+    together?: boolean;
+  },
+): number[] {
+  const singer = chart.singers.find((item) => item.id === singerId);
+  if (!singer || pasted.length === 0) return [];
   const lines = singer.lines.filter((line) => line.notes.length > 0);
   const drawn = new Map(lineBreaks(chart).map((item) => [item.lineId, item.time]));
-  const copied = clip.breaks.map((offset) => onGrid(chart, at + offset));
-  const breaks = breaksAfterPaste(lines, drawn, pasted, copied, end);
+  const breaks = breaksAfterPaste(lines, drawn, pasted, copied, options.end, options.together);
   const notes: PasteNote[] = [
     ...lines.flatMap((line) =>
       line.notes.map((note) => ({
@@ -230,7 +293,7 @@ export function pasteNotes(
         continue;
       }
       const source = pasted[note.pasted]!;
-      created[note.pasted] = tx.createNote({
+      const id = tx.createNote({
         lineId,
         start: source.start,
         duration: source.duration,
@@ -238,6 +301,9 @@ export function pasteNotes(
         lyric: source.lyric,
         type: source.type,
       });
+      // A new note counts as changed by hand; one moved over keeps what it was.
+      if (source.edited === false) tx.updateNote(id, { edited: false });
+      created[note.pasted] = id;
     }
     // The break after it, as it is to be (the last line keeps what the singer's last line had; nothing changes when
     // its line is the same one).

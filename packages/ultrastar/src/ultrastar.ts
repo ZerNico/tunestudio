@@ -34,7 +34,70 @@ function integer(raw: string, label: string, line: number): number {
   return value;
 }
 
-/** Absolute UltraStar TXT only. Rejects relative timing, ambiguous P3 and unknown body records. */
+/**
+ * A P3 part (both singers) as copies in P1 and P2, each with its own lines and breaks, in place of the P3 notes. A
+ * P3 line that overlaps a line of P1 or P2 in time would interleave with it, so it is refused.
+ */
+function singBoth(notes: ChartNote[], lineBreaks: ChartLineBreak[]) {
+  const spans = new Map<string, { player: number; start: number; end: number }>();
+  for (const note of notes) {
+    const span = spans.get(note.lineId);
+    if (!span) spans.set(note.lineId, { player: note.player ?? 1, start: note.start, end: note.start + note.duration });
+    else {
+      span.start = Math.min(span.start, note.start);
+      span.end = Math.max(span.end, note.start + note.duration);
+    }
+  }
+  const both = [...spans].filter(([, span]) => span.player === 3);
+  for (const [, part] of both) {
+    const clash = [...spans.values()].find(
+      (span) => span.player !== 3 && span.start < part.end && part.start < span.end,
+    );
+    if (clash)
+      throw new UltraStarError(`A part for both singers (P3) overlaps the lines of P${clash.player}.`, {
+        code: "UNSUPPORTED_PLAYER",
+      });
+  }
+  for (const player of [1, 2]) {
+    const ids = new Map(both.map(([lineId]) => [lineId, createId("line")]));
+    for (const note of notes.filter((item) => item.player === 3))
+      notes.push({ ...note, id: createId("note"), player, lineId: ids.get(note.lineId)! });
+    for (const lineBreak of lineBreaks.filter((item) => ids.has(item.lineId)))
+      lineBreaks.push({ ...lineBreak, lineId: ids.get(lineBreak.lineId)! });
+  }
+  const shared = new Set(both.map(([lineId]) => lineId));
+  notes.splice(0, notes.length, ...notes.filter((note) => note.player !== 3));
+  // A break written in one singer's block can land past the P3 part now between its lines: such a line goes back
+  // to the default break.
+  const lines = new Map<string, { player: number; start: number; end: number }>();
+  for (const note of notes) {
+    const line = lines.get(note.lineId);
+    if (!line) lines.set(note.lineId, { player: note.player ?? 1, start: note.start, end: note.start + note.duration });
+    else {
+      line.start = Math.min(line.start, note.start);
+      line.end = Math.max(line.end, note.start + note.duration);
+    }
+  }
+  const nextStart = new Map<string, number>();
+  for (const player of [1, 2]) {
+    const sung = [...lines].filter(([, line]) => line.player === player).toSorted(([, a], [, b]) => a.start - b.start);
+    sung.forEach(([lineId], index) => {
+      if (index + 1 < sung.length) nextStart.set(lineId, sung[index + 1]![1].start);
+    });
+  }
+  const fits = (lineBreak: ChartLineBreak) => {
+    const line = lines.get(lineBreak.lineId);
+    const next = nextStart.get(lineBreak.lineId);
+    return !line || next === undefined || (lineBreak.start >= line.end && (lineBreak.end ?? lineBreak.start) <= next);
+  };
+  lineBreaks.splice(
+    0,
+    lineBreaks.length,
+    ...lineBreaks.filter((lineBreak) => !shared.has(lineBreak.lineId) && fits(lineBreak)),
+  );
+}
+
+/** Absolute UltraStar TXT only. Rejects relative timing and unknown body records; P3 becomes copies in P1 and P2. */
 export function parseUltraStar(text: string): ParseResult {
   if (typeof text !== "string") throw new UltraStarError("Chart input must be text.");
   const metadata: Record<string, string> = {};
@@ -108,9 +171,9 @@ export function parseUltraStar(text: string): ParseResult {
       continue;
     }
     if (line.startsWith("P")) {
-      const match = /^P[ \t]*([12])[ \t]*$/.exec(line);
+      const match = /^P[ \t]*([123])[ \t]*$/.exec(line);
       if (!match)
-        throw new UltraStarError("Only two singers (P1 and P2) are supported.", {
+        throw new UltraStarError("Only P1, P2 and P3 (both singers) are supported.", {
           line: lineNumber,
           code: "UNSUPPORTED_PLAYER",
         });
@@ -120,6 +183,13 @@ export function parseUltraStar(text: string): ParseResult {
       }
       explicitPlayers = true;
       player = Number(match[1]);
+      // No line goes on across a part for both (P3): starting one ends every singer's line, a singer's ends P3's.
+      for (const [number, state] of tracks) {
+        if (state.hasNotes && (player === 3 ? number !== 3 : number === 3)) {
+          state.lineId = createId("line");
+          state.hasNotes = false;
+        }
+      }
       track();
       continue;
     }
@@ -149,7 +219,7 @@ export function parseUltraStar(text: string): ParseResult {
     const match = /^([:*FRG])[ \t]+([+-]?\d+)[ \t]+([+-]?\d+)[ \t]+([+-]?\d+)(?:[ \t](.*))?$/s.exec(line);
     if (!match)
       throw new UltraStarError(
-        `Unsupported or malformed record ${JSON.stringify(line.slice(0, 70))}. Expected :, *, F, R, G, -, P1/P2 or E.`,
+        `Unsupported or malformed record ${JSON.stringify(line.slice(0, 70))}. Expected :, *, F, R, G, -, P1/P2/P3 or E.`,
         { line: lineNumber, code: "UNSUPPORTED_RECORD" },
       );
     const start = integer(match[2]!, "Note start", lineNumber);
@@ -177,6 +247,10 @@ export function parseUltraStar(text: string): ParseResult {
     state.hasNotes = true;
     state.lastStart = start;
   }
+  if (tracks.has(3)) {
+    singBoth(notes, lineBreaks);
+    warnings.push("Notes for both singers (P3) were copied to P1 and P2.");
+  }
   const document: ChartDocument = {
     version: 1,
     id: documentId,
@@ -192,11 +266,24 @@ export function parseUltraStar(text: string): ParseResult {
     warnings.push("Some characters are damaged (�). The file may have been saved in another encoding.");
   if (explicitPlayers) {
     for (const number of tracks.keys()) {
-      if (!notes.some((note) => note.player === number)) warnings.push(`Singer ${number} has no notes.`);
+      if (number !== 3 && !notes.some((note) => note.player === number))
+        warnings.push(`Singer ${number} has no notes.`);
     }
   }
   warnings.push(...diagnostics.filter((item) => item.severity === "warning").map((item) => item.message));
   return { document, warnings };
+}
+
+/**
+ * The beat a line break goes on when the chart doesn't say (`defaultSwitch`), between a line ending at beat `lastEnd`
+ * and the next starting at `nextStart`: what export writes, and what import recognises as the default.
+ */
+export function defaultBreakTick(lastEnd: number, nextStart: number, grid: ChartGrid): number {
+  const gapEnd = Math.max(lastEnd, nextStart);
+  const time = defaultSwitch(ticksToSeconds(lastEnd, grid), ticksToSeconds(gapEnd, grid), tickDuration(grid.bpm));
+  const tick = Math.round(secondsToTicks(time, grid));
+  if (!Number.isSafeInteger(tick)) throw new UltraStarError("A line break is too far into the song.");
+  return Math.min(Math.max(tick, lastEnd), gapEnd);
 }
 
 export interface SerializeResult {
@@ -248,9 +335,7 @@ export function serializeUltraStarWithDiagnostics(document: ChartDocument): Seri
         output.push(`- ${start}${end === undefined ? "" : ` ${end}`}`);
       } else if (nextStart !== undefined) {
         // The default the editor draws, so the file reads the same in every game and editor.
-        const gapEnd = Math.max(lastEnd, nextStart);
-        const time = defaultSwitch(ticksToSeconds(lastEnd, grid), ticksToSeconds(gapEnd, grid), tickDuration(grid.bpm));
-        output.push(`- ${Math.min(Math.max(breakTick(time), lastEnd), gapEnd)}`);
+        output.push(`- ${defaultBreakTick(lastEnd, nextStart, grid)}`);
       }
     }
   }

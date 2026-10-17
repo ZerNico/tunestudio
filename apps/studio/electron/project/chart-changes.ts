@@ -86,11 +86,28 @@ function songChange(db: Queryable, before: SongFields, after: SongFields) {
   });
 }
 
-function singerChange(db: Queryable, id: number, before: SingerFields, after: SingerFields) {
+function singerChange(db: Queryable, id: number, before: SingerFields | null, after: SingerFields | null) {
   return Effect.gen(function* () {
     const [row] = yield* db.select().from(singers).where(eq(singers.id, id)).limit(1).pipe(Effect.orDie);
-    if (!row || row.name !== before.name) return yield* outOfStep();
-    yield* db.update(singers).set({ name: after.name }).where(eq(singers.id, id)).pipe(orDiskFull);
+    if (before ? !row || !matches(row, before) : row) return yield* outOfStep();
+    if (!after) {
+      // A singer is deleted after its lines: deleting it would take them (and their notes) along unseen.
+      const [left] = yield* db
+        .select({ id: lines.id })
+        .from(lines)
+        .where(eq(lines.singerId, id))
+        .limit(1)
+        .pipe(Effect.orDie);
+      if (left) return yield* outOfStep();
+      yield* db.delete(singers).where(eq(singers.id, id)).pipe(orDiskFull);
+    } else if (!before) {
+      yield* db
+        .insert(singers)
+        .values({ id, ...after })
+        .pipe(orDiskFull);
+    } else {
+      yield* db.update(singers).set(after).where(eq(singers.id, id)).pipe(orDiskFull);
+    }
   });
 }
 

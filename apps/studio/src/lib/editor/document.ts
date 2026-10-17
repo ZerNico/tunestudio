@@ -8,7 +8,7 @@
  */
 import { createMemo, createSignal, createStore, flush } from "solid-js";
 
-import type { ChartChange, LineFields, NoteFields, SongFields } from "~/lib/native/contract";
+import type { ChartChange, LineFields, NoteFields, SingerFields, SongFields } from "~/lib/native/contract";
 import type { EditorChart, EditorLine, EditorSong } from "~/lib/native/types";
 
 import { createHistory, invert } from "./history";
@@ -16,7 +16,7 @@ import { createHistory, invert } from "./history";
 /** The chart as rows, the way the project stores it. */
 export interface ChartRows {
   song: { bpm: number; gap: number } & EditorSong;
-  singers: { id: number; index: number; name: string | null }[];
+  singers: (SingerFields & { id: number })[];
   lines: Record<number, LineFields & { id: number }>;
   notes: Record<number, NoteFields & { id: number }>;
 }
@@ -58,13 +58,19 @@ export function chartFromRows(rows: ChartRows): EditorChart {
     bpm,
     gap,
     song,
-    singers: rows.singers.map((singer) => ({
-      ...singer,
-      lines: lines
-        .filter(({ line }) => line.singerId === singer.id)
-        .toSorted((a, b) => (a.notes[0]?.start ?? Infinity) - (b.notes[0]?.start ?? Infinity) || a.line.id - b.line.id)
-        .map(({ line, notes }) => ({ id: line.id, switchStart: line.switchStart, switchEnd: line.switchEnd, notes })),
-    })),
+    singers: rows.singers
+      .toSorted((a, b) => a.index - b.index)
+      .map((singer) => ({
+        id: singer.id,
+        index: singer.index,
+        name: singer.name,
+        lines: lines
+          .filter(({ line }) => line.singerId === singer.id)
+          .toSorted(
+            (a, b) => (a.notes[0]?.start ?? Infinity) - (b.notes[0]?.start ?? Infinity) || a.line.id - b.line.id,
+          )
+          .map(({ line, notes }) => ({ id: line.id, switchStart: line.switchStart, switchEnd: line.switchEnd, notes })),
+      })),
   };
 }
 
@@ -73,8 +79,11 @@ export function applyToRows(rows: ChartRows, changes: readonly ChartChange[]) {
   for (const change of changes) {
     if (change.table === "song") Object.assign(rows.song, change.after);
     else if (change.table === "singer") {
-      const singer = rows.singers.find((item) => item.id === change.id);
-      if (singer) singer.name = change.after.name;
+      const at = rows.singers.findIndex((item) => item.id === change.id);
+      if (!change.after) {
+        if (at >= 0) rows.singers.splice(at, 1);
+      } else if (at >= 0) Object.assign(rows.singers[at]!, change.after);
+      else rows.singers.push({ ...change.after, id: change.id });
     } else if (change.table === "note") {
       if (change.after) rows.notes[change.id] = { ...change.after, id: change.id };
       else delete rows.notes[change.id];
@@ -97,12 +106,18 @@ export interface EditRecorder {
   /** Deletes a line; its notes have to be deleted or moved first. */
   deleteLine(id: number): void;
   updateSong(patch: SongFields): void;
-  /** A duet singer's name (null: none). */
-  updateSinger(id: number, name: string | null): void;
+  singer(id: number): (SingerFields & { id: number }) | undefined;
+  /** A new singer (P1 or P2, whichever `index` says is free); returns its id. Create it before its lines. */
+  createSinger(fields: SingerFields): number;
+  /** A singer's name (null: none) or index (P2 becoming P1 when P1 goes). */
+  updateSinger(id: number, patch: Partial<SingerFields>): void;
+  /** Deletes a singer; its lines have to be deleted first. */
+  deleteSinger(id: number): void;
 }
 
 const noteFields = ({ id: _id, ...fields }: NoteFields & { id: number }): NoteFields => fields;
 const lineFields = ({ id: _id, ...fields }: LineFields & { id: number }): LineFields => fields;
+const singerFields = ({ id: _id, ...fields }: SingerFields & { id: number }): SingerFields => fields;
 
 /** Whether two rows have the same fields with the same values, in whatever key order. */
 function same(a: object, b: object): boolean {
@@ -172,11 +187,14 @@ export function createChartDocument<Selection>(options: {
     if (failed) return false;
     const notes = new Map<number, (NoteFields & { id: number }) | null>();
     const lines = new Map<number, (LineFields & { id: number }) | null>();
+    const singers = new Map<number, (SingerFields & { id: number }) | null>();
     const changes: ChartChange[] = [];
     let songBefore: SongFields | null = null;
     let songAfter: SongFields = {};
     const currentNote = (id: number) => (notes.has(id) ? (notes.get(id) ?? undefined) : rows.notes[id]);
     const currentLine = (id: number) => (lines.has(id) ? (lines.get(id) ?? undefined) : rows.lines[id]);
+    const currentSinger = (id: number) =>
+      singers.has(id) ? (singers.get(id) ?? undefined) : rows.singers.find((item) => item.id === id);
     const recorder: EditRecorder = {
       note: (id) => {
         const row = currentNote(id);
@@ -235,12 +253,29 @@ export function createChartDocument<Selection>(options: {
         }
         songAfter = { ...songAfter, ...patch };
       },
-      updateSinger: (id, name) => {
-        const done = changes.findLast((change) => change.table === "singer" && change.id === id);
-        const current = done?.table === "singer" ? done.after.name : rows.singers.find((item) => item.id === id)?.name;
-        if (current === undefined) throw new Error(`No singer ${id}`);
-        if (current === name) return;
-        changes.push({ table: "singer", id, before: { name: current }, after: { name } });
+      singer: (id) => {
+        const row = currentSinger(id);
+        return row && { ...row };
+      },
+      createSinger: (fields) => {
+        const id = nextId++;
+        changes.push({ table: "singer", id, before: null, after: { ...fields } });
+        singers.set(id, { ...fields, id });
+        return id;
+      },
+      updateSinger: (id, patch) => {
+        const row = currentSinger(id);
+        if (!row) throw new Error(`No singer ${id}`);
+        const next = { ...singerFields(row), ...patch, id };
+        if (same(next, row)) return;
+        changes.push({ table: "singer", id, before: singerFields(row), after: singerFields(next) });
+        singers.set(id, next);
+      },
+      deleteSinger: (id) => {
+        const row = currentSinger(id);
+        if (!row) return;
+        changes.push({ table: "singer", id, before: singerFields(row), after: null });
+        singers.set(id, null);
       },
     };
     const before = options.selection();

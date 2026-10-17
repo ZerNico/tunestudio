@@ -15,7 +15,7 @@ const chart = () => ({
   singers: [
     {
       id: 17,
-      index: 1,
+      index: 1 as const,
       name: null,
       lines: [
         {
@@ -29,7 +29,7 @@ const chart = () => ({
     },
     {
       id: 18,
-      index: 2,
+      index: 2 as const,
       name: "Other",
       lines: [{ id: 12, switchStart: null, switchEnd: null, notes: [testNote(104, 2.123, "untouched")] }],
     },
