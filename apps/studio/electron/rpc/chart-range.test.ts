@@ -19,6 +19,40 @@ import { Tools } from "../tools/tools";
 import { nativeHandlers } from "./procedures";
 import { connectClient } from "./test-client";
 
+/**
+ * Each range's native work (`chartRange`'s promise, the real one), and who waits on it: a retry waits on the stopped
+ * run's work by calling its `then`, which is how a test knows the retry got there.
+ */
+const work = vi.hoisted(() => ({
+  started: [] as Promise<unknown>[],
+  onThen: undefined as ((promise: Promise<unknown>) => void) | undefined,
+}));
+vi.mock("../charting/range-chart", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../charting/range-chart")>();
+  class Watched<T> extends Promise<T> {
+    static override get [Symbol.species]() {
+      return Promise;
+    }
+    // oxlint-disable-next-line unicorn/no-thenable -- a Promise subclass that sees who waits on it, on purpose
+    override then<A = T, B = never>(
+      fulfilled?: ((value: T) => A | PromiseLike<A>) | null,
+      rejected?: ((reason: unknown) => B | PromiseLike<B>) | null,
+    ): Promise<A | B> {
+      work.onThen?.(this);
+      return super.then(fulfilled, rejected);
+    }
+  }
+  return {
+    ...actual,
+    chartRange: (...args: Parameters<typeof actual.chartRange>) => {
+      const real = actual.chartRange(...args);
+      const watched = new Watched<Awaited<typeof real>>((resolve, reject) => void real.then(resolve, reject));
+      work.started.push(watched);
+      return watched;
+    },
+  };
+});
+
 let cleanups: (() => void | Promise<void>)[] = [];
 afterEach(async () => {
   for (const cleanup of cleanups.toReversed()) await cleanup();
@@ -279,10 +313,18 @@ describe("project.chartRange", () => {
     await started;
     controller.abort();
     expect(await first).toMatchObject({ name: "AbortError" });
+    const stopped = work.started.at(-1)!;
+    const waiting = new Promise<void>((resolve) => {
+      work.onThen = (promise) => {
+        if (promise === stopped) resolve();
+      };
+    });
     retrying = true;
     const retry = test.run();
-    // Without the wait the retry reaches the models while the first call is still held; with it, nothing happens.
-    await Promise.race([retryStarted, new Promise((resolve) => setTimeout(resolve, 1000))]);
+    // Without the wait the retry reaches the models while the first call is still held; with it, it waits on that
+    // call's work instead, and gets no further.
+    await Promise.race([waiting, retryStarted]);
+    work.onThen = undefined;
     expect(overlapped).toBe(false);
     release();
     await expect(retry).resolves.toHaveProperty("result.lines");

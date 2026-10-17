@@ -258,7 +258,8 @@ resources/icons/          # App icon (icon.svg is the source of icon.png)
 - Renderer edits hot-update through Vite with Solid's refresh (built into the Solid Vite plugin, dev only): a
   component edit keeps the page and other components' state; CSS and token edits apply in place
 - `electron/` is bundled by esbuild in watch mode. If the main bundle changed, Electron restarts (the window's
-  position and size are saved on close and restored); if only the preload changed, the windows reload instead
+  position and size are saved on close and restored; a rebuild while the old app is still quitting waits for that
+  restart, which loads the newest bundle); if only the preload changed, the windows reload instead
 - If Vite doesn't answer within 30 s, or exits (e.g. port 1430 taken), the loop stops with a message and exit
   code 1. Closing the app or Ctrl+C stops Vite, esbuild and Electron
 - `bun run dev -- -- --remote-debugging-port=9333` (from the root) passes flags on to Electron
@@ -284,6 +285,13 @@ resources/icons/          # App icon (icon.svg is the source of icon.png)
 - E2e and `bun run shots` launch the app with `TUNESTUDIO_BACKGROUND=1`: the window is never shown and never takes
   focus (no Dock icon), pages still render for screenshots. `TUNESTUDIO_E2E_SHOW=1` shows it when debugging. Take
   screenshots only when a visual check is actually needed
+- E2e never touches the system clipboard: `stubDesktop` makes main's `clipboard` a string in main (`clipboardText`
+  reads it) and gives each page's copy/cut/paste events a DataTransfer of their own, whose text goes to main through
+  the preload. Wait for what main did (`expect.poll` on main-process state) rather than sleeping
+- Turbo runs tasks in strict env mode: only listed variables reach them. `apps/studio/turbo.json` passes `TUNESTUDIO_*`
+  to `test`, `test:e2e` and `dev` (so `TUNESTUDIO_CHART_GOLDENS=… bun run test` from the root runs the golden tests);
+  `GGML_NATIVE` is part of the build's hash, and the build's cached outputs include the addon and its GPU libraries. A
+  new variable a task reads goes there too
 
 ## base-ui-solid
 
@@ -301,6 +309,8 @@ Repros of suspected bugs live in `.repro/` (gitignored): run `bunx vite`, open
 - Development data lives in `Tune Studio Dev` (userData/logs), releases in `Tune Studio`; `TUNESTUDIO_DATA_DIR`
   moves it (tests use a temp dir, so they never collide with a running copy)
 - Electron downloads its binary on first `require("electron")`, not on install
+- `@tanstack/router-plugin` and `@tanstack/router-cli` are pinned exact and share one `router-generator`: bump them
+  together. `@types/node` follows the Node bundled with Electron (Electron 44: Node 24), not the newest
 
 ## Pre-PR Checks
 

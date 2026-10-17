@@ -123,13 +123,45 @@ export function makePlayable(song: SongFixture) {
 }
 
 /**
- * Replaces Electron's dialogs and `shell.showItemInFolder` in the main process: dialogs answer
- * from a queue (`answerDialogs`), revealed paths are recorded (`revealedPaths`). No native
- * window ever opens.
+ * Runs in each page (main world): the page's own copy, cut and paste events (the keys' way on Windows and Linux, and
+ * in tests everywhere, since Playwright's keys reach the page and not the Edit menu) would go to the system clipboard
+ * through Chromium. The trusted event is stopped before the page's listeners see it and the same event is dispatched
+ * again with a DataTransfer of its own: what the page copies goes to main's (stubbed) clipboard through the preload,
+ * as the Edit menu's copy does, and a paste gets what the keys copied last. Text fields' own copy and paste still
+ * reach Chromium (the tests don't use them).
+ */
+const PAGE_CLIPBOARD = `(() => {
+  if (window.__e2eClipboard) return;
+  const state = (window.__e2eClipboard = { text: "" });
+  for (const type of ["copy", "cut", "paste"]) {
+    window.addEventListener(type, (event) => {
+      if (!event.isTrusted) return;
+      event.stopImmediatePropagation();
+      const data = new DataTransfer();
+      if (type === "paste") data.setData("text/plain", state.text);
+      const again = new ClipboardEvent(type, { clipboardData: data, bubbles: true, cancelable: true, composed: true });
+      (event.target ?? document).dispatchEvent(again);
+      if (type !== "paste" && again.defaultPrevented) {
+        state.text = data.getData("text/plain");
+        window.tunestudio?.clipboard?.({ write: state.text });
+      }
+    }, true);
+  }
+})()`;
+
+/**
+ * Replaces Electron's dialogs, clipboard and `shell.showItemInFolder` in the main process: dialogs answer
+ * from a queue (`answerDialogs`), revealed paths are recorded (`revealedPaths`), and the clipboard is a string in main
+ * (`clipboardText`), with every page's copy and paste events kept off the system clipboard too (`PAGE_CLIPBOARD`). No
+ * native window ever opens and the system clipboard is never touched.
  */
 export async function stubDesktop(app: ElectronApplication) {
-  await app.evaluate(({ dialog, shell }) => {
-    const state = Object.assign(globalThis, { answers: [] as (string | null)[], revealed: [] as string[] });
+  await app.evaluate(async ({ app: electronApp, clipboard, dialog, shell, webContents }, pageClipboard) => {
+    const state = Object.assign(globalThis, {
+      answers: [] as (string | null)[],
+      revealed: [] as string[],
+      clipboardText: "",
+    });
     const next = () => state.answers.shift() ?? null;
     dialog.showOpenDialog = (async () => {
       const answer = next();
@@ -140,7 +172,21 @@ export async function stubDesktop(app: ElectronApplication) {
       return { canceled: answer === null, filePath: answer ?? "" };
     }) as typeof dialog.showSaveDialog;
     shell.showItemInFolder = (target: string) => void state.revealed.push(target);
-  });
+    clipboard.readText = async () => state.clipboardText;
+    clipboard.writeText = async (text: string) => {
+      state.clipboardText = text;
+    };
+    // Pages loaded from now on (new windows, reloads), and the ones already there.
+    electronApp.on("web-contents-created", (_event, contents) => {
+      contents.on("dom-ready", () => void contents.executeJavaScript(pageClipboard));
+    });
+    await Promise.all(webContents.getAllWebContents().map((contents) => contents.executeJavaScript(pageClipboard)));
+  }, PAGE_CLIPBOARD);
+}
+
+/** The text on the (stubbed) clipboard, as main reads it. */
+export function clipboardText(app: ElectronApplication): Promise<string> {
+  return app.evaluate(({ clipboard }) => clipboard.readText());
 }
 
 /** Queues the paths the next dialogs return (`null` cancels). */

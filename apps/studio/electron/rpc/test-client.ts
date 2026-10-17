@@ -6,7 +6,7 @@ import { MessageChannel, type MessagePort } from "node:worker_threads";
 
 import type { Layer, ManagedRuntime } from "effect";
 
-import { makeNative } from "../../src/lib/native/client";
+import { type ClientPort, makeNative } from "../../src/lib/native/client";
 import type { AppLog } from "../services/app-log";
 import type { RpcPort } from "./port-protocol";
 import type { Callers, nativeHandlers } from "./procedures";
@@ -31,7 +31,8 @@ export async function connectClient<R>(
     const { port1, port2 } = new MessageChannel();
     serverEnd = port2;
     accept(fromNodePort(port2), null);
-    return port1;
+    // Node 24's types give the listener a plain Event; its message events carry `data` as the renderer's do.
+    return port1 as ClientPort;
   });
   return { native, closeServerEnd: () => serverEnd?.close() };
 }

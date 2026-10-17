@@ -4,22 +4,18 @@ import path from "node:path";
 import { expect, test } from "@playwright/test";
 
 import { launchStudio, type Studio } from "./app.ts";
-import { answerDialogs, makePlayable, type SongFixture, songFixture, stubDesktop } from "./fixtures.ts";
+import { answerDialogs, clipboardText, makePlayable, type SongFixture, songFixture, stubDesktop } from "./fixtures.ts";
 
 let studio: Studio;
 let song: SongFixture;
-/** The system clipboard's text from before: copying in the test writes the real one. */
-let saved = "";
 
 test.beforeEach(async () => {
   song = songFixture();
   studio = await launchStudio({ width: 1280, height: 820 });
   await stubDesktop(studio.app);
-  saved = await studio.app.evaluate(({ clipboard }) => clipboard.readText());
 });
 
 test.afterEach(async () => {
-  await studio.app.evaluate(({ clipboard }, text) => clipboard.writeText(text), saved);
   await studio.close();
   song.cleanup();
 });
@@ -67,8 +63,8 @@ test("copies and pastes notes with the keys and the Edit menu, undone in one ste
   await page.keyboard.press("ControlOrMeta+v");
   await expect(notes).toHaveCount(7);
   await expect(page.getByTestId("undo")).toHaveAttribute("aria-label", "Undo Paste 2 notes");
-  // The lyrics went on the system clipboard as text.
-  expect(await studio.app.evaluate(({ clipboard }) => clipboard.readText())).toBe("Hello");
+  // The lyrics went to the clipboard as text (main's, stubbed by `stubDesktop`).
+  await expect.poll(() => clipboardText(studio.app)).toBe("Hello");
   await page.getByTestId("undo").click();
   await expect(notes).toHaveCount(5);
 
@@ -76,6 +72,8 @@ test("copies and pastes notes with the keys and the Edit menu, undone in one ste
   if (process.platform === "darwin") {
     await notes.nth(0).click();
     await menuItem("Copy");
+    // The page answered with the lyrics for main's clipboard (`CLIPBOARD_CHANNEL`).
+    await expect.poll(() => clipboardText(studio.app)).toBe("Hel");
     await seekTo(0.9);
     await menuItem("Paste");
     await expect(notes).toHaveCount(6);
@@ -187,7 +185,8 @@ test("the note menu acts on the selection, pastes on empty space, and auto pitch
   await notes.nth(0).click({ button: "right" });
   await expect(menu.getByRole("menuitem", { name: /Merge/ })).toHaveAttribute("aria-disabled", "true");
   await menu.getByText("Copy").click();
-  expect(await studio.app.evaluate(({ clipboard }) => clipboard.readText())).toBe("Hel");
+  // Through the preload to main's clipboard.
+  await expect.poll(() => clipboardText(studio.app)).toBe("Hel");
 
   // On empty space: Paste (at the playhead, through main for the clipboard's text).
   await seekTo(0.8);
@@ -689,21 +688,23 @@ test("Tab stays inside a dialog, going round from the last control to the first"
   await page.getByTestId("open-song-details").click();
   const dialog = page.getByTestId("song-details");
   await expect(dialog).toBeVisible();
-  const focused = () =>
-    page.evaluate(() => {
+  // Where focus lands once it settles: a focus guard hands it on a frame later.
+  const focused = async () => {
+    const guard = () => page.evaluate(() => document.activeElement?.hasAttribute("data-base-ui-focus-guard") ?? false);
+    await expect.poll(guard).toBe(false);
+    return page.evaluate(() => {
       const element = document.activeElement as HTMLElement | null;
       return {
         inDialog: Boolean(element?.closest("[data-testid=song-details]")),
         label: element?.getAttribute("aria-label") ?? element?.dataset.testid ?? "",
       };
     });
-  // Tab goes round: from the close button through every control and back to it, never out of the dialog (the focus
-  // guard at the end hands focus on a frame later).
+  };
+  // Tab goes round: from the close button through every control and back to it, never out of the dialog.
   await dialog.getByRole("button", { name: "Close dialog" }).focus();
   const seen: string[] = [];
   for (let i = 0; i < 80; i++) {
     await page.keyboard.press("Tab");
-    await page.waitForTimeout(40);
     const now = await focused();
     expect(now.inDialog).toBe(true);
     seen.push(now.label);
@@ -713,6 +714,5 @@ test("Tab stays inside a dialog, going round from the last control to the first"
   expect(seen.length).toBeGreaterThan(10);
   // Back the other way, past the first control.
   await page.keyboard.press("Shift+Tab");
-  await page.waitForTimeout(40);
   expect((await focused()).inDialog).toBe(true);
 });
