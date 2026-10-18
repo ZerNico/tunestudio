@@ -6,6 +6,7 @@ import { NativeRpcs } from "../../src/lib/native/contract";
 import { appHandlers } from "./handlers/app";
 import { dialogHandlers } from "./handlers/dialogs";
 import { modelHandlers, toolHandlers } from "./handlers/downloads";
+import { gameHandlers, tryHandlers } from "./handlers/games";
 import { audioHandlers, draftHandlers, youtubeHandlers } from "./handlers/new-project";
 import { projectHandlers } from "./handlers/project";
 import { songHandlers } from "./handlers/song";
@@ -17,6 +18,8 @@ export const nativeHandlers = NativeRpcs.toLayer({
   ...dialogHandlers,
   ...songHandlers,
   ...projectHandlers,
+  ...tryHandlers,
+  ...gameHandlers,
   ...youtubeHandlers,
   ...audioHandlers,
   ...draftHandlers,

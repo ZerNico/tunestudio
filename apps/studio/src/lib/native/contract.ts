@@ -12,6 +12,8 @@ import {
   EditorChart,
   ExportResult,
   FoundLyrics,
+  GameName,
+  GamesStatus,
   HeardLyrics,
   Progress,
   MadeChart,
@@ -23,6 +25,7 @@ import {
   RangeChart,
   SongInspection,
   SungPitch,
+  TriedInGame,
   Waveform,
   ToolName,
   ToolProgress,
@@ -205,6 +208,8 @@ export const DraftProjectInput = Schema.Struct({
 export type DraftProjectInput = typeof DraftProjectInput.Type;
 
 export const ToolInput = Schema.Struct({ tool: ToolName });
+
+export const GameInput = Schema.Struct({ game: GameName });
 
 export const ModelFeatureInput = Schema.Struct({ feature: Schema.Literals(MODEL_FEATURES) });
 
@@ -390,6 +395,11 @@ export class NativeRpcs extends RpcGroup.make(
   withProgress("project.chartRange", ChartRangeInput, Progress, RangeChart),
   /** Writes the project as an UltraStar song folder. */
   call("project.exportSong", ExportInput, ExportResult),
+  /**
+   * Exports the song into Tune Studio's own folder (replacing the last try) and starts the game the settings name with
+   * it. Fails with `GameNotFound` when that game isn't chosen and wasn't found.
+   */
+  call("project.tryInGame", ProjectInput, TriedInGame),
   /** Writes the chart's text for USDB (`usdb.ts`); returns what changed on the way. */
   call("project.exportUsdb", UsdbExportInput, Schema.Struct({ warnings: Schema.Array(Schema.String) })),
   /** Replaces (or removes) the cover or background; returns the project's overview with its media as they are now. */
@@ -443,6 +453,15 @@ export class NativeRpcs extends RpcGroup.make(
   query("settings.get", Settings),
   /** Saves all settings and returns them as stored. */
   call("settings.set", Settings, Settings),
+
+  /** The games "Try in game" can start: the app chosen for each, and the one it would start. */
+  query("games.status", GamesStatus),
+  /** Asks for a game's app (a `.app` on macOS, else its program), checks it can be started and keeps it. */
+  call("games.choose", GameInput, GamesStatus),
+  /** Forgets the app chosen for a game (it is looked for where it is usually installed again). */
+  call("games.clear", GameInput, GamesStatus),
+  /** Which game "Try in game" starts. */
+  call("games.use", GameInput, GamesStatus),
 
   /** What is installed of yt-dlp, QuickJS and FFmpeg. */
   query("tools.status", Schema.Array(ToolStatus)),

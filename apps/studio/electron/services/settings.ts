@@ -9,12 +9,17 @@ interface SettingsShape {
   /** The current settings; defaults for anything not set yet. */
   readonly get: Effect.Effect<Settings>;
   /**
-   * Replaces the settings the settings screen shows and returns them as stored. `newProject` is main's own (see
-   * `remember`): the screen's copy of it may be old, so it is kept as stored.
+   * Replaces the settings the settings screen shows and returns them as stored. `newProject` and `games` are main's
+   * own (see `remember` and `setGames`): the screen's copy of them may be old, so they are kept as stored.
    */
   readonly set: (settings: Settings) => Effect.Effect<Settings, FileError>;
   /** Changes what is remembered between new projects. */
   readonly remember: (change: Partial<Settings["newProject"]>) => Effect.Effect<Settings, FileError>;
+  /** Changes the game "Try in game" uses, or the app chosen for one (checked by the caller). */
+  readonly setGames: (change: {
+    tryWith?: Settings["games"]["tryWith"];
+    paths?: Partial<Settings["games"]["paths"]>;
+  }) => Effect.Effect<Settings, FileError>;
 }
 
 /** The app settings (`src/lib/settings.ts`), stored in the app's data directory. */
@@ -57,7 +62,8 @@ export function settingsLayer(file: string) {
         set: (settings) =>
           lock.withPermits(1)(
             Effect.gen(function* () {
-              const cleaned = { ...settingsFrom(settings), newProject: (yield* read).newProject };
+              const stored = yield* read;
+              const cleaned = { ...settingsFrom(settings), newProject: stored.newProject, games: stored.games };
               yield* write(cleaned);
               return cleaned;
             }),
@@ -67,6 +73,21 @@ export function settingsLayer(file: string) {
             Effect.gen(function* () {
               const stored = yield* read;
               const cleaned = settingsFrom({ ...stored, newProject: { ...stored.newProject, ...change } });
+              yield* write(cleaned);
+              return cleaned;
+            }),
+          ),
+        setGames: (change) =>
+          lock.withPermits(1)(
+            Effect.gen(function* () {
+              const stored = yield* read;
+              const cleaned = settingsFrom({
+                ...stored,
+                games: {
+                  tryWith: change.tryWith ?? stored.games.tryWith,
+                  paths: { ...stored.games.paths, ...change.paths },
+                },
+              });
               yield* write(cleaned);
               return cleaned;
             }),

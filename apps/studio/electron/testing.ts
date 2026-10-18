@@ -10,6 +10,7 @@ import { crc32, deflateRawSync } from "node:zlib";
 
 import { Effect, Layer, ManagedRuntime } from "effect";
 
+import { GameLauncher, type LaunchOutcome } from "./games/launcher";
 import { MODELS, Models } from "./models/models";
 import { Native, type NativeAddon } from "./native/native";
 import { AppLog } from "./services/app-log";
@@ -184,6 +185,7 @@ export function recordingDesktop(musicFolder: string) {
     chooseTextFile: answer,
     chooseMediaFile: answer,
     chooseImage: answer,
+    chooseGame: answer,
     country: "US",
     reveal: (target) => Effect.sync(() => void recorded.revealed.push(target)),
     thumbnail: (image) => Effect.succeed(`data:image/jpeg;base64,${Buffer.from(image).toString("base64")}`),
@@ -193,8 +195,31 @@ export function recordingDesktop(musicFolder: string) {
 }
 
 /** A runtime like the app's, in `dir`: real projects, recents and files, recorded desktop and log, no internet. */
-export function testRuntime(dir: string, overrides: Pick<StudioServicesOptions, "native" | "models" | "tools"> = {}) {
+/** What a game was started with, and how the next start goes (`running` unless a test says otherwise). */
+export interface Launched {
+  starts: { program: string; args: readonly string[]; env: Record<string, string> }[];
+  outcome: LaunchOutcome;
+}
+
+/** A launcher that records starts instead of starting anything. */
+export function recordingLauncher() {
+  const launched: Launched = { starts: [], outcome: { kind: "running" } };
+  const layer = Layer.succeed(GameLauncher, {
+    start: (program, args, env) =>
+      Effect.sync(() => {
+        launched.starts.push({ program, args, env });
+        return launched.outcome;
+      }),
+  });
+  return { launched, layer };
+}
+
+export function testRuntime(
+  dir: string,
+  overrides: Pick<StudioServicesOptions, "native" | "models" | "tools" | "gamePlatform"> = {},
+) {
   const { recorded, layer } = recordingDesktop(path.join(dir, "Music"));
+  const games = recordingLauncher();
   const lines: string[] = [];
   const log = Layer.succeed(AppLog, {
     write: (level, target, message) => Effect.sync(() => void lines.push(`${level} ${target} ${message}`)),
@@ -205,6 +230,7 @@ export function testRuntime(dir: string, overrides: Pick<StudioServicesOptions, 
       recentsFile: path.join(dir, "data", "recent-projects.json"),
       settingsFile: path.join(dir, "data", "settings.json"),
       draftsFolder: path.join(dir, "data", "drafts"),
+      tryFolder: path.join(dir, "data", "try-in-game"),
       toolsFolder: path.join(dir, "data", "tools"),
       modelsFolder: path.join(dir, "data", "models"),
       nativeFolder: path.join(dir, "native"),
@@ -214,10 +240,13 @@ export function testRuntime(dir: string, overrides: Pick<StudioServicesOptions, 
       downloads: downloadsLayer({ hosts: [] }),
       log,
       desktop: layer,
+      launcher: games.layer,
+      // Never this computer's games: macOS's ways (app bundles) in a folder of the test's, on every platform.
+      gamePlatform: { os: "darwin", home: dir, env: {}, appFolders: [path.join(dir, "Applications")] },
       ...overrides,
     }),
   );
-  return { runtime, recorded, lines };
+  return { runtime, recorded, lines, launched: games.launched };
 }
 
 /** One entry of a test zip: a file with its bytes and mode, a folder, or a symlink. */
@@ -283,4 +312,41 @@ export function zipOf(entries: ZipEntry[]): Buffer {
   end.writeUInt32LE(directoryBytes.length, 12);
   end.writeUInt32LE(offset, 16);
   return Buffer.concat([...locals, directoryBytes, end]);
+}
+
+/** An `Info.plist` as Xcode writes one, naming `executable` (and, nested, a document type that isn't the app's). */
+export function infoPlist(executable: string, identifier = "org.example.game"): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleExecutable</key>
+			<string>not-this-one</string>
+		</dict>
+	</array>
+	<key>CFBundleDisplayName</key>
+	<string>Game &amp; Friends</string>
+	<key>CFBundleExecutable</key>
+	<string>${executable}</string>
+	<key>CFBundleIdentifier</key>
+	<string>${identifier}</string>
+	<key>LSRequiresNativeExecution</key>
+	<true/>
+	<key>NSEmptyValue</key>
+	<string/>
+</dict>
+</plist>
+`;
+}
+
+/** A macOS app bundle in `folder` whose program is `script` (a shell script), named by its `Info.plist`. */
+export function fakeGameApp(folder: string, name: string, executable: string, script: string): string {
+  const app = path.join(folder, `${name}.app`);
+  fs.mkdirSync(path.join(app, "Contents", "MacOS"), { recursive: true });
+  fs.writeFileSync(path.join(app, "Contents", "Info.plist"), infoPlist(executable));
+  fs.writeFileSync(path.join(app, "Contents", "MacOS", executable), script, { mode: 0o755 });
+  return app;
 }

@@ -119,6 +119,18 @@ export const desktopLayer = Layer.sync(Desktop, () => ({
       defaultPath,
       properties: ["openDirectory", "createDirectory"],
     }),
+  // macOS dialogs treat an app bundle as one file, so it can be picked like a program elsewhere.
+  chooseGame: (window, title) =>
+    openDialog(window, {
+      title,
+      buttonLabel: "Choose",
+      properties: ["openFile"],
+      ...(process.platform === "darwin"
+        ? { defaultPath: "/Applications", filters: [{ name: "Application", extensions: ["app"] }] }
+        : process.platform === "win32"
+          ? { filters: [{ name: "Program", extensions: ["exe"] }] }
+          : {}),
+    }),
   reveal: (path) => Effect.sync(() => shell.showItemInFolder(path)),
   thumbnail: (image) =>
     Effect.sync(() => {

@@ -17,6 +17,8 @@ interface DesktopShape {
   readonly chooseTextFile: (window: BrowserWindow | null, defaultPath: string) => Effect.Effect<string | null>;
   /** The folder an export goes into. */
   readonly chooseExportFolder: (window: BrowserWindow | null, defaultPath: string) => Effect.Effect<string | null>;
+  /** A game's app: a `.app` bundle on macOS, its program elsewhere. `title` names the game. */
+  readonly chooseGame: (window: BrowserWindow | null, title: string) => Effect.Effect<string | null>;
   /** Shows a file or folder in Finder / Explorer. */
   readonly reveal: (path: string) => Effect.Effect<void>;
   /** A small JPEG thumbnail of an image as a data URL, or null if it can't be read. */

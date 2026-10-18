@@ -672,6 +672,7 @@ export default function ProjectScreen() {
     onMenuCommand((command) => {
       if (command === "export-games") void songExport.forGames();
       else if (command === "export-usdb") void songExport.forUsdb();
+      else if (command === "try-in-game") void songExport.tryInGame();
       else if (command === "song-details") setDetailsOpen(true);
       else void close();
     }),
@@ -744,6 +745,18 @@ export default function ProjectScreen() {
       if (command) {
         event.preventDefault();
         runEditCommand(command);
+        return;
+      }
+      // Try in game: the File menu's on macOS.
+      if (
+        platform !== "macos" &&
+        event.ctrlKey &&
+        !event.altKey &&
+        !event.shiftKey &&
+        event.key.toLowerCase() === "t"
+      ) {
+        event.preventDefault();
+        void songExport.tryInGame();
         return;
       }
       // Esc: stops a drag first (a loop range or song marker on the ruler here, notes and breaks in their own keys),
@@ -848,21 +861,25 @@ export default function ProjectScreen() {
     waveformRun.abort();
   };
 
-  const songExport = createSongExport({
-    project: () => overview().id,
-    song: () => chart().song,
-    saved: () => doc().saved(),
-  });
-
-  const close = async () => {
+  /** Closes the project (its last edits saved) and goes to the start screen, or the settings' `section`. */
+  const close = async (section?: string) => {
     // What still reads or writes the project stops before it closes, and the last edits are saved.
     stopWork();
     await doc()
       .saved()
       .catch(() => {});
     await native.project.close({ id: overview().id }).catch((error: unknown) => console.error(error));
-    void navigate({ to: "/" });
+    void navigate(section ? { to: "/settings", hash: section } : { to: "/" });
   };
+
+  const songExport = createSongExport({
+    project: () => overview().id,
+    song: () => chart().song,
+    saved: () => doc().saved(),
+    // The editor has no way to the settings but closing the project (it is in the recent projects).
+    openGameSettings: () => void close("games"),
+  });
+  onSettled(() => songExport.refreshGame());
 
   return (
     <div class="flex h-dvh min-h-0 flex-col overflow-hidden bg-background" data-testid="project">
@@ -927,8 +944,12 @@ export default function ProjectScreen() {
         </IconButton>
         <ExportMenu
           busy={songExport.exporting()}
+          game={songExport.game()}
+          tryShortcut={keyOf("tryInGame")}
           onSongFolder={() => void songExport.forGames()}
           onUsdb={() => void songExport.forUsdb()}
+          onTryInGame={() => void songExport.tryInGame()}
+          onOpen={() => songExport.refreshGame()}
         />
         <Button variant="ghost" size="sm" onClick={() => void close()} data-testid="close-project">
           <XIcon />

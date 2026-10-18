@@ -5,6 +5,7 @@ import LoaderCircleIcon from "~icons/lucide/loader-circle";
 
 import { NavRail, type RailItem } from "~/components/home/nav-rail";
 import { describeToolProgress } from "~/components/home/tools-step";
+import { GamesSection } from "~/components/settings/games-section";
 import { TitleBar } from "~/components/title-bar";
 import { Button } from "~/components/ui/button";
 import { ProgressBar } from "~/components/ui/progress-bar";
@@ -49,7 +50,7 @@ type Option<V> = { value: V; label: string };
 const options = <V extends string | number>(values: readonly V[], label: (value: V) => string): Option<V>[] =>
   values.map((value) => ({ value, label: label(value) }));
 
-/** The app settings: how YouTube downloads are saved, the download tools and the models. */
+/** The app settings: how YouTube downloads are saved, the games to try songs in, the download tools and the models. */
 export default function SettingsScreen() {
   const loaded = route.useLoaderData();
   const navigate = useNavigate();
@@ -170,6 +171,8 @@ export default function SettingsScreen() {
                 />
               </Group>
             </Section>
+
+            <GamesSection />
 
             <ToolsSection initial={loaded().tools} />
 

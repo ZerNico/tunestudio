@@ -113,4 +113,4 @@ export const projectHandlers = {
       const language = input.language ? languageName(input.language).toLowerCase() : "";
       return input.words.map((word) => syllabify(word, language));
     }),
-} satisfies GroupHandlers<"project" | "lyrics">;
+} satisfies Omit<GroupHandlers<"project" | "lyrics">, "project.tryInGame">;

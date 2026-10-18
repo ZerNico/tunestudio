@@ -40,6 +40,7 @@ src/
 │   ├── new-project/      # New-project flows (YouTube, audio file, song folder) and their shared stages
 │   ├── editor/           # The editor's parts (roll, lanes, transport, dialogs)
 │   ├── project/          # Export and problems menus, the replace-export dialog
+│   ├── settings/         # Settings screen sections in their own files (Games)
 │   ├── route-error.tsx   # What a route shows when it fails (Try again, Back to start)
 │   ├── brand-mark.tsx    # The Tune Studio mark
 │   └── title-bar.tsx     # App-drawn title bar (the window has no native one)
@@ -75,6 +76,7 @@ electron/
 ├── youtube/              # YouTube projects: yt-dlp downloads, loudness, covers, lyrics
 ├── audio-file/           # New projects from an audio file
 ├── ultrastar/            # UltraStar song folders: import, export, USDB text and usdb_syncer's sidecar files
+├── games/                # Try in game: the games, finding them, Info.plist, starting one with a song folder
 ├── charting/             # Making the chart (the PoC's pipeline), chart range and auto pitch
 ├── separation/           # Separating the voice from the song
 ├── listening/            # Hearing the lyrics with Whisper
@@ -283,6 +285,13 @@ resources/icons/          # App icon (icon.svg is the source of icon.png)
 - `newProject` isn't on the settings screen: it remembers the last new project's language, written only by main (`remember`, from `drafts.create`); `settings.set` keeps the stored one, since the screen's copy may be old.
 - The settings screen saves each change right away (`settings.set` with the whole object); there is no Save button. Reached from the rail's bottom item; Home and Recent go back to `/` (Recent via `#recent`).
 - YouTube download options follow USDB Syncer (defaults: M4A 256 kbps, no normalization; MP4 best codec, 1080p, 60 fps). No FLAC: YouTube audio is lossy. M4A and Opus are saved as served; the bitrate applies only when audio is converted or normalized. They shape new downloads only; media already in a project is never converted.
+
+### Try in game (`electron/games/`, `src/lib/games.ts`, `components/settings/games-section.tsx`)
+
+- Export menu's "Try in <game>" (File menu "Try in Game", Mod+T; the page takes Ctrl+T off macOS): saves, then `project.tryInGame` exports for games (`exportSong`, media byte for byte) into `<data>/try-in-game/<Artist - Title>` (the folder is emptied first, so only the last try is kept) and starts the game with that song folder, as USDB Syncer does: Tune Perfect `--songpath`, UltraStar Deluxe `-songpath`, Vocaluxe `-SongFolder`, Performous the folder alone (`launchArgs`). Nothing is exported when there is no game: `GameNotFound` gets a toast whose Open Settings closes the project and goes to `/settings#games`.
+- Games are Tune Perfect (default), UltraStar Deluxe, Vocaluxe and Performous. Settings `games.paths` and `games.tryWith` are main's own (`games.choose` opens main's dialog and checks the pick, `games.clear`, `games.use`); `settings.set` keeps the stored ones, so the renderer can never name what is run. Without a chosen app, `findGame` looks in `/Applications` and `~/Applications` by bundle name (renamed copies too), the Windows install folders, the Linux PATH (Windows and Linux untested).
+- macOS: the program is `Contents/MacOS/<CFBundleExecutable>` from `Info.plist` (`plist.ts`: XML read by hand, binary through `plutil`), never a path out of the bundle. Started by `GameLauncher` (node `spawn`, detached, stdio ignored, unref; not Effect's spawner, which stops it with its scope) with `cleanEnv` (no `ELECTRON_*`, `NODE_OPTIONS`, `TUNESTUDIO_*`, `__CFBundleIdentifier`, AppImage variables). ENOENT/EACCES and a game that exits within 2 s are failures: Tune Perfect is single-instance, so a copy already open takes the start and the song isn't loaded ("quit it and try again").
+- Tests: `testRuntime` records starts (`launched`) and only looks for apps in the test's folder; e2e sets `TUNESTUDIO_APP_FOLDERS` to an empty folder so the computer's own games are never found, and `fakeGame` (a `.app` whose program is a script writing its arguments) checks the whole flow.
 
 ### Start screen
 

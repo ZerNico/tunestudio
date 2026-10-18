@@ -1,5 +1,7 @@
 import { Schema } from "effect";
 
+import { GAMES } from "./games";
+
 /**
  * App settings, shared by the renderer (the settings screen) and main (which stores them and
  * uses them for downloads). The download options follow USDB Syncer's, so charts from Tune
@@ -40,7 +42,28 @@ export const NewProjectSettings = Schema.Struct({
   language: Schema.NullOr(Schema.String),
 });
 
-export const Settings = Schema.Struct({ audio: AudioSettings, video: VideoSettings, newProject: NewProjectSettings });
+/**
+ * The games "Try in game" opens a song in. The paths are main's own (`games.choose`, `games.clear`): the renderer can't
+ * set what is run, so `settings.set` keeps the stored ones.
+ */
+export const GameSettings = Schema.Struct({
+  /** The game "Try in game" uses. */
+  tryWith: Schema.Literals(GAMES),
+  /** Each game's chosen app (a `.app` bundle on macOS, else the program); null: look for it where it is usually installed. */
+  paths: Schema.Struct({
+    "tune-perfect": Schema.NullOr(Schema.String),
+    usdx: Schema.NullOr(Schema.String),
+    vocaluxe: Schema.NullOr(Schema.String),
+    performous: Schema.NullOr(Schema.String),
+  }),
+});
+
+export const Settings = Schema.Struct({
+  audio: AudioSettings,
+  video: VideoSettings,
+  newProject: NewProjectSettings,
+  games: GameSettings,
+});
 export type Settings = typeof Settings.Type;
 export type AudioFormat = Settings["audio"]["format"];
 export type AudioNormalization = Settings["audio"]["normalization"];
@@ -56,6 +79,7 @@ export const DEFAULT_SETTINGS: Settings = {
   audio: { format: "m4a", bitrate: 256, normalization: "off" },
   video: { download: true, format: "mp4", maxResolution: 1080, maxFps: 60 },
   newProject: { language: null },
+  games: { tryWith: "tune-perfect", paths: { "tune-perfect": null, usdx: null, vocaluxe: null, performous: null } },
 };
 
 /**
@@ -77,6 +101,12 @@ export function settingsFrom(stored: unknown): Settings {
   };
   const audio = AudioSettings.fields;
   const video = VideoSettings.fields;
+  const storedPaths = section("games").paths;
+  const gamePath = (game: (typeof GAMES)[number]): string | null => {
+    const value =
+      typeof storedPaths === "object" && storedPaths !== null ? (storedPaths as Record<string, unknown>)[game] : null;
+    return typeof value === "string" && value !== "" ? value : null;
+  };
   return {
     audio: {
       format: pick("audio", "format", audio.format),
@@ -90,6 +120,15 @@ export function settingsFrom(stored: unknown): Settings {
       maxFps: pick("video", "maxFps", video.maxFps),
     },
     newProject: { language: pick("newProject", "language", NewProjectSettings.fields.language) },
+    games: {
+      tryWith: pick("games", "tryWith", GameSettings.fields.tryWith),
+      paths: {
+        "tune-perfect": gamePath("tune-perfect"),
+        usdx: gamePath("usdx"),
+        vocaluxe: gamePath("vocaluxe"),
+        performous: gamePath("performous"),
+      },
+    },
   };
 }
 

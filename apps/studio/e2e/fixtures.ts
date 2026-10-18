@@ -199,3 +199,42 @@ export async function answerDialogs(app: ElectronApplication, ...answers: (strin
 export function revealedPaths(app: ElectronApplication): Promise<string[]> {
   return app.evaluate(() => (globalThis as typeof globalThis & { revealed: string[] }).revealed);
 }
+
+/**
+ * A game for "Try in game": a shell script that writes the arguments it got to `argv.txt` in `folder` (one per line,
+ * then what it saw of `ELECTRON_RUN_AS_NODE`) and keeps running for a few seconds, as a game would. On macOS it is
+ * the program of an app bundle whose `Info.plist` names it; elsewhere the script itself (Windows isn't covered).
+ */
+export function fakeGame(folder: string, name: string, executable: string) {
+  const argv = path.join(folder, "argv.txt");
+  const script = [
+    "#!/bin/sh",
+    `printf '%s\\n' "$@" > "${argv}.part"`,
+    `printf 'electron:%s\\n' "$ELECTRON_RUN_AS_NODE" >> "${argv}.part"`,
+    `mv "${argv}.part" "${argv}"`,
+    "sleep 4",
+    "",
+  ].join("\n");
+  if (process.platform !== "darwin") {
+    const program = path.join(folder, executable);
+    fs.writeFileSync(program, script, { mode: 0o755 });
+    return { app: program, argv };
+  }
+  const app = path.join(folder, `${name}.app`);
+  fs.mkdirSync(path.join(app, "Contents", "MacOS"), { recursive: true });
+  fs.writeFileSync(
+    path.join(app, "Contents", "Info.plist"),
+    [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<plist version="1.0">',
+      "<dict>",
+      `\t<key>CFBundleExecutable</key>\n\t<string>${executable}</string>`,
+      "\t<key>CFBundleIdentifier</key>\n\t<string>org.example.fake-game</string>",
+      "</dict>",
+      "</plist>",
+      "",
+    ].join("\n"),
+  );
+  fs.writeFileSync(path.join(app, "Contents", "MacOS", executable), script, { mode: 0o755 });
+  return { app, argv };
+}

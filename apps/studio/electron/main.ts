@@ -74,13 +74,15 @@ const dataDir = app.getPath("userData");
 
 const logger = createLogger(app.getPath("logs"));
 
-// `TUNESTUDIO_OFFLINE` keeps tests from downloading yt-dlp and FFmpeg.
+// `TUNESTUDIO_OFFLINE` keeps tests from downloading yt-dlp and FFmpeg; `TUNESTUDIO_APP_FOLDERS` from finding the
+// computer's own games (macOS: where apps are looked for instead, separated by `:`).
 const runtime = makeRuntime(logger, {
   dataDir,
   appVersion: app.getVersion(),
   // Packaged, the addon sits in the app's resources, outside the archive.
   nativeFolder: app.isPackaged ? path.join(process.resourcesPath, "native") : path.join(app.getAppPath(), "native"),
   offline: process.env.TUNESTUDIO_OFFLINE === "1",
+  appFolders: process.env.TUNESTUDIO_APP_FOLDERS?.split(":").filter((folder) => folder !== ""),
 });
 
 /** Whether an IPC message comes from the top-level frame of one of the app's own pages. */

@@ -38,6 +38,8 @@ export async function sendEditCommand(command: EditCommand, window?: BaseWindow)
 const PROJECT_ITEMS: { id: MenuCommand; label: string; accelerator?: string }[] = [
   { id: "export-games", label: "Export for Games", accelerator: "CmdOrCtrl+E" },
   { id: "export-usdb", label: "Export for USDB", accelerator: "Shift+CmdOrCtrl+E" },
+  // The game's name isn't in the label: the menu is built once, and the game is a setting.
+  { id: "try-in-game", label: "Try in Game", accelerator: "CmdOrCtrl+T" },
   { id: "song-details", label: "Song Details", accelerator: "CmdOrCtrl+I" },
   { id: "close-project", label: "Close Project" },
 ];
@@ -70,9 +72,9 @@ export function setProjectItemsEnabled(enabled: boolean) {
 
 /**
  * On macOS a minimal menu: the app menu; File with New Window (`onNewWindow`, also in the Dock's menu), Open Project
- * (`onOpenProject`), the project's exports, song details and closing it; Edit (which makes copy and paste work in text
- * fields); View with full screen; and Window. Windows and Linux get no menu bar (the page takes Ctrl+Shift+N for a
- * new window, and has the rest on screen). Reload and the developer tools are only there in development.
+ * (`onOpenProject`), the project's exports, trying it in a game, song details and closing it; Edit (which makes
+ * copy and paste work in text fields); View with full screen; and Window. Windows and Linux get no menu bar (the
+ * page takes Ctrl+Shift+N for a new window, and has the rest on screen). Reload and the developer tools are only there in development.
  */
 export function setApplicationMenu(onNewWindow: () => void, onOpenProject: () => void) {
   const development = !app.isPackaged;
@@ -127,9 +129,9 @@ export function setApplicationMenu(onNewWindow: () => void, onOpenProject: () =>
           { label: "New Window", accelerator: "Shift+CmdOrCtrl+N", click: () => onNewWindow() },
           { label: "Open Project", accelerator: "CmdOrCtrl+O", click: () => onOpenProject() },
           { type: "separator" },
-          ...PROJECT_ITEMS.slice(0, 3).map(projectItem),
+          ...PROJECT_ITEMS.slice(0, 4).map(projectItem),
           { type: "separator" },
-          projectItem(PROJECT_ITEMS[3]!),
+          projectItem(PROJECT_ITEMS[4]!),
           { role: "close" },
         ],
       },

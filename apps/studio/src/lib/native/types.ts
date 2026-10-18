@@ -4,6 +4,7 @@
  */
 import { Schema } from "effect";
 
+import { GAMES } from "../games";
 import { MODEL_FEATURES } from "../models";
 
 /** The parts of a song a project's media can play. */
@@ -273,6 +274,27 @@ export const ExportResult = Schema.Union([
   Schema.Struct({ status: Schema.Literal("exists"), folder: Schema.String }),
 ]);
 export type ExportResult = typeof ExportResult.Type;
+
+export const GameName = Schema.Literals(GAMES);
+
+/** A game as the settings show it: the app chosen for it, and the one "Try in game" would start (chosen or found). */
+export const GameStatus = Schema.Struct({
+  game: GameName,
+  chosen: Schema.NullOr(Schema.String),
+  /** The chosen app if it can be started, else one found where the game is usually installed; null: none. */
+  found: Schema.NullOr(Schema.String),
+});
+export type GameStatus = typeof GameStatus.Type;
+
+export const GamesStatus = Schema.Struct({ tryWith: GameName, games: Schema.Array(GameStatus) });
+export type GamesStatus = typeof GamesStatus.Type;
+
+/** The song was exported into Tune Studio's own folder and the game started with it. */
+export const TriedInGame = Schema.Struct({
+  game: GameName,
+  folder: Schema.String,
+  warnings: Schema.Array(Schema.String),
+});
 
 /** A download tool behind YouTube projects. */
 export const ToolName = Schema.Literals(["yt-dlp", "quickjs", "ffmpeg"]);

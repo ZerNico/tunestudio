@@ -1,3 +1,4 @@
+import os from "node:os";
 import path from "node:path";
 
 import { ManagedRuntime } from "effect";
@@ -16,6 +17,8 @@ export interface RuntimeOptions {
   nativeFolder: string;
   /** No downloads at all (tests): tool checks fail as if offline. */
   offline?: boolean;
+  /** Where macOS apps (the games) are looked for, instead of the Applications folders (tests). */
+  appFolders?: readonly string[];
 }
 
 /**
@@ -29,6 +32,8 @@ export function makeRuntime(logger: Logger, options: RuntimeOptions) {
       recentsFile: path.join(options.dataDir, "recent-projects.json"),
       settingsFile: path.join(options.dataDir, "settings.json"),
       draftsFolder: path.join(options.dataDir, "drafts"),
+      tryFolder: path.join(options.dataDir, "try-in-game"),
+      gamePlatform: { os: process.platform, home: os.homedir(), env: process.env, appFolders: options.appFolders },
       toolsFolder: path.join(options.dataDir, "tools"),
       modelsFolder: path.join(options.dataDir, "models"),
       nativeFolder: options.nativeFolder,

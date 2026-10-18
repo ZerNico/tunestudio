@@ -38,6 +38,7 @@ export const SHORTCUTS = {
   cut: { keys: ["Mod+X"], does: "Cut" },
   copy: { keys: ["Mod+C"], does: "Copy" },
   paste: { keys: ["Mod+V"], does: "Paste at the playhead" },
+  tryInGame: { keys: ["Mod+T"], does: "Try the song in a game" },
   help: { keys: ["?"], does: "This help" },
 } as const satisfies Record<string, Shortcut>;
 
@@ -73,5 +74,6 @@ export function shortcutGroups(): { title: string; rows: { keys: string[]; does:
     { title: "Tools", rows: [...TOOLS.map((tool) => ({ keys: [tool.key], does: tool.label })), ...rows("help")] },
     { title: "Lines", rows: rows("lineBreak") },
     { title: "Editing", rows: rows("undo", "redo", "selectAll", "deselect", "delete", "cut", "copy", "paste") },
+    { title: "Song", rows: rows("tryInGame") },
   ];
 }

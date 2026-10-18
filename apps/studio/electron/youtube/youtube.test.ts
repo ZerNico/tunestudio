@@ -213,6 +213,7 @@ const settings = (change: { audio?: Partial<Settings["audio"]>; video?: Partial<
   audio: { ...DEFAULT_SETTINGS.audio, ...change.audio },
   video: { ...DEFAULT_SETTINGS.video, ...change.video },
   newProject: DEFAULT_SETTINGS.newProject,
+  games: DEFAULT_SETTINGS.games,
 });
 
 describe("videoLanguage", () => {

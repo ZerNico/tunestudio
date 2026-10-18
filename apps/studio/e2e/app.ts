@@ -36,6 +36,8 @@ export async function launchStudio(options: LaunchOptions = {}): Promise<Studio>
     if (value !== undefined && key !== "ELECTRON_RUN_AS_NODE") env[key] = value;
   }
   env.TUNESTUDIO_DATA_DIR = dataDir;
+  // Games are only the ones a test puts here, never this computer's own.
+  env.TUNESTUDIO_APP_FOLDERS = path.join(dataDir, "Applications");
   // The window stays hidden so runs never take focus; TUNESTUDIO_E2E_SHOW=1 shows it for debugging.
   if (!process.env.TUNESTUDIO_E2E_SHOW) env.TUNESTUDIO_BACKGROUND = "1";
   // Never download tools (yt-dlp, FFmpeg) during tests.

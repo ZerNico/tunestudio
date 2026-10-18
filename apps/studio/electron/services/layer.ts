@@ -1,6 +1,10 @@
+import os from "node:os";
+
 import { NodeServices } from "@effect/platform-node";
 import { Layer } from "effect";
 
+import { type GamePlatform, gamesLayer } from "../games/games";
+import { GameLauncher, gameLauncherLayer } from "../games/launcher";
 import { Models, modelsLayer } from "../models/models";
 import { Native, nativeLayer } from "../native/native";
 import { projectsLayer } from "../project/projects";
@@ -14,6 +18,9 @@ import { pathGrantsLayer } from "./path-grants";
 import { recentsLayer } from "./recents";
 import { settingsLayer } from "./settings";
 
+/** How long a game has to keep running to count as started (one that is open already quits sooner). */
+const GAME_SETTLE_MS = 2000;
+
 export interface StudioServicesOptions {
   /** Recorded in the project files this app writes. */
   appVersion: string;
@@ -23,6 +30,8 @@ export interface StudioServicesOptions {
   settingsFile: string;
   /** Where new projects are set up before they are saved. */
   draftsFolder: string;
+  /** Where a song tried in a game is exported to. */
+  tryFolder: string;
   log: Layer.Layer<AppLog>;
   desktop: Layer.Layer<Desktop>;
   /** Where yt-dlp, QuickJS and FFmpeg are installed. */
@@ -36,6 +45,10 @@ export interface StudioServicesOptions {
   models?: Layer.Layer<Models>;
   tools?: Layer.Layer<Tools>;
   platform?: Platform;
+  /** Where the games are looked for; this computer's by default. */
+  gamePlatform?: GamePlatform;
+  /** The app starts games for real; tests record what would have started. */
+  launcher?: Layer.Layer<GameLauncher>;
   /** The app downloads for real from the tool hosts; tests from a fake internet, or nowhere. */
   downloads: Layer.Layer<Downloads>;
 }
@@ -46,10 +59,16 @@ export interface StudioServicesOptions {
  */
 export function studioServices(options: StudioServicesOptions) {
   const { downloads } = options;
+  // One settings service for the screen and the games (layers are built once per runtime).
+  const settings = settingsLayer(options.settingsFile);
   const own = Layer.mergeAll(
     projectsLayer(options.appVersion),
     recentsLayer(options.recentsFile),
-    settingsLayer(options.settingsFile),
+    settings,
+    gamesLayer({
+      folder: options.tryFolder,
+      platform: options.gamePlatform ?? { os: process.platform, home: os.homedir(), env: process.env },
+    }).pipe(Layer.provide(Layer.mergeAll(settings, options.launcher ?? gameLauncherLayer(GAME_SETTLE_MS)))),
     draftsLayer(options.draftsFolder),
     pathGrantsLayer,
     options.tools ??
