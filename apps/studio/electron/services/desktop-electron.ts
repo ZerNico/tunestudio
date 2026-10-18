@@ -13,7 +13,9 @@ import {
   shell,
 } from "electron";
 
+import { FileNotFound, FileSystemFailure } from "../../src/lib/errors";
 import { AUDIO_EXTENSIONS, VIDEO_EXTENSIONS } from "../../src/lib/import-files";
+import { chromiumLicensesFile } from "../chromium-licenses";
 import { Desktop } from "./desktop";
 
 /** Runs a dialog attached to `window` (a sheet on macOS) when there is one. */
@@ -132,6 +134,17 @@ export const desktopLayer = Layer.sync(Desktop, () => ({
           : {}),
     }),
   reveal: (path) => Effect.sync(() => shell.showItemInFolder(path)),
+  openChromiumLicenses: Effect.suspend((): Effect.Effect<void, FileNotFound | FileSystemFailure> => {
+    const file = chromiumLicensesFile({ execPath: process.execPath, resourcesPath: process.resourcesPath });
+    if (!file) return Effect.fail(new FileNotFound({ message: "Chromium's licenses aren't in the app's folder." }));
+    return Effect.flatMap(
+      Effect.promise(() => shell.openPath(file)),
+      (problem) =>
+        problem
+          ? Effect.fail(new FileSystemFailure({ message: `Couldn't open Chromium's licenses. ${problem}` }))
+          : Effect.void,
+    );
+  }),
   thumbnail: (image) =>
     Effect.sync(() => {
       const picture = nativeImage.createFromBuffer(Buffer.from(image));

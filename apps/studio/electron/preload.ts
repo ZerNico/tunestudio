@@ -12,6 +12,7 @@ import {
   RPC_CONNECT_CHANNEL,
 } from "../src/lib/native/channel";
 import { FLUSH_CHANNEL, FLUSH_DONE_CHANNEL } from "./flush-channel";
+import { VERSION_ARGUMENT } from "./identity";
 
 // The renderer opens the RPC connection by posting one end of a MessageChannel to itself.
 // MessagePorts can't cross `contextBridge`, so the preload picks the port up from the
@@ -37,6 +38,10 @@ ipcRenderer.on(FLUSH_CHANNEL, (_event, request: number) => {
 /** Values the renderer needs synchronously. Everything else goes through the RPC contract. */
 contextBridge.exposeInMainWorld("tunestudio", {
   platform: process.platform,
+  /** The app's version, which main passes in the arguments. */
+  version: process.argv.find((argument) => argument.startsWith(VERSION_ARGUMENT))?.slice(VERSION_ARGUMENT.length),
+  /** The version of Chromium inside Electron. */
+  chromeVersion: process.versions.chrome,
   /**
    * The path of a dropped or picked file or folder, and whether it is a folder; main then lets
    * the renderer use that path. `null` for files that aren't on disk.

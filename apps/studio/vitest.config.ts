@@ -10,7 +10,8 @@ const alias = { "~": fileURLToPath(new URL("./src", import.meta.url)) };
 /**
  * Projects are split by extension: `unit` is `src/**\/*.test.ts` (node), `ui` is
  * `src/**\/*.test.tsx` (jsdom, rendered with Solid's browser dev build), `electron` is
- * `electron/**\/*.test.ts` (node). The Electron e2e tests are Playwright (`test:e2e`).
+ * `electron/**\/*.test.ts` (node), `scripts` is `scripts/**\/*.test.ts` (node, the build's license list). The Electron
+ * e2e tests are Playwright (`test:e2e`).
  */
 export default defineConfig({
   test: {
@@ -32,6 +33,9 @@ export default defineConfig({
       },
       {
         test: { name: "electron", include: ["electron/**/*.test.ts"], environment: "node" },
+      },
+      {
+        test: { name: "scripts", include: ["scripts/**/*.test.ts"], environment: "node" },
       },
     ],
   },

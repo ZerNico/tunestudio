@@ -17,7 +17,7 @@ import { CLIPBOARD_CHANNEL, GRANT_PATH_CHANNEL } from "../src/lib/native/channel
 import { contentSecurityPolicy } from "./csp";
 import { onDevReload } from "./dev-reload";
 import { flushPage, flushThenReload } from "./flush";
-import { BACKGROUND_COLOR, PRODUCT_NAME } from "./identity";
+import { BACKGROUND_COLOR, PRODUCT_NAME, VERSION_ARGUMENT } from "./identity";
 import { createLogger } from "./logger";
 import { attachContextMenu, sendEditCommand, setApplicationMenu, setProjectItemsEnabled } from "./menu";
 import { allowsPermission } from "./permissions";
@@ -168,6 +168,7 @@ function createWindow(): BrowserWindow {
       webSecurity: true,
       devTools: !app.isPackaged,
       spellcheck: false,
+      additionalArguments: [`${VERSION_ARGUMENT}${app.getVersion()}`],
     },
   });
 

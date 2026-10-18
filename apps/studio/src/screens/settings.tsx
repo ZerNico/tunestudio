@@ -5,13 +5,16 @@ import LoaderCircleIcon from "~icons/lucide/loader-circle";
 
 import { NavRail, type RailItem } from "~/components/home/nav-rail";
 import { describeToolProgress } from "~/components/home/tools-step";
+import { AboutSection } from "~/components/settings/about-section";
 import { GamesSection } from "~/components/settings/games-section";
+import { Row, Section } from "~/components/settings/section";
 import { TitleBar } from "~/components/title-bar";
 import { Button } from "~/components/ui/button";
 import { ProgressBar } from "~/components/ui/progress-bar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import { Switch } from "~/components/ui/switch";
 import { toastError } from "~/components/ui/toast";
+import { appVersion } from "~/lib/desktop";
 import { formatFileSize, formatRelativeTime } from "~/lib/format";
 import { MODEL_FEATURE_INFO, type ModelFeature } from "~/lib/models";
 import { native } from "~/lib/native/client";
@@ -50,7 +53,7 @@ type Option<V> = { value: V; label: string };
 const options = <V extends string | number>(values: readonly V[], label: (value: V) => string): Option<V>[] =>
   values.map((value) => ({ value, label: label(value) }));
 
-/** The app settings: how YouTube downloads are saved, the games to try songs in, the download tools and the models. */
+/** The app settings: how YouTube downloads are saved, the games to try songs in, the download tools, the models, and about the app. */
 export default function SettingsScreen() {
   const loaded = route.useLoaderData();
   const navigate = useNavigate();
@@ -177,24 +180,15 @@ export default function SettingsScreen() {
             <ToolsSection initial={loaded().tools} />
 
             <ModelsSection initial={loaded().models} />
+
+            <AboutSection
+              version={appVersion}
+              onShowModels={() => document.getElementById("models-title")?.scrollIntoView({ block: "start" })}
+            />
           </div>
         </main>
       </div>
     </div>
-  );
-}
-
-function Section(props: { id: string; title: string; description: string; children: JSX.Element }) {
-  return (
-    <section aria-labelledby={`${props.id}-title`} class="flex flex-col gap-4" data-testid={`settings-${props.id}`}>
-      <div class="flex flex-col gap-1">
-        <h2 id={`${props.id}-title`} class="m-0 text-[15px] font-semibold tracking-[-0.2px]">
-          {props.title}
-        </h2>
-        <p class="m-0 text-[12px] leading-[1.6] text-muted-foreground">{props.description}</p>
-      </div>
-      {props.children}
-    </section>
   );
 }
 
@@ -205,23 +199,6 @@ function Group(props: { title: string; children: JSX.Element }) {
       <div class="flex flex-col divide-y divide-border rounded-[10px] border border-border bg-card">
         {props.children}
       </div>
-    </div>
-  );
-}
-
-/** A setting: its name and what it does on the left, the control on the right. */
-function Row(props: { id: string; label: string; description?: string; children: JSX.Element }) {
-  return (
-    <div class="flex items-center gap-6 px-4 py-3">
-      <div class="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span id={props.id} class="text-[12.5px] font-medium text-foreground">
-          {props.label}
-        </span>
-        <Show when={props.description}>
-          <p class="m-0 text-[11px] leading-normal text-muted-foreground">{props.description}</p>
-        </Show>
-      </div>
-      {props.children}
     </div>
   );
 }

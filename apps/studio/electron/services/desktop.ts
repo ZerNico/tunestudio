@@ -1,6 +1,8 @@
 import { Context, type Effect } from "effect";
 import type { BrowserWindow } from "electron";
 
+import type { FileNotFound, FileSystemFailure } from "../../src/lib/errors";
+
 /** What the dialogs ask for. `null` everywhere means the user cancelled. */
 interface DesktopShape {
   /** A song folder or `.txt` chart to import. */
@@ -21,6 +23,8 @@ interface DesktopShape {
   readonly chooseGame: (window: BrowserWindow | null, title: string) => Effect.Effect<string | null>;
   /** Shows a file or folder in Finder / Explorer. */
   readonly reveal: (path: string) => Effect.Effect<void>;
+  /** Opens the licenses of Chromium and its libraries that come with Electron, in the browser. */
+  readonly openChromiumLicenses: Effect.Effect<void, FileNotFound | FileSystemFailure>;
   /** A small JPEG thumbnail of an image as a data URL, or null if it can't be read. */
   readonly thumbnail: (image: Uint8Array) => Effect.Effect<string | null>;
   /** The user's country as two letters (e.g. "DE"), for regional catalogs like the iTunes store. */

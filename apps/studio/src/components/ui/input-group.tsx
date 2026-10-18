@@ -40,7 +40,8 @@ export function InputGroupInput(props: JSX.InputHTMLAttributes<HTMLInputElement>
     <input
       data-slot="input-group-control"
       class={cn(
-        "h-full w-full min-w-0 flex-1 border-0 bg-transparent px-2.5 text-inherit outline-none placeholder:text-muted-foreground focus-visible:outline-none disabled:cursor-not-allowed",
+        // Search fields get their own clear button as an addon, so Chromium's is hidden.
+        "h-full w-full min-w-0 flex-1 border-0 bg-transparent px-2.5 text-inherit outline-none placeholder:text-muted-foreground focus-visible:outline-none disabled:cursor-not-allowed [&::-webkit-search-cancel-button]:appearance-none",
         props.class as string,
       )}
       {...rest}

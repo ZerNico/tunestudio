@@ -9,6 +9,8 @@ export interface FilePath {
 /** Values and helpers the preload provides (see `electron/preload.ts`). */
 interface DesktopGlobals {
   platform: string;
+  version?: string;
+  chromeVersion?: string;
   pathForFile?: (file: File) => Promise<FilePath | null>;
   onEditCommand?: (listener: (command: EditCommand, text?: string) => void) => () => void;
   clipboard?: (request: ClipboardRequest) => void;
@@ -35,6 +37,12 @@ export const platform: Platform =
       : globals.platform === "linux"
         ? "linux"
         : "browser";
+
+/** The app's version; null in a plain browser. */
+export const appVersion: string | null = globals.version ?? null;
+
+/** The version of Chromium the app runs on; null in a plain browser. */
+export const chromeVersion: string | null = globals.chromeVersion ?? null;
 
 /** "Reveal in Finder" on macOS, "Show in Explorer" on Windows, "Show in folder" elsewhere. */
 export const revealLabel =

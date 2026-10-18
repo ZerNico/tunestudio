@@ -188,6 +188,7 @@ export function recordingDesktop(musicFolder: string) {
     chooseGame: answer,
     country: "US",
     reveal: (target) => Effect.sync(() => void recorded.revealed.push(target)),
+    openChromiumLicenses: Effect.void,
     thumbnail: (image) => Effect.succeed(`data:image/jpeg;base64,${Buffer.from(image).toString("base64")}`),
     musicFolder,
   });

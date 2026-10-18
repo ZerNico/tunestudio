@@ -24,6 +24,7 @@ bun run native:test      # the addon's Rust tests (STFT round trip, chunk stitch
 bun run native:build:release  # optimized; `build` runs this
 bun run shots            # screenshots of every start-screen state to ../../.local/shots/prod (build first)
 node e2e/shots.ts dev    # the same against the dev server (starts Vite itself)
+bun run shots:readme -- <audio>  # README screenshots in docs/images from a real chart (see e2e/readme-shots.ts)
 ```
 
 ## Patterns & Conventions
@@ -40,7 +41,7 @@ src/
 │   ├── new-project/      # New-project flows (YouTube, audio file, song folder) and their shared stages
 │   ├── editor/           # The editor's parts (roll, lanes, transport, dialogs)
 │   ├── project/          # Export and problems menus, the replace-export dialog
-│   ├── settings/         # Settings screen sections in their own files (Games)
+│   ├── settings/         # Settings sections (Section, Row), Games, About and the open source licenses dialog
 │   ├── route-error.tsx   # What a route shows when it fails (Try again, Back to start)
 │   ├── brand-mark.tsx    # The Tune Studio mark
 │   └── title-bar.tsx     # App-drawn title bar (the window has no native one)
@@ -67,7 +68,8 @@ electron/
 ├── abortable.ts          # Native work and downloads that stop on a signal, waited for when interrupted
 ├── errors.ts             # Main-only errors and `mapFileError` (file system errors as user-facing ones)
 ├── permissions.ts        # Which web permissions the app's pages get (clipboard writes, the microphone)
-├── preload.ts            # Hands the renderer's MessagePort to main; exposes platform + version
+├── preload.ts            # Hands the renderer's MessagePort to main; exposes platform, the app's version (an argument main passes) and Chromium's
+├── chromium-licenses.ts  # Where Electron's LICENSES.chromium.html is, packaged or not
 ├── rpc/                  # Server, MessagePort protocol, connection listener; handlers per area in handlers/ (procedures.ts joins them)
 ├── protocols/            # app:// (dist/ with the CSP; originOf()) and media:// (a project's media) schemes
 ├── services/             # Effect services (settings, recents, drafts, path grants, desktop dialogs, app log); layer.ts wires them
@@ -90,7 +92,7 @@ electron/
 ├── window-state.ts       # Window size/position across launches
 ├── logger.ts             # Log file in Electron's logs dir (renderer warnings/errors land here too)
 └── menu.ts               # Application menu and the text-field context menu
-scripts/                  # dev loop, main-process bundling, packaging, start, shared icons plugin
+scripts/                  # dev loop, main-process bundling, packaging, start, shared icons plugin, licenses/ (third-party notices)
 tests/                    # Vitest setup (setup.ui.ts)
 e2e/                      # Playwright tests (*.spec.ts), launch helper, screenshot script
 components.json           # shadcn CLI config (base-nova style, `~` aliases)
@@ -293,6 +295,13 @@ resources/icons/          # App icon (icon.svg is the source of icon.png)
 - macOS: the program is `Contents/MacOS/<CFBundleExecutable>` from `Info.plist` (`plist.ts`: XML read by hand, binary through `plutil`), never a path out of the bundle. Started by `GameLauncher` (node `spawn`, detached, stdio ignored, unref; not Effect's spawner, which stops it with its scope) with `cleanEnv` (no `ELECTRON_*`, `NODE_OPTIONS`, `TUNESTUDIO_*`, `__CFBundleIdentifier`, AppImage variables). ENOENT/EACCES and a game that exits within 2 s are failures: Tune Perfect is single-instance, so a copy already open takes the start and the song isn't loaded ("quit it and try again").
 - Tests: `testRuntime` records starts (`launched`) and only looks for apps in the test's folder; e2e sets `TUNESTUDIO_APP_FOLDERS` to an empty folder so the computer's own games are never found, and `fakeGame` (a `.app` whose program is a script writing its arguments) checks the whole flow.
 
+### Open source licenses (`scripts/licenses/`, `src/components/settings/`)
+
+- `vite build` writes `dist/licenses.json` (`licensesPlugin` in `plugin.ts`, collected by `collect.ts`); it is generated, never committed, so it can't go stale. It lists the npm packages whose code is in the renderer bundle (Vite's rendered modules, assets, CSS `@import`s, `~icons/*` as `@iconify-json/*`) and in main/preload (esbuild's metafile with the build's options), the Rust crates the addon links (`cargo metadata --filter-platform` for this machine; build scripts' and proc macros' crates left out), its C/C++ libraries (whisper.cpp, ONNX Runtime with its version from ort-sys, Dawn, DXC, DirectML, compiler-rt, per system) and Electron's LICENSE. Workspace packages are skipped. Each text is stored once (`texts`)
+- A package or crate without a known SPDX license (copyleft isn't on the list) or without a license file fails the build. One that really ships no file gets its text from `scripts/licenses/texts/` via `MISSING_TEXTS`; texts for ONNX Runtime (named by version: an ort bump fails until its LICENSE and ThirdPartyNotices are added), Dawn and the others live there too
+- The renderer fetches it (`loadNotices`, `src/lib/licenses.ts`) only when the dialog opens. The dev server serves the last build's file, else empty lists with a note. Downloaded tools are a static list there (`DOWNLOADED_TOOLS`); models stay in the Models section; Chromium's `LICENSES.chromium.html` is opened in the browser by main (`app.openChromiumLicenses`)
+- Settings' About section (`about-section.tsx`): version, the app's MIT text (the repo's `LICENSE`, imported `?raw`) and the licenses dialog (`licenses-dialog.tsx`). Tests: `scripts/licenses/collect.test.ts` (Vitest project `scripts`; builds with Vite and checks the real list, skipped without cargo), `about-section.test.tsx`, and the About test in `e2e/settings.spec.ts`
+
 ### Start screen
 
 - `/` is the start screen. Recent projects come from main (`native.recents.list`, `src/lib/recent-projects`); removing
@@ -317,7 +326,7 @@ resources/icons/          # App icon (icon.svg is the source of icon.png)
 
 - Vitest projects are by extension: `unit` = `src/**/*.test.ts` (node), `ui` = `src/**/*.test.tsx` (jsdom, Solid's
   browser dev build without HMR wrappers, `tests/setup.ui.ts`), `electron` = `electron/**/*.test.ts` (node).
-  `bunx vitest run --project ui` runs one. A `.test.tsx` under `--project unit` prints "No test files found" and exits
+  `scripts` = `scripts/**/*.test.ts` (node). `bunx vitest run --project ui` runs one. A `.test.tsx` under `--project unit` prints "No test files found" and exits
   green: that is not a pass
 - Smallest proof first (`bunx vitest run src/lib/youtube.test.ts`), then `bun run test`, then `bun run test:e2e`
 - Component tests render with `@solidjs/testing-library` (the Solid 2 beta), query by role and accessible name, and
@@ -334,6 +343,12 @@ resources/icons/          # App icon (icon.svg is the source of icon.png)
 - E2e and `bun run shots` launch the app with `TUNESTUDIO_BACKGROUND=1`: the window is never shown and never takes
   focus (no Dock icon), pages still render for screenshots. `TUNESTUDIO_E2E_SHOW=1` shows it when debugging. Take
   screenshots only when a visual check is actually needed
+- `bun run shots:readme -- <audio>` (after `build`) makes the README's screenshots from a real chart: the public
+  domain "Amazing Grace" recording named in `e2e/readme-shots.ts` (not committed; download it), imported, separated and
+  charted through the audio file flow with the lyrics in the script. It runs online with its own data folder in
+  `.local/readme-shots`, seeded with the dev app's models and tools (`TUNESTUDIO_README_MODELS` points elsewhere), keeps
+  the projects so a second run only takes pictures (delete the folder to start over), and writes 1440 px PNGs to
+  `docs/images` with `sips` (macOS)
 - E2e never touches the system clipboard: `stubDesktop` makes main's `clipboard` a string in main (`clipboardText`
   reads it) and gives each page's copy/cut/paste events a DataTransfer of their own, whose text goes to main through
   the preload. Wait for what main did (`expect.poll` on main-process state) rather than sleeping

@@ -1,6 +1,7 @@
 import { useRouter } from "@tanstack/solid-router";
 import { createSignal, For, onSettled, Show } from "solid-js";
 
+import { Row, Section } from "~/components/settings/section";
 import { Button } from "~/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import { toastError } from "~/components/ui/toast";
@@ -18,7 +19,6 @@ export function GamesSection() {
   const router = useRouter();
   const [status, setStatus] = createSignal<GamesStatus | null>(null);
   const [busy, setBusy] = createSignal(false);
-  let section: HTMLElement | undefined;
 
   const run = async (title: string, call: () => Promise<GamesStatus>) => {
     setBusy(true);
@@ -33,35 +33,20 @@ export function GamesSection() {
 
   onSettled(() => {
     native.games.status().then(setStatus, (error: unknown) => toastError("Couldn't look for the games", error));
-    if (router.state.location.hash === "games") section?.scrollIntoView({ block: "start" });
+    if (router.state.location.hash === "games")
+      document.getElementById("games-title")?.scrollIntoView({ block: "start" });
   });
 
   const entry = (game: Game) => status()?.games.find((item) => item.game === game);
 
   return (
-    <section
-      ref={(element) => (section = element)}
+    <Section
       id="games"
-      aria-labelledby="games-title"
-      class="flex flex-col gap-4"
-      data-testid="settings-games"
+      title="Games"
+      description="Try in game exports the song and opens it in a karaoke game. Games in the usual places are found by themselves."
     >
-      <div class="flex flex-col gap-1">
-        <h2 id="games-title" class="m-0 text-[15px] font-semibold tracking-[-0.2px]">
-          Games
-        </h2>
-        <p class="m-0 text-[12px] leading-[1.6] text-muted-foreground">
-          Try in game exports the song and opens it in a karaoke game. Games in the usual places are found by
-          themselves.
-        </p>
-      </div>
       <div class="flex flex-col divide-y divide-border rounded-[10px] border border-border bg-card">
-        <div class="flex items-center gap-6 px-4 py-3">
-          <div class="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span id="games-try-with" class="text-[12.5px] font-medium text-foreground">
-              Try in game opens
-            </span>
-          </div>
+        <Row id="games-try-with" label="Try in game opens">
           <Select
             items={GAME_OPTIONS}
             value={status()?.tryWith ?? "tune-perfect"}
@@ -77,7 +62,7 @@ export function GamesSection() {
               <For each={GAME_OPTIONS}>{(option) => <SelectItem value={option.value}>{option.label}</SelectItem>}</For>
             </SelectContent>
           </Select>
-        </div>
+        </Row>
         <For each={GAMES}>
           {(game) => (
             <GameRow
@@ -90,7 +75,7 @@ export function GamesSection() {
           )}
         </For>
       </div>
-    </section>
+    </Section>
   );
 }
 

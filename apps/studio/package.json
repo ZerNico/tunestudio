@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "UltraStar chart editor",
+  "license": "MIT",
   "type": "module",
   "main": "dist-electron/main.cjs",
   "scripts": {
@@ -22,6 +23,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "shots": "node e2e/shots.ts",
+    "shots:readme": "node e2e/readme-shots.ts",
     "db:generate": "drizzle-kit generate && bun scripts/bundle-migrations.ts"
   },
   "dependencies": {

@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "UltraStar chart decoding, parsing, validation and serialization",
+  "license": "MIT",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
