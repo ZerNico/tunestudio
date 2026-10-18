@@ -11,3 +11,6 @@ export const COPYRIGHT = `© ${new Date().getFullYear()} Nico Franke`;
 
 /** The window background, painted before the renderer's first frame to avoid a white flash. */
 export const BACKGROUND_COLOR = "#101214";
+
+/** The argument main passes the app's version to the preload with, which can't ask `app` (it is sandboxed). */
+export const VERSION_ARGUMENT = "--tunestudio-version=";

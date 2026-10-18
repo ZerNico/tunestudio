@@ -11,6 +11,7 @@ import { allowedPath, Callers, grant, type GroupHandlers, windowOf } from "./sha
 
 export const appHandlers = {
   "app.log": (input) => AppLog.use((log) => log.write(input.level.toUpperCase(), "renderer", input.message)),
+  "app.openChromiumLicenses": () => Desktop.use((desktop) => desktop.openChromiumLicenses),
 
   "windows.takeOpenRequest": (_, { client }) =>
     Effect.gen(function* () {

@@ -5,9 +5,16 @@ import { defineConfig } from "vite";
 
 import { DEV_SERVER_PORT } from "./scripts/dev-port.ts";
 import { iconsPlugin } from "./scripts/icons-plugin.ts";
+import { licensesPlugin } from "./scripts/licenses/plugin.ts";
 
 export default defineConfig({
-  plugins: [tanstackRouter({ target: "solid", autoCodeSplitting: true }), solid(), tailwindcss(), iconsPlugin()],
+  plugins: [
+    licensesPlugin(),
+    tanstackRouter({ target: "solid", autoCodeSplitting: true }),
+    solid(),
+    tailwindcss(),
+    iconsPlugin(),
+  ],
   resolve: { alias: { "~": "/src" } },
   server: {
     port: DEV_SERVER_PORT,

@@ -14,6 +14,8 @@ export interface LaunchOptions {
   height?: number;
   /** Allow downloads (yt-dlp, FFmpeg, YouTube), for manual screenshot runs only; tests stay offline. */
   online?: boolean;
+  /** Use this data directory and keep it on close (README screenshots seed it with models); a throwaway one otherwise. */
+  dataDir?: string;
 }
 
 export interface Studio {
@@ -29,7 +31,7 @@ export interface Studio {
  * window state or the single-instance lock with a copy you are running.
  */
 export async function launchStudio(options: LaunchOptions = {}): Promise<Studio> {
-  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "tunestudio-e2e-"));
+  const dataDir = options.dataDir ?? fs.mkdtempSync(path.join(os.tmpdir(), "tunestudio-e2e-"));
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
     // Terminals inside Electron-based editors export this; it would start plain Node.
@@ -64,7 +66,7 @@ export async function launchStudio(options: LaunchOptions = {}): Promise<Studio>
     problems,
     close: async () => {
       await app.close();
-      fs.rmSync(dataDir, { recursive: true, force: true });
+      if (!options.dataDir) fs.rmSync(dataDir, { recursive: true, force: true });
     },
   };
 }

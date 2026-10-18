@@ -154,7 +154,7 @@ try {
       await shot(studio, "03g-toast");
       await page.getByTestId("roll-note").first().click();
       await page.keyboard.press("a");
-      await page.locator('[data-slot="toast"][data-type="error"]').waitFor();
+      await page.locator('[data-slot="toast"][data-type="error"]').first().waitFor();
       await shot(studio, "03h-toast-error");
       // The note menu on a selected note, and the auto pitch button next to the tools.
       await page.getByTestId("roll-note").nth(1).click({ button: "right" });

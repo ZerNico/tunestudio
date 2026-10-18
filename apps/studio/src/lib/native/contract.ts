@@ -338,6 +338,8 @@ const nullable = Schema.NullOr;
 export class NativeRpcs extends RpcGroup.make(
   /** Forwards renderer warnings and errors to the log file. */
   command("app.log", LogEntry),
+  /** Opens the licenses of Chromium and its libraries (`LICENSES.chromium.html`, shipped with Electron) in the browser. */
+  command("app.openChromiumLicenses", Schema.Void),
 
   /** Picks a song folder or chart to import. `null` when cancelled. */
   query("dialogs.chooseSong", nullable(Schema.String)),
