@@ -196,7 +196,7 @@ export function recordingDesktop(musicFolder: string) {
 }
 
 /** A runtime like the app's, in `dir`: real projects, recents and files, recorded desktop and log, no internet. */
-/** What a game was started with, and how the next start goes (`running` unless a test says otherwise). */
+/** What a game was started with, and how the next start goes (`started` unless a test says otherwise). */
 export interface Launched {
   starts: { program: string; args: readonly string[]; env: Record<string, string> }[];
   outcome: LaunchOutcome;
@@ -204,7 +204,7 @@ export interface Launched {
 
 /** A launcher that records starts instead of starting anything. */
 export function recordingLauncher() {
-  const launched: Launched = { starts: [], outcome: { kind: "running" } };
+  const launched: Launched = { starts: [], outcome: { kind: "started" } };
   const layer = Layer.succeed(GameLauncher, {
     start: (program, args, env) =>
       Effect.sync(() => {

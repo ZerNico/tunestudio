@@ -290,11 +290,6 @@ export function gamesLayer(options: { folder: string; platform: GamePlatform }) 
                         : `${name} didn't start (${outcome.code}).`,
                 });
               }
-              if (outcome.kind === "exited") {
-                return yield* new GameUnusable({
-                  message: `${name} closed right away. If it was open already, quit it and try again.`,
-                });
-              }
               yield* settings.setGames({ last: game });
               return { game, folder };
             }),

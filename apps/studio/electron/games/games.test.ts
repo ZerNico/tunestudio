@@ -175,10 +175,10 @@ describe("findGame", () => {
 });
 
 describe("gameLauncherLayer", () => {
-  const start = (settleMs: number, program: string, args: string[], env: Record<string, string> = {}) =>
+  const start = (program: string, args: string[], env: Record<string, string> = {}) =>
     Effect.runPromise(
       GameLauncher.use((launcher) => launcher.start(program, args, { PATH: "/usr/bin:/bin", ...env })).pipe(
-        Effect.provide(gameLauncherLayer(settleMs)),
+        Effect.provide(gameLauncherLayer),
       ),
     );
 
@@ -188,21 +188,16 @@ describe("gameLauncherLayer", () => {
     const game = path.join(dir, "game");
     const script = `#!/bin/sh\nprintf '%s\\n' "$@" "env:$TRY_MARK:$ELECTRON_RUN_AS_NODE" > "${out}.part"\nmv "${out}.part" "${out}"\nsleep 5\n`;
     fs.writeFileSync(game, script, { mode: 0o755 });
-    // Still running once the (short) wait is over.
-    expect(await start(50, game, ["--songpath", "/a folder/Song"], { TRY_MARK: "x" })).toEqual({ kind: "running" });
+    expect(await start(game, ["--songpath", "/a folder/Song"], { TRY_MARK: "x" })).toEqual({ kind: "started" });
     await expect.poll(() => fs.existsSync(out)).toBe(true);
     expect(fs.readFileSync(out, "utf8")).toBe("--songpath\n/a folder/Song\nenv:x:\n");
   });
 
-  it("says when the program is missing, not allowed or closes right away", async () => {
+  it("says when the program is missing or not allowed", async () => {
     const dir = temp();
-    // A long wait: each of these ends it early.
-    expect(await start(60_000, path.join(dir, "nothing"), [])).toEqual({ kind: "failed", code: "ENOENT" });
+    expect(await start(path.join(dir, "nothing"), [])).toEqual({ kind: "failed", code: "ENOENT" });
     const locked = path.join(dir, "locked");
     fs.writeFileSync(locked, SCRIPT, { mode: 0o644 });
-    expect(await start(60_000, locked, [])).toEqual({ kind: "failed", code: "EACCES" });
-    const quits = path.join(dir, "quits");
-    fs.writeFileSync(quits, "#!/bin/sh\nexit 3\n", { mode: 0o755 });
-    expect(await start(60_000, quits, [])).toEqual({ kind: "exited", code: 3 });
+    expect(await start(locked, [])).toEqual({ kind: "failed", code: "EACCES" });
   });
 });

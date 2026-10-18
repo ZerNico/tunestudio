@@ -125,16 +125,6 @@ describe("games", () => {
     expect(launched.starts.at(-1)?.args).toEqual([song]);
     expect((await rpc.project.tryInGame({ id: project.id })).game).toBe("performous");
 
-    // A game that quits at once (one open already) is reported, and isn't remembered.
-    launched.outcome = { kind: "exited", code: 0 };
-    await rpc.project.tryInGame({ id: project.id, game: "tune-perfect" }).catch(() => {});
-    expect((await rpc.games.status()).last).toBe("performous");
-    const quit = await rpc.project.tryInGame({ id: project.id }).catch((error: unknown) => error);
-    expect(quit).toBeInstanceOf(GameUnusable);
-    expect((quit as GameUnusable).message).toBe(
-      "Performous closed right away. If it was open already, quit it and try again.",
-    );
-
     launched.outcome = { kind: "failed", code: "EACCES" };
     const denied = await rpc.project.tryInGame({ id: project.id }).catch((error: unknown) => error);
     expect((denied as GameUnusable).message).toBe(
@@ -145,7 +135,7 @@ describe("games", () => {
     fs.rmSync(performous, { recursive: true });
     const gone = await rpc.project.tryInGame({ id: project.id, game: "performous" }).catch((e: unknown) => e);
     expect((gone as GameNotFound).message).toBe("Performous isn't where it was chosen. Choose it again in Settings.");
-    launched.outcome = { kind: "running" };
+    launched.outcome = { kind: "started" };
     expect((await rpc.project.tryInGame({ id: project.id })).game).toBe("tune-perfect");
   });
 });

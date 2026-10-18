@@ -19,7 +19,6 @@ import { recentsLayer } from "./recents";
 import { settingsLayer } from "./settings";
 
 /** How long a game has to keep running to count as started (one that is open already quits sooner). */
-const GAME_SETTLE_MS = 2000;
 
 export interface StudioServicesOptions {
   /** Recorded in the project files this app writes. */
@@ -68,7 +67,7 @@ export function studioServices(options: StudioServicesOptions) {
     gamesLayer({
       folder: options.tryFolder,
       platform: options.gamePlatform ?? { os: process.platform, home: os.homedir(), env: process.env },
-    }).pipe(Layer.provide(Layer.mergeAll(settings, options.launcher ?? gameLauncherLayer(GAME_SETTLE_MS)))),
+    }).pipe(Layer.provide(Layer.mergeAll(settings, options.launcher ?? gameLauncherLayer))),
     draftsLayer(options.draftsFolder),
     pathGrantsLayer,
     options.tools ??
