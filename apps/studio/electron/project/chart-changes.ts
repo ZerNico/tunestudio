@@ -4,7 +4,7 @@
  * edit instead of writing over something it didn't see. Afterwards notes and lines are put back in order (positions),
  * so edits never have to keep track of it.
  */
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, inArray, sql } from "drizzle-orm";
 import { Effect, Schema } from "effect";
 
 import type { ChartChange, LineFields, NoteFields, SingerFields, SongFields } from "../../src/lib/native/contract";
@@ -26,20 +26,80 @@ function matches(row: Record<string, unknown>, expected: Record<string, unknown>
   return Object.entries(expected).every(([key, value]) => JSON.stringify(row[key]) === JSON.stringify(value));
 }
 
-function noteChange(db: Queryable, id: number, before: NoteFields | null, after: NoteFields | null) {
+type NoteRow = typeof notes.$inferSelect;
+
+/** Well under SQLite's limit on bound parameters. */
+const IDS_PER_QUERY = 500;
+
+/** The notes an edit touches as they are in the file, read in a few queries instead of one per change. */
+function readNotes(db: Queryable, ids: readonly number[]) {
   return Effect.gen(function* () {
-    const [row] = yield* db.select().from(notes).where(eq(notes.id, id)).limit(1).pipe(Effect.orDie);
+    const rows = new Map<number, NoteRow>();
+    const unique = [...new Set(ids)];
+    for (let from = 0; from < unique.length; from += IDS_PER_QUERY) {
+      const found = yield* db
+        .select()
+        .from(notes)
+        .where(inArray(notes.id, unique.slice(from, from + IDS_PER_QUERY)))
+        .pipe(Effect.orDie);
+      for (const row of found) rows.set(row.id, row);
+    }
+    return rows;
+  });
+}
+
+/** Note writes prepared once per edit: Drizzle builds a query's SQL again on every run otherwise. */
+function noteWrites(db: Queryable) {
+  const fields = {
+    lineId: sql.placeholder("lineId"),
+    start: sql.placeholder("start"),
+    duration: sql.placeholder("duration"),
+    pitch: sql.placeholder("pitch"),
+    lyric: sql.placeholder("lyric"),
+    type: sql.placeholder("type"),
+    edited: sql.placeholder("edited"),
+  };
+  const byId = eq(notes.id, sql.placeholder("id"));
+  return {
+    insert: db
+      .insert(notes)
+      .values({ id: sql.placeholder("id"), ...fields, position: 0 })
+      .prepare(),
+    update: db.update(notes).set(fields).where(byId).prepare(),
+    remove: db.delete(notes).where(byId).prepare(),
+  };
+}
+
+type NoteWrites = ReturnType<typeof noteWrites>;
+
+/**
+ * Checks a note change against `rows` (the file as the edit has left it so far) and writes it, keeping `rows` up to
+ * date for the changes after it.
+ */
+function noteChange(
+  rows: Map<number, NoteRow>,
+  writes: NoteWrites,
+  id: number,
+  before: NoteFields | null,
+  after: NoteFields | null,
+) {
+  return Effect.gen(function* () {
+    const row = rows.get(id);
     if (before ? !row || !matches(row, before) : row) return yield* outOfStep();
     if (!after) {
-      yield* db.delete(notes).where(eq(notes.id, id)).pipe(orDiskFull);
-    } else if (!before) {
-      // Its position is set when the lines are put back in order.
-      yield* db
-        .insert(notes)
-        .values({ id, ...after, position: 0 })
-        .pipe(orDiskFull);
+      yield* writes.remove.run({ id }).pipe(orDiskFull);
+      rows.delete(id);
+      return;
+    }
+    // Placeholders skip Drizzle's column mapping, so the boolean goes in as SQLite stores it.
+    const values = { id, ...after, edited: after.edited ? 1 : 0 };
+    if (row) {
+      yield* writes.update.run(values).pipe(orDiskFull);
+      rows.set(id, { ...row, ...after });
     } else {
-      yield* db.update(notes).set(after).where(eq(notes.id, id)).pipe(orDiskFull);
+      // Its position is set when the lines are put back in order.
+      yield* writes.insert.run(values).pipe(orDiskFull);
+      rows.set(id, { id, ...after, position: 0 });
     }
   });
 }
@@ -114,6 +174,16 @@ function singerChange(db: Queryable, id: number, before: SingerFields | null, af
 /** Notes by start within each line, and lines by their first note within each singer; only changed positions are written. */
 function putInOrder(db: Queryable) {
   return Effect.gen(function* () {
+    const setNotePosition = db
+      .update(notes)
+      .set({ position: sql.placeholder("position") })
+      .where(eq(notes.id, sql.placeholder("id")))
+      .prepare();
+    const setLinePosition = db
+      .update(lines)
+      .set({ position: sql.placeholder("position") })
+      .where(eq(lines.id, sql.placeholder("id")))
+      .prepare();
     const noteRows = yield* db
       .select({ id: notes.id, lineId: notes.lineId, start: notes.start, position: notes.position })
       .from(notes)
@@ -126,7 +196,7 @@ function putInOrder(db: Queryable) {
       const position = counters.get(note.lineId) ?? 0;
       counters.set(note.lineId, position + 1);
       if (note.position !== position) {
-        yield* db.update(notes).set({ position }).where(eq(notes.id, note.id)).pipe(orDiskFull);
+        yield* setNotePosition.run({ id: note.id, position }).pipe(orDiskFull);
       }
     }
     const lineRows = yield* db
@@ -144,7 +214,7 @@ function putInOrder(db: Queryable) {
       const position = lineCounters.get(line.singerId) ?? 0;
       lineCounters.set(line.singerId, position + 1);
       if (line.position !== position) {
-        yield* db.update(lines).set({ position }).where(eq(lines.id, line.id)).pipe(orDiskFull);
+        yield* setLinePosition.run({ id: line.id, position }).pipe(orDiskFull);
       }
     }
   });
@@ -153,8 +223,14 @@ function putInOrder(db: Queryable) {
 /** Applies one edit's changes in order, then puts notes and lines in order. Run it in a transaction. */
 export function applyChartChanges(db: Queryable, changes: readonly ChartChange[]) {
   return Effect.gen(function* () {
+    // Only note changes write notes (a line or singer is only deleted once empty), so the read rows stay true.
+    const noteRows = yield* readNotes(
+      db,
+      changes.flatMap((change) => (change.table === "note" ? [change.id] : [])),
+    );
+    const writes = noteWrites(db);
     for (const change of changes) {
-      if (change.table === "note") yield* noteChange(db, change.id, change.before, change.after);
+      if (change.table === "note") yield* noteChange(noteRows, writes, change.id, change.before, change.after);
       else if (change.table === "line") yield* lineChange(db, change.id, change.before, change.after);
       else if (change.table === "singer") yield* singerChange(db, change.id, change.before, change.after);
       else yield* songChange(db, change.before, change.after);

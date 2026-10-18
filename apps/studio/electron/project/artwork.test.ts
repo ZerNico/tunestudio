@@ -12,6 +12,7 @@ import { Tools } from "../tools/tools";
 import { importSong, inspectSong } from "../ultrastar/song-import";
 import { setArtwork } from "./artwork";
 import { listMedia, writeMediaToFile } from "./media";
+import { recentEntry } from "./overview";
 import { projectsLayer } from "./projects";
 
 let cleanups: (() => void)[] = [];
@@ -115,6 +116,41 @@ describe("artwork", () => {
         { concurrency: 2 },
       );
       expect((yield* listMedia(session.db)).filter((row) => row.role === "cover")).toHaveLength(1);
+    }).pipe(Effect.provide(layer));
+  });
+});
+
+describe("recentEntry", () => {
+  it.effect("makes the cover's thumbnail once and again only after the cover changed", () => {
+    const { dir, layer, open } = setup(false);
+    return Effect.gen(function* () {
+      const session = yield* open;
+      const made: number[] = [];
+      const thumbnail = (image: Uint8Array) =>
+        Effect.sync(() => {
+          made.push(image.length);
+          return `data:image/jpeg;base64,${made.length}`;
+        });
+      const first = yield* recentEntry(session, thumbnail);
+      expect(first).toMatchObject({ title: "Night Signals", artist: "Test Artist", cover: "data:image/jpeg;base64,1" });
+      expect(made).toEqual([jpeg(1).length]);
+
+      const again = yield* recentEntry(session, thumbnail, first);
+      expect(again.cover).toBe(first.cover);
+      expect(made).toHaveLength(1);
+
+      const picked = path.join(dir, "picked.jpg");
+      fs.writeFileSync(picked, jpeg(2));
+      yield* setArtwork(session, "cover", { kind: "file", path: picked });
+      const changed = yield* recentEntry(session, thumbnail, again);
+      expect(changed.cover).toBe("data:image/jpeg;base64,2");
+      expect(changed.coverSha256).not.toBe(first.coverSha256);
+
+      yield* setArtwork(session, "cover", { kind: "none" });
+      const none = yield* recentEntry(session, thumbnail, changed);
+      expect(none.cover).toBeUndefined();
+      expect(none.coverSha256).toBeUndefined();
+      expect(made).toHaveLength(2);
     }).pipe(Effect.provide(layer));
   });
 });

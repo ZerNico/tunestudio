@@ -167,6 +167,8 @@ describe("import, open, export and recents", () => {
         cover: expect.stringMatching(/^data:image\/jpeg;base64,/),
       }),
     ]);
+    // The cover's checksum, kept to reuse the thumbnail, stays in main.
+    expect(recents[0]).not.toHaveProperty("coverSha256");
 
     const exportFolder = path.join(dir, "Exports");
     fs.mkdirSync(exportFolder);

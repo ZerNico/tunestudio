@@ -171,8 +171,9 @@ export default function HomeScreen() {
   };
 
   /**
-   * A project file the OS handed this window (double-clicked in Finder or Explorer) opens here. While a new project is
-   * being made it waits (opening would end that, maybe mid-download or mid-save), and opens when that is done.
+   * A project file the OS hands this window (double-clicked in Finder or Explorer) while it shows the start screen opens
+   * here (the route's loader takes one there already). While a new project is being made it waits (opening would end
+   * that, maybe mid-download or mid-save), and opens when that is done.
    */
   let waiting = false;
   const takeOpenRequest = async () => {
@@ -186,6 +187,7 @@ export default function HomeScreen() {
     if (path) await openProject(path);
   };
   onSettled(() => {
+    // One that came after the loader looked.
     void takeOpenRequest();
     return onOpenRequest(() => void takeOpenRequest());
   });

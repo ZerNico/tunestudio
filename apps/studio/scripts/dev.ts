@@ -8,7 +8,7 @@ import electronPath from "electron";
 import * as esbuild from "esbuild";
 
 import { DEV_RELOAD_MESSAGE } from "../electron/dev-reload";
-import { electronBuildOptions } from "./build-electron";
+import { copyChartingTables, electronBuildOptions } from "./build-electron";
 import { DEV_SERVER_PORT } from "./dev-port";
 
 /**
@@ -132,6 +132,7 @@ function onRebuilt() {
   }
 }
 
+copyChartingTables();
 context = await esbuild.context({
   ...electronBuildOptions,
   plugins: [

@@ -7,7 +7,7 @@ import type { ChildProcessSpawner } from "effect/process";
 
 import { defaultGame, GAME_NAMES, GAMES, type Game } from "../../src/lib/games";
 import type { GamesStatus } from "../../src/lib/native/types";
-import { type FileError, GameNotFound, GameUnusable, mapFileError, quoted } from "../errors";
+import { type FileError, GameNotFound, GameUnusable, quoted } from "../errors";
 import { AppSettings } from "../services/settings";
 import { GameLauncher } from "./launcher";
 import { readInfoPlist } from "./plist";
@@ -186,7 +186,7 @@ interface GamesShape {
   readonly choose: (game: Game, app: string) => Effect.Effect<GamesStatus, GameUnusable | FileError>;
   readonly clear: (game: Game) => Effect.Effect<GamesStatus, FileError>;
   /**
-   * Exports a song with `exportInto` into Tune Studio's own folder (emptied first: only the last try is kept) and
+   * Exports a song with `exportInto` into Tune Studio's own folder (which keeps only the last try: `syncSong`) and
    * starts `game` (without one, `defaultGame`'s) with the folder it returns, remembered as the game tried last. One
    * try at a time.
    */
@@ -206,7 +206,6 @@ export function gamesLayer(options: { folder: string; platform: GamePlatform }) 
     Effect.gen(function* () {
       const settings = yield* AppSettings;
       const launcher = yield* GameLauncher;
-      const fs = yield* FileSystem.FileSystem;
       const lock = yield* Semaphore.make(1);
       const { os } = options.platform;
       type Platform = FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner;
@@ -274,9 +273,6 @@ export function gamesLayer(options: { folder: string; platform: GamePlatform }) 
               }
               const program = yield* run(programOf(app, os));
 
-              const what = "the song for the game";
-              yield* fs.remove(options.folder, { recursive: true, force: true }).pipe(mapFileError(what, "replace"));
-              yield* fs.makeDirectory(options.folder, { recursive: true }).pipe(mapFileError(what, "write"));
               const folder = yield* exportInto(options.folder);
 
               const outcome = yield* launcher.start(program, launchArgs(game, folder), cleanEnv(options.platform.env));

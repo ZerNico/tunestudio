@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -6,10 +7,12 @@ import { parseUltraStar } from "@tunestudio/ultrastar";
 import { Effect } from "effect";
 
 import { PermissionDenied } from "../errors";
+import { setArtwork } from "../project/artwork";
 import { readChart } from "../project/chart";
+import { applyChartChanges } from "../project/chart-changes";
 import type { StudioServices } from "../services/layer";
 import { soloChart, syntheticBytes, tempDir, testRuntime, writeSong } from "../testing";
-import { exportFileNames, exportSong } from "./song-export";
+import { exportFileNames, exportSong, syncSong } from "./song-export";
 import { importSong, inspectSong } from "./song-import";
 
 let cleanups: (() => void | Promise<void>)[] = [];
@@ -194,5 +197,90 @@ describe("exporting an UltraStar song", () => {
       [3, "A - B [CO].jpeg"],
       [5, "A - B [INSTR]"],
     ]);
+  });
+
+  it("syncs a try's folder to what an export writes, writing only what changed", async () => {
+    const { dir, run } = setup();
+    const folder = writeSong(dir, "Original", {
+      "duet.txt": duetChart,
+      "mix.m4a": audio,
+      "vocals.mp3": vocals,
+      "front.jpg": cover,
+      "back.png": background,
+    });
+    const root = path.join(dir, "try-in-game");
+    const exports = path.join(dir, "Exports");
+    const base = "Two Voices - Under_Over";
+    const song = path.join(root, base);
+    /** The folder's files and their checksums (comparing the bytes themselves takes seconds). */
+    const contents = (where: string) =>
+      Object.fromEntries(
+        fs.readdirSync(where).map((name) => [
+          name,
+          createHash("sha256")
+            .update(fs.readFileSync(path.join(where, name)))
+            .digest("hex"),
+        ]),
+      );
+    // A file the sync leaves alone keeps the time it is stamped with here.
+    const stamp = (name: string) => fs.utimesSync(path.join(song, name), 1, 1);
+    const kept = (name: string) => fs.statSync(path.join(song, name)).mtimeMs === 1000;
+    const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff]), syntheticBytes(900, 21)]);
+    fs.writeFileSync(path.join(dir, "new.jpg"), jpeg);
+
+    await run(
+      Effect.gen(function* () {
+        const session = yield* importSong(yield* inspectSong(folder), {
+          includeVideo: true,
+          target: path.join(dir, "duet.tunestudio"),
+        });
+        /** Syncs, then checks the folder is a fresh export's and the only thing in `root` besides the record. */
+        const syncedAsExported = Effect.gen(function* () {
+          const synced = yield* syncSong(session, root);
+          fs.rmSync(exports, { recursive: true, force: true });
+          fs.mkdirSync(exports);
+          const exported = yield* exportSong(session, exports, false);
+          if (exported.status !== "exported") throw new Error("expected an export");
+          expect(synced).toEqual({
+            folder: path.join(root, path.basename(exported.folder)),
+            warnings: exported.warnings,
+          });
+          expect(contents(synced.folder)).toEqual(contents(exported.folder));
+          expect(fs.readdirSync(root).toSorted()).toEqual([".exported.json", path.basename(exported.folder)]);
+          return synced;
+        });
+
+        // Over another song's leftovers: they go.
+        fs.mkdirSync(path.join(root, "Old Artist - Old Song"), { recursive: true });
+        fs.writeFileSync(path.join(root, "stray.txt"), "x");
+        expect((yield* syncedAsExported).folder).toBe(song);
+        const audioFile = `${base}.m4a`;
+        stamp(audioFile);
+
+        // Unchanged media stay; a file that isn't the export's goes, one changed on disk is written again.
+        fs.writeFileSync(path.join(song, "notes.txt"), "mine");
+        fs.writeFileSync(path.join(song, `${base} [VOC].mp3`), "cut short");
+        fs.rmSync(path.join(song, `${base} [BG].png`));
+        yield* syncedAsExported;
+        expect(kept(audioFile)).toBe(true);
+
+        // A new cover is written under its name; the rest stays.
+        yield* setArtwork(session, "cover", { kind: "file", path: path.join(dir, "new.jpg") });
+        yield* syncedAsExported;
+        expect(fs.readFileSync(path.join(song, `${base} [CO].jpg`)).equals(jpeg)).toBe(true);
+        expect(kept(audioFile)).toBe(true);
+
+        // Without the record, every file is written again.
+        fs.rmSync(path.join(root, ".exported.json"));
+        yield* syncedAsExported;
+        expect(kept(audioFile)).toBe(false);
+
+        // Renamed, the song moves to its new folder and the old one goes.
+        yield* session.db.transaction((tx) =>
+          applyChartChanges(tx, [{ table: "song", before: { title: "Under/Over" }, after: { title: "Again" } }]),
+        );
+        expect((yield* syncedAsExported).folder).toBe(path.join(root, "Two Voices - Again"));
+      }),
+    );
   });
 });

@@ -106,7 +106,8 @@ describe("games", () => {
     const tried = await rpc.project.tryInGame({ id: project.id });
     const song = path.join(tryFolder, "Test Artist - Night Signals");
     expect(tried).toEqual({ game: "tune-perfect", folder: song, warnings: [] });
-    expect(fs.readdirSync(tryFolder)).toEqual(["Test Artist - Night Signals"]);
+    // The last try's song and the record of its files (`syncSong`).
+    expect(fs.readdirSync(tryFolder).toSorted()).toEqual([".exported.json", "Test Artist - Night Signals"]);
     expect(fs.readdirSync(song).toSorted()).toEqual([
       "Test Artist - Night Signals.mp3",
       "Test Artist - Night Signals.txt",

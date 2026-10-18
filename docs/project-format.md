@@ -109,6 +109,7 @@ asks for.
 
 The app keeps a list of recently opened project files in its data directory (JSON, an Effect
 Schema): path, last opened, and the title, artist and a small cover thumbnail cached at open, so
-the start screen shows projects without opening each file. A path that no longer exists is
+the start screen shows projects without opening each file. The cover's checksum is kept with the
+thumbnail, so opening the project again only makes a new one when the cover changed. A path that no longer exists is
 dropped when the list is shown, unless its whole folder is gone too (a drive that isn't plugged
 in): that one stays.

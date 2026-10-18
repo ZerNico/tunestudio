@@ -174,7 +174,12 @@ function createWindow(): BrowserWindow {
 
   if (!front && saved.maximized) window.maximize();
   if (!front && saved.fullscreen) window.setFullScreen(true);
-  if (!background) window.once("ready-to-show", () => window.show());
+  if (!background) {
+    window.once("ready-to-show", () => {
+      window.show();
+      setDockIcon();
+    });
+  }
   // Closing waits for the page to save what is still waiting (a few seconds at most), then closes for real. Quitting
   // has asked every page already.
   let flushed = false;
@@ -210,6 +215,19 @@ function createWindow(): BrowserWindow {
   return window;
 }
 
+/** Whether the Dock icon is set already, or never needs to be. */
+let dockIconSet = app.isPackaged || process.platform !== "darwin";
+
+/**
+ * Packaged apps get their icon from the bundle; in development the Dock would show Electron's. Decoding it takes about
+ * 60 ms, so it waits until the first window shows (a background run has no Dock icon).
+ */
+function setDockIcon() {
+  if (dockIconSet) return;
+  dockIconSet = true;
+  app.dock?.setIcon(path.join(__dirname, "../resources/icons/icon.png"));
+}
+
 function start() {
   // No Dock icon and no activation: a background run never steals focus on macOS.
   if (background && process.platform === "darwin") app.setActivationPolicy("accessory");
@@ -222,11 +240,6 @@ function start() {
       });
     },
   );
-
-  // Packaged apps get their icon from the bundle; in development the Dock would show Electron's.
-  if (!app.isPackaged && process.platform === "darwin") {
-    app.dock?.setIcon(path.join(__dirname, "../resources/icons/icon.png"));
-  }
 
   // Only what `allowsPermission` lets the app's pages have. The microphone also needs macOS's consent, asked first so
   // its prompt shows (a refusal there is remembered in System Settings).

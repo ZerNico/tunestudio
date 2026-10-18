@@ -65,7 +65,8 @@ const remember = (session: ProjectSession) =>
   Effect.gen(function* () {
     const desktop = yield* Desktop;
     const recents = yield* Recents;
-    const entry = yield* recentEntry(session, desktop.thumbnail).pipe(Effect.orElseSucceed(() => null));
+    const previous = yield* recents.find(session.path);
+    const entry = yield* recentEntry(session, desktop.thumbnail, previous).pipe(Effect.orElseSucceed(() => null));
     if (entry) {
       yield* recents
         .add(entry)

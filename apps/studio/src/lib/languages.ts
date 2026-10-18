@@ -36,11 +36,13 @@ export const LANGUAGES = [
 /** The languages charts can be made in so far. */
 export const CHART_LANGUAGES = ["en", "de"];
 
-const languageNames = new Intl.DisplayNames(["en"], { type: "language" });
+/** Made on first use: loading ICU's names slows starting main and the page. */
+let languageNames: Intl.DisplayNames | undefined;
 
 /** "German" for "de"; the code itself if it isn't one. */
 export function languageName(code: string): string {
   try {
+    languageNames ??= new Intl.DisplayNames(["en"], { type: "language" });
     return languageNames.of(code) ?? code;
   } catch {
     return code;

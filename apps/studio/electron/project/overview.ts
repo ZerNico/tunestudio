@@ -2,7 +2,8 @@ import { Effect, FileSystem, Option, Schema } from "effect";
 
 import type { ProjectOverview } from "../../src/lib/native/types";
 import { mediaUrl } from "../protocols/media-url";
-import { readChart } from "./chart";
+import type { StoredRecent } from "../services/recents";
+import { readChart, readSong } from "./chart";
 import { readMeta } from "./database";
 import { readLyrics } from "./lyrics";
 import { listMedia, readChunk } from "./media";
@@ -60,20 +61,32 @@ export function projectOverview(session: ProjectSession) {
   });
 }
 
-/** The project's details for the recent projects list, with a thumbnail of its cover. */
-export function recentEntry(session: ProjectSession, thumbnail: (image: Uint8Array) => Effect.Effect<string | null>) {
+/** Covers larger than this get no thumbnail. */
+const THUMBNAIL_MAX_BYTES = 4 * 1024 * 1024;
+
+/**
+ * The project's details for the recent projects list, with a thumbnail of its cover. The thumbnail of `previous` (the
+ * project's entry so far) is kept while the cover is the same file.
+ */
+export function recentEntry(
+  session: ProjectSession,
+  thumbnail: (image: Uint8Array) => Effect.Effect<string | null>,
+  previous?: StoredRecent,
+) {
   return Effect.gen(function* () {
-    const chart = yield* readChart(session.db);
+    const { songRow } = yield* readSong(session.db);
     const cover = (yield* listMedia(session.db)).find((row) => row.role === "cover");
-    const bytes = cover && cover.size <= 4 * 1024 * 1024 ? yield* readAll(session, cover.id) : undefined;
-    const image = bytes ? yield* thumbnail(bytes) : null;
+    let image: string | null = null;
+    if (cover && previous?.coverSha256 === cover.sha256) image = previous.cover ?? null;
+    else if (cover && cover.size <= THUMBNAIL_MAX_BYTES) image = yield* thumbnail(yield* readAll(session, cover.id));
     return {
       path: session.path,
-      title: chart.song.title || "Untitled",
-      artist: chart.song.artist || "Unknown artist",
+      title: songRow.title || "Untitled",
+      artist: songRow.artist || "Unknown artist",
       lastOpened: new Date().toISOString(),
       ...(image ? { cover: image } : {}),
-    };
+      ...(cover ? { coverSha256: cover.sha256 } : {}),
+    } satisfies StoredRecent;
   });
 }
 

@@ -12,7 +12,12 @@ const RecentProject = Schema.Struct({
   title: Schema.String,
   artist: Schema.String,
   cover: Schema.optional(Schema.String),
+  /** The checksum of the cover `cover` was made from, so opening the project again reuses it. Main's own. */
+  coverSha256: Schema.optional(Schema.String),
 });
+
+/** One recent project as main keeps it: what the renderer gets, plus what only main needs. */
+export type StoredRecent = RecentProjectEntry & { readonly coverSha256?: string };
 
 /** `recent-projects.json` in the app's data directory. */
 export const RecentsFile = Schema.fromJsonString(
@@ -30,9 +35,11 @@ interface RecentsShape {
    * The projects, newest first. Files that no longer exist are dropped from the list, but only when their folder is
    * still there: one on a drive that isn't plugged in (or a share that isn't connected) stays.
    */
-  readonly list: Effect.Effect<RecentProjectEntry[]>;
+  readonly list: Effect.Effect<StoredRecent[]>;
+  /** The stored entry of `path`, if it is in the list. */
+  readonly find: (path: string) => Effect.Effect<StoredRecent | undefined>;
   /** Adds or moves a project to the top. */
-  readonly add: (entry: RecentProjectEntry) => Effect.Effect<void, FileError>;
+  readonly add: (entry: StoredRecent) => Effect.Effect<void, FileError>;
   readonly remove: (path: string) => Effect.Effect<void, FileError>;
   /** Puts a removed project back where its `lastOpened` sorts it. */
   readonly restore: (entry: RecentProjectEntry) => Effect.Effect<void, FileError>;
@@ -58,12 +65,12 @@ export function recentsLayer(file: string) {
       const read = fs.readFileString(file).pipe(
         Effect.flatMap((text) => decode(text)),
         Effect.map((stored) => stored.projects.map((project) => ({ ...project }))),
-        Effect.orElseSucceed((): RecentProjectEntry[] => []),
+        Effect.orElseSucceed((): StoredRecent[] => []),
       );
 
       const exists = (path: string) => fs.exists(path).pipe(Effect.orElseSucceed(() => true));
 
-      const write = (projects: RecentProjectEntry[]) => {
+      const write = (projects: StoredRecent[]) => {
         const temporary = `${file}.${randomUUID().slice(0, 8)}.tmp`;
         return Effect.gen(function* () {
           yield* fs.makeDirectory(paths.dirname(file), { recursive: true });
@@ -75,7 +82,7 @@ export function recentsLayer(file: string) {
         );
       };
 
-      const update = (change: (projects: RecentProjectEntry[]) => RecentProjectEntry[]) =>
+      const update = (change: (projects: StoredRecent[]) => StoredRecent[]) =>
         lock.withPermits(1)(Effect.flatMap(read, (projects) => write(change(projects).slice(0, LIMIT))));
 
       const shape: RecentsShape = {
@@ -91,6 +98,7 @@ export function recentsLayer(file: string) {
             return kept;
           }),
         ),
+        find: (path) => Effect.map(read, (projects) => projects.find((project) => project.path === path)),
         add: (entry) => update((projects) => [entry, ...projects.filter((project) => project.path !== entry.path)]),
         remove: (path) => update((projects) => projects.filter((project) => project.path !== path)),
         restore: (entry) =>
