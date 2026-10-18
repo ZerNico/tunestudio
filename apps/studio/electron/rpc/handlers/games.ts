@@ -4,7 +4,7 @@ import { Effect } from "effect";
 import { GAME_NAMES } from "../../../src/lib/games";
 import { Games } from "../../games/games";
 import { Desktop } from "../../services/desktop";
-import { exportSong } from "../../ultrastar/song-export";
+import { syncSong } from "../../ultrastar/song-export";
 import { type GroupHandlers, windowOf, withProject } from "./shared";
 
 export const gameHandlers = {
@@ -27,12 +27,10 @@ export const tryHandlers = {
       let warnings: readonly string[] = [];
       const tried = yield* Games.use((games) =>
         games.tryOut(input.game, (folder) =>
-          withProject(input.id, (session) => exportSong(session, folder, true)).pipe(
-            Effect.flatMap((result) => {
-              // A replacing export never stops to ask.
-              if (result.status !== "exported") return Effect.die(new Error("The try-in-game export asked to replace"));
+          withProject(input.id, (session) => syncSong(session, folder)).pipe(
+            Effect.map((result) => {
               warnings = result.warnings;
-              return Effect.succeed(result.folder);
+              return result.folder;
             }),
           ),
         ),

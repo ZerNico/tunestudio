@@ -213,6 +213,102 @@ describe("applyChartChanges", () => {
     ),
   );
 
+  it.effect("checks each change against the ones before it in the same edit", () =>
+    withProject((db, before) =>
+      Effect.gen(function* () {
+        const line = before.singers[0]!.lines[0]!;
+        const walk = fields(line.notes[1]!, line.id);
+        const added = { ...walk, start: 2.6, lyric: "far", edited: true };
+        const changes: ChartChange[] = [
+          { table: "note", id: 500, before: null, after: added },
+          { table: "note", id: 500, before: added, after: { ...added, pitch: 70 } },
+          { table: "note", id: line.notes[1]!.id, before: walk, after: { ...walk, pitch: 61 } },
+          { table: "note", id: line.notes[1]!.id, before: { ...walk, pitch: 61 }, after: null },
+        ];
+        yield* db.transaction((tx) => applyChartChanges(tx, changes));
+        const changed = yield* readEditorChart(db);
+        expect(changed.singers[0]!.lines[0]!.notes.map((n) => [n.id, n.lyric, n.pitch, n.edited])).toEqual([
+          [line.notes[0]!.id, "We ", 64, false],
+          [line.notes[2]!.id, "on", 64, false],
+          [500, "far", 70, true],
+        ]);
+        yield* db.transaction((tx) => applyChartChanges(tx, inverse(changes)));
+        expect(yield* readEditorChart(db)).toEqual(before);
+
+        // A second change expecting what the first one replaced is out of step.
+        const stale = yield* Effect.flip(
+          db.transaction((tx) =>
+            applyChartChanges(tx, [
+              { table: "note", id: line.notes[1]!.id, before: walk, after: { ...walk, pitch: 61 } },
+              { table: "note", id: line.notes[1]!.id, before: walk, after: { ...walk, pitch: 62 } },
+            ]),
+          ),
+        );
+        expect(stale._tag).toBe("ChartOutOfStep");
+        // A note deleted earlier in the edit can't be changed, and can be created again.
+        const deleted = yield* Effect.flip(
+          db.transaction((tx) =>
+            applyChartChanges(tx, [
+              { table: "note", id: line.notes[1]!.id, before: walk, after: null },
+              { table: "note", id: line.notes[1]!.id, before: walk, after: walk },
+            ]),
+          ),
+        );
+        expect(deleted._tag).toBe("ChartOutOfStep");
+        yield* db.transaction((tx) =>
+          applyChartChanges(tx, [
+            { table: "note", id: line.notes[1]!.id, before: walk, after: null },
+            { table: "note", id: line.notes[1]!.id, before: null, after: walk },
+          ]),
+        );
+        expect(yield* readEditorChart(db)).toEqual(before);
+      }),
+    ),
+  );
+
+  it.effect("applies an edit of more notes than one read takes, in order", () =>
+    withProject((db, before) =>
+      Effect.gen(function* () {
+        const line = before.singers[0]!.lines[1]!;
+        const added: ChartChange[] = Array.from({ length: 1200 }, (_, index) => ({
+          table: "note",
+          id: 2000 + index,
+          before: null,
+          after: {
+            lineId: line.id,
+            start: 5 + (1200 - index) * 0.01,
+            duration: 0.01,
+            pitch: 60,
+            lyric: "a",
+            type: "normal",
+            edited: false,
+          },
+        }));
+        yield* db.transaction((tx) => applyChartChanges(tx, added));
+        const moved = added.map((change) => ({
+          ...change,
+          before: change.after,
+          after: { ...change.after!, pitch: 62, edited: true },
+        })) as ChartChange[];
+        // The last one is stale: nothing of the edit is written.
+        const last = moved.at(-1)!;
+        const stale = [...moved.slice(0, -1), { ...last, before: { ...last.before!, pitch: 1 } } as ChartChange];
+        expect((yield* Effect.flip(db.transaction((tx) => applyChartChanges(tx, stale))))._tag).toBe("ChartOutOfStep");
+        yield* db.transaction((tx) => applyChartChanges(tx, moved));
+        const notes = (yield* readEditorChart(db)).singers[0]!.lines[1]!.notes;
+        expect(notes).toHaveLength(1203);
+        // Put in order by start: the last added starts first.
+        expect(notes.slice(3, 6).map((n) => [n.id, n.pitch, n.edited])).toEqual([
+          [3199, 62, true],
+          [3198, 62, true],
+          [3197, 62, true],
+        ]);
+        yield* db.transaction((tx) => applyChartChanges(tx, inverse([...added, ...moved])));
+        expect(yield* readEditorChart(db)).toEqual(before);
+      }),
+    ),
+  );
+
   it.effect("changes song details, checking what they were", () =>
     withProject((db) =>
       Effect.gen(function* () {

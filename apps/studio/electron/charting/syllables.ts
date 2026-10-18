@@ -1,12 +1,11 @@
 /**
  * Splitting lyric words into sung syllables the way UltraStar charters do: the split learned from hand-made charts
- * where the word is known (`data/syllables-<language>.json`), vowel-group rules otherwise. A port of the auto-tuner
+ * where the word is known (`data/syllables-<language>.json`, read on first use), vowel-group rules otherwise. A port of the auto-tuner
  * PoC's `syllables.py` / `lyrics.syllabify`; tests check it against the PoC's output word for word.
  *
  * Strings are handled as code points, like Python's: an emoji or other character outside the BMP counts once.
  */
-import english from "./data/syllables-english.json";
-import german from "./data/syllables-german.json";
+import { lazy, readTable } from "./tables";
 
 const VOWELS: Record<string, string> = {
   english: "aeiouy",
@@ -106,7 +105,13 @@ const ONSETS: Record<string, string[]> = {
   ]),
 };
 
-const TABLES: Record<string, Record<string, string[]>> = { english, german };
+type LearnedTable = Record<string, string[]>;
+
+/** The learned splits by language, each read on first use. */
+const TABLES: Record<string, () => LearnedTable> = {
+  english: lazy(() => readTable("syllables-english.json") as LearnedTable),
+  german: lazy(() => readTable("syllables-german.json") as LearnedTable),
+};
 
 /** `table[key]` only when it is the table's own: a word or language like "constructor" isn't one of Object's. */
 function own<T>(table: Record<string, T>, key: string): T | undefined {
@@ -210,7 +215,7 @@ export function ruleSplit(word: string, language: string): string[] {
 /** A word's sung syllables, keeping its casing and punctuation; `language` is e.g. "english" (any case). */
 export function syllabify(word: string, language: string): string[] {
   const lang = language.toLowerCase();
-  const table = own(TABLES, lang);
+  const table = own(TABLES, lang)?.();
   const pattern = table && own(table, normalize(word));
   if (!pattern) return ruleSplit(word, lang);
   // Map the learned split (on normalized letters) back onto the original word.

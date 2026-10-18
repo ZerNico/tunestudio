@@ -29,7 +29,11 @@ export function originOf(url: string): string | null {
  */
 export function registerSchemes() {
   protocol.registerSchemesAsPrivileged([
-    { scheme: APP_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+    // `codeCache` lets V8 keep the app's compiled scripts between launches, as it does for http(s).
+    {
+      scheme: APP_SCHEME,
+      privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, codeCache: true },
+    },
     // `stream` lets <audio> and <video> seek with Range requests.
     { scheme: MEDIA_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
   ]);

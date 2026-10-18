@@ -45,9 +45,12 @@ function run(command: string, commandArgs: string[]) {
 function stage() {
   fs.rmSync(stageDir, { recursive: true, force: true });
   fs.mkdirSync(stageDir, { recursive: true });
-  for (const dir of ["dist", "dist-electron"]) {
-    fs.cpSync(path.join(root, dir), path.join(stageDir, dir), { recursive: true });
-  }
+  fs.cpSync(path.join(root, "dist"), path.join(stageDir, "dist"), { recursive: true });
+  // The main process's source maps only help a debugger, which the packaged app doesn't allow.
+  fs.cpSync(path.join(root, "dist-electron"), path.join(stageDir, "dist-electron"), {
+    recursive: true,
+    filter: (source) => !source.endsWith(".map"),
+  });
   const stagedPackage = {
     name: "tunestudio",
     productName: PRODUCT_NAME,

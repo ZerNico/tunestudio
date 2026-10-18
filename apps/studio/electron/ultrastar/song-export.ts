@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { DocumentValidationError, serializeUltraStarWithDiagnostics, UltraStarError } from "@tunestudio/ultrastar";
-import { Effect, FileSystem, Path } from "effect";
+import { Effect, FileSystem, Option, Path, Schema } from "effect";
 
 import { extensionOf, songFileName } from "../../src/lib/file-names";
 import type { ExportResult, MediaRole } from "../../src/lib/native/types";
@@ -40,29 +40,11 @@ export function exportFileNames(base: string, media: Pick<MediaRow, "id" | "role
   return names;
 }
 
-/**
- * Writes the project as `<Artist> - <Title>/` in `folder`: the chart as UTF-8 (version 1.2.0)
- * and the media byte for byte. An existing folder is only replaced when `replace` is set;
- * everything is written to a hidden sibling first and moved into place at the end, so a failed
- * export leaves the old folder as it was.
- */
-export function exportSong(
-  session: ProjectSession,
-  folder: string,
-  replace: boolean,
-): Effect.Effect<ExportResult, ChartUnreadable | ProjectDamaged | FileError, FileSystem.FileSystem | Path.Path> {
+/** What an export writes: the chart's text and file names, and the media under their names. */
+function prepareExport(session: ProjectSession) {
   return Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const paths = yield* Path.Path;
     const chart = yield* readChart(session.db);
     const base = songFileName(chart.song.artist, chart.song.title);
-    const target = paths.join(folder, base);
-    const what = quoted(base);
-
-    if (!replace && (yield* fs.exists(target).pipe(mapFileError(what, "check")))) {
-      return { status: "exists", folder: target } satisfies ExportResult;
-    }
-
     const media = yield* listMedia(session.db);
     const names = exportFileNames(base, media);
     const headers: MediaHeaders = {};
@@ -82,6 +64,36 @@ export function exportSong(
         }),
     });
     warnings.unshift(...emptySingerWarnings(chart));
+    const textFile = `${base}.txt`;
+    const files = media.flatMap((row) => {
+      const name = names.get(row.id);
+      return name ? [{ row, name }] : [];
+    });
+    return { base, text, textFile, files, warnings };
+  });
+}
+
+/**
+ * Writes the project as `<Artist> - <Title>/` in `folder`: the chart as UTF-8 (version 1.2.0)
+ * and the media byte for byte. An existing folder is only replaced when `replace` is set;
+ * everything is written to a hidden sibling first and moved into place at the end, so a failed
+ * export leaves the old folder as it was.
+ */
+export function exportSong(
+  session: ProjectSession,
+  folder: string,
+  replace: boolean,
+): Effect.Effect<ExportResult, ChartUnreadable | ProjectDamaged | FileError, FileSystem.FileSystem | Path.Path> {
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const paths = yield* Path.Path;
+    const { base, text, textFile, files, warnings } = yield* prepareExport(session);
+    const target = paths.join(folder, base);
+    const what = quoted(base);
+
+    if (!replace && (yield* fs.exists(target).pipe(mapFileError(what, "check")))) {
+      return { status: "exists", folder: target } satisfies ExportResult;
+    }
 
     const id = randomUUID().slice(0, 8);
     const staging = paths.join(folder, `.${base}.export-${id}`);
@@ -90,11 +102,8 @@ export function exportSong(
 
     yield* Effect.gen(function* () {
       yield* fs.makeDirectory(staging).pipe(mapFileError(what, "create"));
-      yield* fs.writeFileString(paths.join(staging, `${base}.txt`), text).pipe(mapFileError(what, "write"));
-      for (const row of media) {
-        const name = names.get(row.id);
-        if (name) yield* writeMediaToFile(session.db, row, paths.join(staging, name));
-      }
+      yield* fs.writeFileString(paths.join(staging, textFile), text).pipe(mapFileError(what, "write"));
+      for (const { row, name } of files) yield* writeMediaToFile(session.db, row, paths.join(staging, name));
       const exists = yield* fs.exists(target).pipe(mapFileError(what, "check"));
       if (exists) yield* fs.rename(target, previous).pipe(mapFileError(what, "replace"));
       yield* fs.rename(staging, target).pipe(
@@ -105,8 +114,89 @@ export function exportSong(
       if (exists) yield* fs.remove(previous, { recursive: true }).pipe(Effect.ignore);
     }).pipe(Effect.onError(() => removeStaging));
 
-    const files = [`${base}.txt`, ...media.flatMap((row) => names.get(row.id) ?? [])];
-    return { status: "exported", folder: target, files, warnings } satisfies ExportResult;
+    return {
+      status: "exported",
+      folder: target,
+      files: [textFile, ...files.map((file) => file.name)],
+      warnings,
+    } satisfies ExportResult;
+  });
+}
+
+/** Beside the song folder `syncSong` keeps: which song it holds and the checksum of each media file in it. */
+const SyncedFiles = Schema.fromJsonString(
+  Schema.Struct({
+    version: Schema.Literal(1),
+    folder: Schema.String,
+    files: Schema.Record(Schema.String, Schema.String),
+  }),
+);
+const decodeSynced = Schema.decodeUnknownEffect(SyncedFiles);
+const encodeSynced = Schema.encodeSync(SyncedFiles);
+const SYNCED_FILE = ".exported.json";
+
+/**
+ * Makes `<Artist> - <Title>/` in `root` what `exportSong` would write, and removes everything else in `root`: Try in
+ * game's folder, which keeps only the last try. Media already there from the last sync with the same checksum (and
+ * size) are kept, so trying again only writes the chart and what changed.
+ */
+export function syncSong(
+  session: ProjectSession,
+  root: string,
+): Effect.Effect<
+  { folder: string; warnings: string[] },
+  ChartUnreadable | ProjectDamaged | FileError,
+  FileSystem.FileSystem | Path.Path
+> {
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const paths = yield* Path.Path;
+    const { base, text, textFile, files, warnings } = yield* prepareExport(session);
+    const target = paths.join(root, base);
+    const what = quoted(base);
+    const record = paths.join(root, SYNCED_FILE);
+
+    const synced = yield* fs.readFileString(record).pipe(Effect.flatMap(decodeSynced), Effect.option);
+    const known = Option.match(synced, {
+      onNone: (): Record<string, string> => ({}),
+      onSome: (stored) => (stored.folder === base ? stored.files : {}),
+    });
+    // Until it is written again, nothing counts as synced: a sync cut short writes every file next time.
+    yield* fs.remove(record, { force: true }).pipe(mapFileError(what, "replace"));
+    yield* fs.makeDirectory(target, { recursive: true }).pipe(mapFileError(what, "create"));
+
+    const remove = (path: string) =>
+      fs.remove(path, { recursive: true, force: true }).pipe(mapFileError(what, "replace"));
+    for (const entry of yield* fs.readDirectory(root).pipe(mapFileError(what, "replace"))) {
+      if (entry !== base) yield* remove(paths.join(root, entry));
+    }
+    const wanted = new Set([textFile, ...files.map((file) => file.name)]);
+    for (const entry of yield* fs.readDirectory(target).pipe(mapFileError(what, "replace"))) {
+      if (!wanted.has(entry)) yield* remove(paths.join(target, entry));
+    }
+
+    yield* fs.writeFileString(paths.join(target, textFile), text).pipe(mapFileError(what, "write"));
+    for (const { row, name } of files) {
+      const file = paths.join(target, name);
+      const size = yield* fs.stat(file).pipe(
+        Effect.map((info) => (info.type === "File" ? Number(info.size) : null)),
+        Effect.orElseSucceed(() => null),
+      );
+      if (known[name] === row.sha256 && size === row.size) continue;
+      yield* remove(file);
+      yield* writeMediaToFile(session.db, row, file);
+    }
+    yield* fs
+      .writeFileString(
+        record,
+        encodeSynced({
+          version: 1,
+          folder: base,
+          files: Object.fromEntries(files.map(({ row, name }) => [name, row.sha256])),
+        }),
+      )
+      .pipe(mapFileError(what, "write"));
+    return { folder: target, warnings };
   });
 }
 
