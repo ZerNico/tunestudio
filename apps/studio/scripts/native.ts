@@ -30,6 +30,9 @@ if (release) env.GGML_NATIVE ??= "OFF";
 // passes `CMAKE_*` variables on, and flags given that way are kept. Also when it is rebuilt.
 if (process.platform === "win32") {
   for (const language of ["C", "CXX"]) env[`CMAKE_${language}_FLAGS_RELEASE`] ??= "/MD /O2 /Ob2 /DNDEBUG";
+  // ggml's Vulkan backend builds its shader generator as a CMake project of its own, which a Visual
+  // Studio build can't configure (it finds no compiler). With Ninja it gets the compiler's environment.
+  if (process.arch === "x64") env.CMAKE_GENERATOR ??= "Ninja";
 }
 
 execFileSync(

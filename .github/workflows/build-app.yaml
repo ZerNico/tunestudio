@@ -73,15 +73,17 @@ jobs:
           if ($install.ExitCode -ne 0) { throw "The Vulkan SDK installer failed ($($install.ExitCode))." }
           "VULKAN_SDK=C:\VulkanSDK\$env:VULKAN_VERSION" >> $env:GITHUB_ENV
           "C:\VulkanSDK\$env:VULKAN_VERSION\Bin" >> $env:GITHUB_PATH
+          # scripts/native.ts builds whisper.cpp with Ninja here.
+          if (-not (Get-Command ninja -ErrorAction SilentlyContinue)) { choco install ninja -y --no-progress }
 
       - name: Install the Vulkan SDK (Linux)
         if: runner.os == 'Linux'
         run: |
           curl -fsSL "https://sdk.lunarg.com/sdk/download/$VULKAN_VERSION/linux/vulkansdk-linux-x86_64-$VULKAN_VERSION.tar.xz" | tar -xJ -C "$RUNNER_TEMP"
-          sdk="$RUNNER_TEMP/$VULKAN_VERSION/x86_64"
-          # whisper-rs-sys links libvulkan by name only; the addon doesn't keep it (native/src/vulkan.rs).
-          { echo "VULKAN_SDK=$sdk"; echo "LIBRARY_PATH=$sdk/lib"; } >> "$GITHUB_ENV"
-          echo "$sdk/bin" >> "$GITHUB_PATH"
+          echo "VULKAN_SDK=$RUNNER_TEMP/$VULKAN_VERSION/x86_64" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/$VULKAN_VERSION/x86_64/bin" >> "$GITHUB_PATH"
+          # The SDK has no loader to link against on Linux; the addon doesn't keep it anyway (native/src/vulkan.rs).
+          sudo apt-get install -y --no-install-recommends libvulkan-dev
 
       - name: Install dependencies
         run: bun install --frozen-lockfile

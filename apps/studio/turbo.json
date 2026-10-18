@@ -8,7 +8,7 @@
       // Release builds compile whisper.cpp for other machines' processors unless it says otherwise.
       "env": ["GGML_NATIVE"],
       // Where the Vulkan SDK is, for Whisper's Vulkan backend on x64 Windows and Linux.
-      "passThroughEnv": ["VULKAN_SDK", "LIBRARY_PATH"]
+      "passThroughEnv": ["VULKAN_SDK"]
     },
     "dev": {
       "passThroughEnv": ["TUNESTUDIO_*"]
