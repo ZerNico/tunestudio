@@ -54,10 +54,12 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       # whisper.cpp and ONNX Runtime's crates take most of the build; keep their compiled output between runs.
+      # whisper-rs-sys doesn't rebuild when the flags `scripts/native.ts` gives it change: bump the key then.
       - name: Cache the native addon's build
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/studio/native -> target
+          key: whisper-flags-1
 
       - name: Install dependencies
         run: bun install --frozen-lockfile

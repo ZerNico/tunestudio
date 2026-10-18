@@ -21,9 +21,16 @@ if (!libraries) {
   throw new Error(`The native addon can't be built on ${system}: ONNX Runtime has no build for it.`);
 }
 
+const env = { ...process.env };
 // Releases run on other machines: otherwise whisper.cpp targets this processor exactly, and older
 // ones crash. Off, x64 needs AVX2 and FMA, ARM the base set. Applies when whisper-rs-sys is rebuilt.
-const env = release ? { ...process.env, GGML_NATIVE: process.env.GGML_NATIVE ?? "OFF" } : process.env;
+if (release) env.GGML_NATIVE ??= "OFF";
+// With MSVC the cmake crate replaces CMake's flags for the build type with its own minus `/O`, so
+// whisper.cpp was compiled without optimizing and Whisper ran 12 times slower. whisper-rs-sys
+// passes `CMAKE_*` variables on, and flags given that way are kept. Also when it is rebuilt.
+if (process.platform === "win32") {
+  for (const language of ["C", "CXX"]) env[`CMAKE_${language}_FLAGS_RELEASE`] ??= "/MD /O2 /Ob2 /DNDEBUG";
+}
 
 execFileSync(
   "napi",
