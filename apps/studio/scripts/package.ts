@@ -22,6 +22,10 @@ const outputDir = path.join(root, "release");
 // macOS's icon leaves the margin Apple's grid asks for; Windows and Linux draw icons edge to edge, so theirs fills it.
 const macIcon = path.join(root, "resources/icons/icon.png");
 const fullIcon = path.join(root, "resources/icons/icon-full.png");
+const projectExtension = "tunestudio";
+const projectName = "Tune Studio project";
+const projectMimeType = "application/x-tunestudio";
+const projectType = `${APP_ID}.project`;
 
 const args = process.argv.slice(2);
 const archName = args.includes("--arch") ? args[args.indexOf("--arch") + 1] : process.arch;
@@ -102,17 +106,6 @@ const config: Configuration = {
       filter: ["index.cjs", "*.node", "*.dylib", "*.so", "*.dll"],
     },
   ],
-  // Double-clicking a project opens it in Tune Studio (macOS and the Windows installer; an AppImage registers none).
-  fileAssociations: [
-    {
-      ext: "tunestudio",
-      name: "Tune Studio project",
-      description: "Tune Studio project",
-      role: "Editor",
-      mimeType: "application/x-tunestudio",
-      icon: process.platform === "darwin" ? macIcon : fullIcon,
-    },
-  ],
   npmRebuild: false,
   nodeGypRebuild: false,
   mac: {
@@ -125,12 +118,46 @@ const config: Configuration = {
     // notarize) also needs the `com.apple.security.device.audio-input` entitlement, or the microphone stays silent.
     extendInfo: {
       NSMicrophoneUsageDescription: "Tune Studio listens while you sing along, to show your pitch over the notes.",
+      // Double-clicking a project opens it in Tune Studio. macOS links files to apps and icons through a declared type,
+      // not the extension alone. It draws the project's icon from the app icon, like it does for Pages documents.
+      UTExportedTypeDeclarations: [
+        {
+          UTTypeIdentifier: projectType,
+          UTTypeDescription: projectName,
+          UTTypeConformsTo: ["public.data"],
+          UTTypeTagSpecification: {
+            "public.filename-extension": [projectExtension],
+            "public.mime-type": [projectMimeType],
+          },
+        },
+      ],
+      CFBundleDocumentTypes: [
+        {
+          CFBundleTypeName: projectName,
+          CFBundleTypeRole: "Editor",
+          LSHandlerRank: "Owner",
+          LSItemContentTypes: [projectType],
+          CFBundleTypeIconSystemGenerated: true,
+        },
+      ],
     },
     target: dirOnly ? ["dir"] : ["dmg"],
   },
   dmg: { artifactName: `${PRODUCT_NAME}_${version}_${archName}.dmg` },
   win: {
     icon: fullIcon,
+    // Double-clicking a project opens it in Tune Studio; the installer registers the type and its icon. An AppImage
+    // registers none, and macOS declares its type in `mac.extendInfo`.
+    fileAssociations: [
+      {
+        ext: projectExtension,
+        name: projectName,
+        description: projectName,
+        role: "Editor",
+        mimeType: projectMimeType,
+        icon: fullIcon,
+      },
+    ],
     target: dirOnly ? ["dir"] : ["nsis"],
   },
   nsis: { artifactName: `${PRODUCT_NAME}_${version}_${archName}-setup.exe`, oneClick: true, perMachine: false },
