@@ -33,7 +33,11 @@ if (process.platform === "win32") {
   // ggml's Vulkan backend builds its shader generator as a CMake project of its own, which a Visual
   // Studio build can't configure (it finds no compiler). With Ninja it gets the compiler's environment.
   if (process.arch === "x64") env.CMAKE_GENERATOR ??= "Ninja";
+  // That project's test compile sits so deep in whisper-rs-sys's build folder that a target folder
+  // inside the checkout takes it past Windows' 260 characters, which MSVC can't open.
+  env.CARGO_TARGET_DIR ??= path.join(path.parse(root).root, "tunestudio-target");
 }
+const target = env.CARGO_TARGET_DIR ? path.resolve(root, env.CARGO_TARGET_DIR) : path.join(native, "target");
 
 execFileSync(
   "napi",
@@ -53,10 +57,10 @@ execFileSync(
   { cwd: root, stdio: "inherit", shell: process.platform === "win32", env },
 );
 
-// napi builds for this machine into target/<its target triple>/<profile>.
+// napi builds for this machine into <target>/<its target triple>/<profile>.
 const triple = /^host: (\S+)$/m.exec(execFileSync("rustc", ["-vV"], { encoding: "utf8" }))?.[1];
 if (!triple) throw new Error("Couldn't tell this machine's target from `rustc -vV`.");
-const built = path.join(native, "target", triple, release ? "release" : "debug");
+const built = path.join(target, triple, release ? "release" : "debug");
 for (const library of libraries) {
   const file = path.join(built, library);
   if (!fs.existsSync(file)) throw new Error(`${library} is missing from ${built}: the GPU runtime wouldn't load.`);

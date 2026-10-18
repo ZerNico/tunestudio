@@ -7,8 +7,8 @@
       "outputs": ["dist/**", "dist-electron/**", "native/*.node", "native/*.dylib", "native/*.so", "native/*.dll"],
       // Release builds compile whisper.cpp for other machines' processors unless it says otherwise.
       "env": ["GGML_NATIVE"],
-      // Where the Vulkan SDK is, for Whisper's Vulkan backend on x64 Windows and Linux.
-      "passThroughEnv": ["VULKAN_SDK"]
+      // Where the Vulkan SDK is (Whisper's Vulkan backend on x64 Windows and Linux), and where Cargo builds.
+      "passThroughEnv": ["VULKAN_SDK", "CARGO_TARGET_DIR"]
     },
     "dev": {
       "passThroughEnv": ["TUNESTUDIO_*"]

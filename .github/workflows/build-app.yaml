@@ -32,6 +32,8 @@ jobs:
       TUNESTUDIO_VERSION: ${{ inputs.tag }}
       # Whisper's Vulkan backend (x64 Windows and Linux) is built with this SDK's headers and shader compiler.
       VULKAN_VERSION: 1.4.363.0
+      # Short, for Windows' path limit (see scripts/native.ts); the same everywhere, so the cache below finds it.
+      CARGO_TARGET_DIR: ${{ github.workspace }}/t
 
     steps:
       - name: Checkout repository
@@ -60,7 +62,7 @@ jobs:
       - name: Cache the native addon's build
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: apps/studio/native -> target
+          workspaces: apps/studio/native -> ../../../t
           key: whisper-flags-1
 
       - name: Install the Vulkan SDK (Windows)
