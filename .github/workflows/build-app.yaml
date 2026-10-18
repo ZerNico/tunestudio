@@ -17,9 +17,15 @@ jobs:
       fail-fast: false
       matrix:
         platform:
-          - { name: macOS arm64, os: macos-latest, artifact: tunestudio-macos-arm64 }
-          - { name: Windows x64, os: windows-latest, artifact: tunestudio-windows-x64 }
-          - { name: Linux x64, os: ubuntu-24.04, artifact: tunestudio-linux-x64 }
+          - { name: macOS arm64, os: macos-latest, artifact: tunestudio-macos-arm64, target: target }
+          # scripts/native.ts builds in D:\tsbuild there (Windows' path limit), six folders up from the addon's.
+          - {
+              name: Windows x64,
+              os: windows-latest,
+              artifact: tunestudio-windows-x64,
+              target: ../../../../../../tsbuild,
+            }
+          - { name: Linux x64, os: ubuntu-24.04, artifact: tunestudio-linux-x64, target: target }
 
     runs-on: ${{ matrix.platform.os }}
     timeout-minutes: 45
@@ -32,8 +38,6 @@ jobs:
       TUNESTUDIO_VERSION: ${{ inputs.tag }}
       # Whisper's Vulkan backend (x64 Windows and Linux) is built with this SDK's headers and shader compiler.
       VULKAN_VERSION: 1.4.363.0
-      # Short, for Windows' path limit (see scripts/native.ts); the same everywhere, so the cache below finds it.
-      CARGO_TARGET_DIR: ${{ github.workspace }}/t
 
     steps:
       - name: Checkout repository
@@ -62,7 +66,7 @@ jobs:
       - name: Cache the native addon's build
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: apps/studio/native -> ../../../t
+          workspaces: apps/studio/native -> ${{ matrix.platform.target }}
           key: whisper-flags-1
 
       - name: Install the Vulkan SDK (Windows)

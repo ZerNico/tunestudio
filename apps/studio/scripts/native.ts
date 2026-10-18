@@ -33,9 +33,9 @@ if (process.platform === "win32") {
   // ggml's Vulkan backend builds its shader generator as a CMake project of its own, which a Visual
   // Studio build can't configure (it finds no compiler). With Ninja it gets the compiler's environment.
   if (process.arch === "x64") env.CMAKE_GENERATOR ??= "Ninja";
-  // That project's test compile sits so deep in whisper-rs-sys's build folder that a target folder
-  // inside the checkout takes it past Windows' 260 characters, which MSVC can't open.
-  env.CARGO_TARGET_DIR ??= path.join(path.parse(root).root, "tunestudio-target");
+  // That project's test compile sits 233 characters deep in the target folder, so one inside the
+  // checkout takes it past Windows' 260, which MSVC can't open.
+  env.CARGO_TARGET_DIR ??= path.join(path.parse(root).root, "tsbuild");
 }
 const target = env.CARGO_TARGET_DIR ? path.resolve(root, env.CARGO_TARGET_DIR) : path.join(native, "target");
 
