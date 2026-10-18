@@ -196,7 +196,11 @@ export default function ProjectScreen() {
 
   /** A media file's URL by role (the project's as changed: a new cover). */
   const media = (role: string) => projectMedia().find((item) => item.role === role)?.url;
-  const [view, setView] = createSignal<TimeView>({ start: 0, pxPerSecond: 80 });
+  // Scrolling or zooming against a limit (the song's ends, the deepest zoom) keeps the view: nothing is drawn again.
+  const [view, setView] = createSignal<TimeView>(
+    { start: 0, pxPerSecond: 80 },
+    { equals: (a, b) => a.start === b.start && a.pxPerSecond === b.pxPerSecond },
+  );
   const [size, setSize] = createSignal({ width: 0, height: 0 });
   /**
    * The user scrolled while playing: the view stops following the playhead until playback starts again, the playhead
@@ -205,7 +209,9 @@ export default function ProjectScreen() {
   let scrolledAway = false;
   let placed = false;
   const width = () => size().width;
-  const length = () => Math.max(playback.duration(), chartEnd(allNotes()) + 1, 1);
+  /** Where the last note ends: the timeline's length is read every frame and by every block of the overview bar. */
+  const notesEnd = createMemo(() => chartEnd(allNotes()));
+  const length = () => Math.max(playback.duration(), notesEnd() + 1, 1);
 
   const prefs = createEditorPrefs();
   const tones = createTones({ notes });
@@ -716,16 +722,28 @@ export default function ProjectScreen() {
     });
     if (rollArea) observer.observe(rollArea);
 
-    // Cmd/Ctrl+wheel and pinch (which comes as Ctrl+wheel) zoom at the pointer; other wheel scrolls through time.
+    // Cmd/Ctrl+wheel and pinch (which comes as Ctrl+wheel) zoom at the pointer; other wheel scrolls through time. A
+    // trackpad sends several events a frame: they add up, and the view changes once, on the next frame.
+    let wheel: { zoom: number; scroll: number; clientX: number } | null = null;
+    let wheelFrame = 0;
+    const applyWheel = () => {
+      wheelFrame = 0;
+      if (!wheel) return;
+      const { zoom, scroll, clientX } = wheel;
+      wheel = null;
+      const x = clientX - (editArea?.getBoundingClientRect().left ?? 0) - GUTTER_PX;
+      let next = view();
+      if (zoom !== 1) next = zoomAt(next, zoom, x, width(), length());
+      if (scroll !== 0) next = scrollBy(next, scroll, width(), length());
+      changeView(next);
+    };
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
-      const x = event.clientX - (editArea?.getBoundingClientRect().left ?? 0) - GUTTER_PX;
-      if (event.ctrlKey || event.metaKey) {
-        changeView(zoomAt(view(), Math.exp(-event.deltaY * 0.01), x, width(), length()));
-      } else {
-        const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
-        changeView(scrollBy(view(), delta, width(), length()));
-      }
+      wheel ??= { zoom: 1, scroll: 0, clientX: event.clientX };
+      wheel.clientX = event.clientX;
+      if (event.ctrlKey || event.metaKey) wheel.zoom *= Math.exp(-event.deltaY * 0.01);
+      else wheel.scroll += Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+      wheelFrame ||= requestAnimationFrame(applyWheel);
     };
     editArea?.addEventListener("wheel", onWheel, { passive: false });
 
@@ -839,6 +857,7 @@ export default function ProjectScreen() {
       autoScroll.end();
       stopWork();
       observer.disconnect();
+      cancelAnimationFrame(wheelFrame);
       editArea?.removeEventListener("wheel", onWheel);
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("keyup", onKeyUp);

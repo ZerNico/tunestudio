@@ -6,7 +6,7 @@
  * If saving fails (the disk is full, the project disagrees), the history is dropped and `onFailed` reloads the chart
  * from the project, so what the editor shows never differs from what is saved for long.
  */
-import { createMemo, createSignal, createStore, flush } from "solid-js";
+import { createMemo, createSignal, flush } from "solid-js";
 
 import type { ChartChange, LineFields, NoteFields, SingerFields, SongFields } from "~/lib/native/contract";
 import type { EditorChart, EditorLine, EditorSong } from "~/lib/native/types";
@@ -138,9 +138,13 @@ export function createChartDocument<Selection>(options: {
   selection: () => Selection;
   setSelection: (selection: Selection) => void;
 }) {
-  const initial = rowsFromChart(options.chart);
-  const [rows, setRows] = createStore<ChartRows>(initial);
-  const chart = createMemo(() => chartFromRows(rows));
+  /**
+   * Plain objects, changed only by `commit`, which bumps `rowsChanged`: the chart is worked out from every row on each
+   * edit, and reading them through a store's proxies took longer than the rest of the edit.
+   */
+  const rows = rowsFromChart(options.chart);
+  const [rowsChanged, setRowsChanged] = createSignal(0);
+  const chart = createMemo(() => (rowsChanged(), chartFromRows(rows)));
   const history = createHistory<Selection>();
   /** Bumped on every step, so undo and redo labels update. */
   const [version, setVersion] = createSignal(0);
@@ -150,17 +154,16 @@ export function createChartDocument<Selection>(options: {
   let nextId =
     Math.max(
       0,
-      ...Object.keys(initial.notes).map(Number),
-      ...Object.keys(initial.lines).map(Number),
-      ...initial.singers.map((singer) => singer.id),
+      ...Object.keys(rows.notes).map(Number),
+      ...Object.keys(rows.lines).map(Number),
+      ...rows.singers.map((singer) => singer.id),
     ) + 1;
   let saving = Promise.resolve();
   let failed = false;
 
   const commit = (changes: ChartChange[]) => {
-    setRows((draft) => {
-      applyToRows(draft, changes);
-    });
+    applyToRows(rows, changes);
+    setRowsChanged((count) => count + 1);
     // Written now, not at the next microtask: an edit right after this one (undo, then an edit) reads these rows.
     flush();
     saving = saving.then(async () => {
@@ -311,7 +314,6 @@ export function createChartDocument<Selection>(options: {
   return {
     /** The chart as drawn; follows every edit. */
     chart,
-    rows,
     /** Synchronous revision, including edits undone again and failed saves. */
     revision: () => revision,
     edit,

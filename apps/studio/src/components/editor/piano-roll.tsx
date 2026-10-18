@@ -336,44 +336,6 @@ export function PianoRoll(props: {
             />
           )}
         </Show>
-        <For each={props.breaks}>
-          {(item) => (
-            <>
-              <div
-                data-singer={item.singer}
-                data-inactive={inactive(item.singer)}
-                data-auto={item.auto ? "" : undefined}
-                data-selected={props.selectedBreaks?.has(item.lineId) ? "true" : undefined}
-                class="pointer-events-none absolute inset-y-0 roll-break"
-                style={{ left: `${breakX(props.view, item.time)}px` }}
-                data-testid="line-break"
-              />
-              {/*
-                The line is pressed and dragged as its marker is (with Select), in a narrow strip that leaves the gap
-                to the roll; notes, drawn later, stay on top. A double-click there adds a note. The other singer's grip
-                goes under the active singer's grips and notes.
-              */}
-              <Show when={props.tool === "select" && props.onBreakDown}>
-                <div
-                  data-singer={item.singer}
-                  data-inactive={inactive(item.singer)}
-                  class="absolute inset-y-0 z-[1] w-1 -translate-x-1/2 cursor-ew-resize data-inactive:z-0"
-                  style={{ left: `${breakX(props.view, item.time) + 0.5}px` }}
-                  onPointerDown={(event) => {
-                    if (event.button !== 0) return;
-                    event.stopPropagation();
-                    props.onBreakDown?.(item, event);
-                  }}
-                  onDblClick={(event) => {
-                    event.stopPropagation();
-                    props.onEmptyDoubleClick(pointAt(event));
-                  }}
-                  data-testid="line-break-grip"
-                />
-              </Show>
-            </>
-          )}
-        </For>
         <Show when={props.played?.start != null && timeToX(props.view, props.played.start) > 0}>
           <div
             class="pointer-events-none absolute inset-y-0 left-0 z-[5] bg-background/45"
@@ -388,68 +350,112 @@ export function PianoRoll(props: {
             data-testid="not-played-after"
           />
         </Show>
-        <For each={props.notes} keyed={(item) => item.id}>
-          {(note) => {
-            // Keyed by id: an edit (which makes new note objects) updates the element instead of making a new one.
-            /** Where the note is drawn: moved along while it is dragged. */
-            const shown = () => previewed(note(), props.drag ?? null);
-            const widthPx = () => shown().duration * props.view.pxPerSecond;
-            const press = (event: PointerEvent, part: NotePart) => {
-              if (event.button !== 0) return;
-              event.stopPropagation();
-              if (props.tool === "split") props.onSplit(note(), pointAt(event).time, event.shiftKey);
-              else props.onNoteDown(note(), event, part, scale());
-            };
-            return (
-              <div
-                data-singer={note().singer}
-                data-inactive={inactive(note().singer)}
-                data-type={note().type}
-                data-selected={props.selected.has(note().id) ? "true" : undefined}
-                data-overlap={props.overlapping.has(note().id) ? "" : undefined}
-                data-pending={props.pending?.has(note().id) ? "" : undefined}
-                aria-selected={props.selected.has(note().id) ? "true" : "false"}
-                title={noteTitle(note(), props.overlapping.has(note().id))}
-                onPointerDown={(event) => press(event, "body")}
-                onPointerMove={(event) => {
-                  if (props.tool === "split") props.onHover(note(), pointAt(event).time);
-                }}
-                onPointerLeave={() => props.onHover(null, 0)}
-                onDblClick={(event) => {
-                  event.stopPropagation();
-                  props.onNoteDoubleClick(note());
-                }}
-                onContextMenu={() => props.onNoteContextMenu?.(note())}
-                data-tool={props.tool}
-                class="roll-note cursor-grab data-[tool=split]:cursor-scissors"
-                style={{
-                  left: `${timeToX(props.view, shown().start)}px`,
-                  width: `${Math.max(2, widthPx() - 1)}px`,
-                  top: `${pitchToY(props.range, rowHeight(), shown().pitch) + 1}px`,
-                  height: `${Math.max(4, rowHeight() - 2)}px`,
-                  "line-height": `${Math.max(4, rowHeight() - 2)}px`,
-                }}
-                data-testid="roll-note"
-              >
-                {/* Too narrow for a readable syllable: the title still names it. */}
-                {widthPx() >= MIN_LABEL_PX ? noteLabel(note(), props.overlapping.has(note().id)) : ""}
-                {/* Edges move the start or end; a note too narrow for them is only moved. */}
-                <Show when={widthPx() >= MIN_EDGES_PX && props.tool !== "split"}>
-                  <span
-                    class="absolute inset-y-0 left-0 w-1.5 cursor-ew-resize"
-                    onPointerDown={(event) => press(event, "start")}
-                    data-testid="note-start-edge"
-                  />
-                  <span
-                    class="absolute inset-y-0 right-0 w-1.5 cursor-ew-resize"
-                    onPointerDown={(event) => press(event, "end")}
-                    data-testid="note-end-edge"
+        {/*
+          Breaks and notes on a layer of their own over the sung pitch's canvas: drawn straight over it, each note would
+          be checked against it every frame (tens of ms with thousands on screen). Presses between them reach the roll.
+        */}
+        <div class="pointer-events-none absolute inset-0 will-change-transform">
+          <For each={props.breaks}>
+            {(item) => (
+              <>
+                <div
+                  data-singer={item.singer}
+                  data-inactive={inactive(item.singer)}
+                  data-auto={item.auto ? "" : undefined}
+                  data-selected={props.selectedBreaks?.has(item.lineId) ? "true" : undefined}
+                  class="pointer-events-none absolute inset-y-0 roll-break"
+                  style={{ left: `${breakX(props.view, item.time)}px` }}
+                  data-testid="line-break"
+                />
+                {/*
+                  The line is pressed and dragged as its marker is (with Select), in a narrow strip that leaves the gap
+                  to the roll; notes, drawn later, stay on top. A double-click there adds a note. The other singer's grip
+                  goes under the active singer's grips and notes.
+                */}
+                <Show when={props.tool === "select" && props.onBreakDown}>
+                  <div
+                    data-singer={item.singer}
+                    data-inactive={inactive(item.singer)}
+                    class="pointer-events-auto absolute inset-y-0 z-[1] w-1 -translate-x-1/2 cursor-ew-resize data-inactive:z-0"
+                    style={{ left: `${breakX(props.view, item.time) + 0.5}px` }}
+                    onPointerDown={(event) => {
+                      if (event.button !== 0) return;
+                      event.stopPropagation();
+                      props.onBreakDown?.(item, event);
+                    }}
+                    onDblClick={(event) => {
+                      event.stopPropagation();
+                      props.onEmptyDoubleClick(pointAt(event));
+                    }}
+                    data-testid="line-break-grip"
                   />
                 </Show>
-              </div>
-            );
-          }}
-        </For>
+              </>
+            )}
+          </For>
+          <For each={props.notes} keyed={(item) => item.id}>
+            {(note) => {
+              // Keyed by id: an edit (which makes new note objects) updates the element instead of making a new one.
+              /** Where the note is drawn: moved along while it is dragged. */
+              const shown = () => previewed(note(), props.drag ?? null);
+              const widthPx = () => shown().duration * props.view.pxPerSecond;
+              const press = (event: PointerEvent, part: NotePart) => {
+                if (event.button !== 0) return;
+                event.stopPropagation();
+                if (props.tool === "split") props.onSplit(note(), pointAt(event).time, event.shiftKey);
+                else props.onNoteDown(note(), event, part, scale());
+              };
+              return (
+                <div
+                  data-singer={note().singer}
+                  data-inactive={inactive(note().singer)}
+                  data-type={note().type}
+                  data-selected={props.selected.has(note().id) ? "true" : undefined}
+                  data-overlap={props.overlapping.has(note().id) ? "" : undefined}
+                  data-pending={props.pending?.has(note().id) ? "" : undefined}
+                  aria-selected={props.selected.has(note().id) ? "true" : "false"}
+                  title={noteTitle(note(), props.overlapping.has(note().id))}
+                  onPointerDown={(event) => press(event, "body")}
+                  onPointerMove={(event) => {
+                    if (props.tool === "split") props.onHover(note(), pointAt(event).time);
+                  }}
+                  onPointerLeave={() => props.onHover(null, 0)}
+                  onDblClick={(event) => {
+                    event.stopPropagation();
+                    props.onNoteDoubleClick(note());
+                  }}
+                  onContextMenu={() => props.onNoteContextMenu?.(note())}
+                  data-tool={props.tool}
+                  class="pointer-events-auto roll-note cursor-grab data-[tool=split]:cursor-scissors"
+                  style={{
+                    left: `${timeToX(props.view, shown().start)}px`,
+                    width: `${Math.max(2, widthPx() - 1)}px`,
+                    top: `${pitchToY(props.range, rowHeight(), shown().pitch) + 1}px`,
+                    height: `${Math.max(4, rowHeight() - 2)}px`,
+                    "line-height": `${Math.max(4, rowHeight() - 2)}px`,
+                  }}
+                  data-testid="roll-note"
+                >
+                  {/* Too narrow for a readable syllable: the title still names it. */}
+                  {widthPx() >= MIN_LABEL_PX ? noteLabel(note(), props.overlapping.has(note().id)) : ""}
+                  {/* Edges move the start or end; a note too narrow for them is only moved. */}
+                  <Show when={widthPx() >= MIN_EDGES_PX && props.tool !== "split"}>
+                    <span
+                      class="absolute inset-y-0 left-0 w-1.5 cursor-ew-resize"
+                      onPointerDown={(event) => press(event, "start")}
+                      data-testid="note-start-edge"
+                    />
+                    <span
+                      class="absolute inset-y-0 right-0 w-1.5 cursor-ew-resize"
+                      onPointerDown={(event) => press(event, "end")}
+                      data-testid="note-end-edge"
+                    />
+                  </Show>
+                </div>
+              );
+            }}
+          </For>
+        </div>
         <Show when={props.drawing}>
           {(drawn) => (
             <div

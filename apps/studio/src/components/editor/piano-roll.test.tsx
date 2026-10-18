@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@solidjs/testing-library";
+import userEvent from "@testing-library/user-event";
 import { flush } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
 
@@ -362,6 +363,28 @@ describe("BreakLane", () => {
     fireEvent.dblClick(lane, { clientX: 250 });
     expect(props.onLaneDoubleClick).toHaveBeenCalledWith(12.5);
     expect(screen.getByTestId("break-drag-label")).toHaveTextContent("0:11.5 · 2 notes move");
+  });
+
+  it("opens one menu for the right-clicked marker, and none on the lane", async () => {
+    const props = { onDown: vi.fn(), onDoubleClick: vi.fn(), onLaneDoubleClick: vi.fn(), onResetTiming: vi.fn() };
+    const breaks = [
+      { lineId: 7, singer: 1, time: 11.5, auto: true, gapStart: 11.5, gapEnd: 12 },
+      { lineId: 8, singer: 1, time: 14, auto: false, gapStart: 13.5, gapEnd: 14.5 },
+    ];
+    render(() => <BreakLane breaks={breaks} view={view} selected={new Set()} drag={null} {...props} />);
+    const user = userEvent.setup();
+    const [first, second] = screen.getAllByTestId("break-marker");
+    await user.pointer({ keys: "[MouseRight]", target: second! });
+    await user.click(await screen.findByRole("menuitem", { name: "Reset timing" }));
+    expect(props.onResetTiming).toHaveBeenCalledWith(breaks[1]);
+
+    await user.pointer({ keys: "[MouseRight]", target: first! });
+    expect(await screen.findByRole("menuitem", { name: "Reset timing" })).toHaveAttribute("aria-disabled", "true");
+    await user.click(screen.getByRole("menuitem", { name: "Remove line break" }));
+    expect(props.onDoubleClick).toHaveBeenCalledWith(breaks[0]);
+
+    await user.pointer({ keys: "[MouseRight]", target: first!.parentElement! });
+    expect(screen.queryByRole("menu")).toBeNull();
   });
 });
 

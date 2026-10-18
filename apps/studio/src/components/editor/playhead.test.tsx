@@ -9,7 +9,9 @@ const view = { start: 10, pxPerSecond: 100 };
 describe("Playhead", () => {
   it("draws the line and head at the time, past the pitch labels", () => {
     render(() => <Playhead view={view} width={800} time={12} onScrub={() => {}} />);
-    expect(Number.parseFloat(screen.getByTestId("playhead").style.left)).toBeCloseTo(GUTTER_PX + 200);
+    const line = screen.getByTestId("playhead");
+    expect(line.style.left).toBe(`${GUTTER_PX}px`);
+    expect(line.style.transform).toBe("translateX(200px)");
     expect(screen.getByTestId("playhead-head")).toHaveAttribute("title", "0:12.0");
   });
 

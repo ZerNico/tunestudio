@@ -22,6 +22,8 @@ export const Route = createFileRoute("/project/$id")({
       throw error;
     }
   },
+  // Not kept once left: the ID never opens again, and a long song's chart would stay in memory for nothing.
+  gcTime: 0,
   component: ProjectScreen,
   errorComponent: RouteError,
 });

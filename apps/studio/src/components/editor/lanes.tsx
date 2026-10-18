@@ -1,5 +1,5 @@
 import type { JSX } from "@solidjs/web";
-import { createEffect, createMemo, For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "~/components/ui/context-menu";
 import type { AutoScroll } from "~/lib/editor/autoscroll";
@@ -175,19 +175,18 @@ export function TimeRuler(props: {
   );
 }
 
-/** One break's marker (the trigger of its menu: `trigger` are the menu's props for it). */
+/** One break's marker. */
 function BreakMarker(props: {
-  trigger: JSX.HTMLAttributes<HTMLSpanElement>;
   item: LineBreak;
   view: TimeView;
   selected: boolean;
   inactive: boolean;
   onDown: (event: PointerEvent) => void;
   onDoubleClick: () => void;
+  onContextMenu: () => void;
 }) {
   return (
     <span
-      {...props.trigger}
       data-singer={props.item.singer}
       data-inactive={props.inactive ? "" : undefined}
       data-auto={props.item.auto ? "" : undefined}
@@ -210,6 +209,7 @@ function BreakMarker(props: {
         event.stopPropagation();
         props.onDoubleClick();
       }}
+      onContextMenu={() => props.onContextMenu()}
       data-testid="break-marker"
     />
   );
@@ -234,47 +234,62 @@ export function BreakLane(props: {
   /** In a duet, the singer edits go to: the other one's breaks are dimmed. */
   activeSinger?: number;
 }) {
+  /** The marker a right-click is on, told on its way up to the menu's trigger (null: the lane, which has no menu). */
+  let pressed: number | null = null;
+  /** The break the menu is about, by the line it ends; looked up again, so the menu follows it while open. */
+  const [menuLine, setMenuLine] = createSignal<number | null>(null);
+  const menuItem = () => props.breaks.find((item) => item.lineId === menuLine());
   return (
-    <Lane class="h-5 bg-bar" testid="break-lane" onDoubleClick={(x) => props.onLaneDoubleClick(xToTime(props.view, x))}>
-      <For each={props.breaks} keyed={(item) => item.lineId}>
-        {(item) => (
-          <ContextMenu>
-            <ContextMenuTrigger
-              render={(triggerProps: JSX.HTMLAttributes<HTMLSpanElement>) => (
-                <BreakMarker
-                  trigger={triggerProps}
-                  item={item()}
-                  view={props.view}
-                  selected={props.selected.has(item().lineId)}
-                  inactive={props.activeSinger !== undefined && item().singer !== props.activeSinger}
-                  onDown={(event) => props.onDown(item(), event)}
-                  onDoubleClick={() => props.onDoubleClick(item())}
-                />
-              )}
-            />
-            <ContextMenuContent class="min-w-[180px]" data-testid="break-menu">
-              <ContextMenuItem disabled={item().auto} onClick={() => props.onResetTiming(item())}>
-                Reset timing
-              </ContextMenuItem>
-              <ContextMenuItem variant="destructive" onClick={() => props.onDoubleClick(item())}>
-                Remove line break
-              </ContextMenuItem>
-            </ContextMenuContent>
-          </ContextMenu>
-        )}
-      </For>
-      <Show when={props.drag}>
-        {(drag) => (
-          <span
-            class="pointer-events-none absolute top-0 z-10 ml-2 rounded-[3px] border border-tooltip-border bg-tooltip px-1.5 font-mono text-[10px] leading-4 whitespace-nowrap text-foreground"
-            style={{ left: `${timeToX(props.view, drag().time)}px` }}
-            data-testid="break-drag-label"
-          >
-            {drag().label}
-          </span>
-        )}
-      </Show>
-    </Lane>
+    // One menu for every marker: each menu listens on the whole document, and a long song has hundreds of breaks.
+    <ContextMenu>
+      <ContextMenuTrigger
+        class="contents"
+        onContextMenu={(event) => {
+          if (pressed === null) event.preventBaseUIHandler();
+          else setMenuLine(pressed);
+          pressed = null;
+        }}
+      >
+        <Lane
+          class="h-5 bg-bar"
+          testid="break-lane"
+          onDoubleClick={(x) => props.onLaneDoubleClick(xToTime(props.view, x))}
+        >
+          <For each={props.breaks} keyed={(item) => item.lineId}>
+            {(item) => (
+              <BreakMarker
+                item={item()}
+                view={props.view}
+                selected={props.selected.has(item().lineId)}
+                inactive={props.activeSinger !== undefined && item().singer !== props.activeSinger}
+                onDown={(event) => props.onDown(item(), event)}
+                onDoubleClick={() => props.onDoubleClick(item())}
+                onContextMenu={() => (pressed = item().lineId)}
+              />
+            )}
+          </For>
+          <Show when={props.drag}>
+            {(drag) => (
+              <span
+                class="pointer-events-none absolute top-0 z-10 ml-2 rounded-[3px] border border-tooltip-border bg-tooltip px-1.5 font-mono text-[10px] leading-4 whitespace-nowrap text-foreground"
+                style={{ left: `${timeToX(props.view, drag().time)}px` }}
+                data-testid="break-drag-label"
+              >
+                {drag().label}
+              </span>
+            )}
+          </Show>
+        </Lane>
+      </ContextMenuTrigger>
+      <ContextMenuContent class="min-w-[180px]" data-testid="break-menu">
+        <ContextMenuItem disabled={menuItem()?.auto ?? true} onClick={() => props.onResetTiming(menuItem()!)}>
+          Reset timing
+        </ContextMenuItem>
+        <ContextMenuItem variant="destructive" disabled={!menuItem()} onClick={() => props.onDoubleClick(menuItem()!)}>
+          Remove line break
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 
@@ -284,13 +299,15 @@ export function BreakLane(props: {
  */
 export function WaveformLane(props: { waveform: Waveform; view: TimeView; width: number }) {
   let canvas: HTMLCanvasElement | undefined;
+  /** Its colour, read once (reading it styles the page again, on every scroll). */
+  let colour: string | undefined;
   const scale = createMemo(() => loudest(props.waveform));
   createEffect(
     () => waveColumns(props.waveform, props.view, props.width, scale()),
     (columns) => {
       const context = canvas && fitCanvas(canvas, props.width, WAVEFORM_PX);
       if (!context) return;
-      context.fillStyle = getComputedStyle(canvas!).color;
+      context.fillStyle = colour ??= getComputedStyle(canvas!).color;
       const middle = WAVEFORM_PX / 2;
       columns.forEach((value, x) => {
         if (value > 0) context.fillRect(x, middle - value * middle, 1, Math.max(1, 2 * value * middle));

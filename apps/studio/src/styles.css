@@ -470,9 +470,9 @@
   font-size: 12px;
   text-shadow: 0 1px 1px #0009;
   box-shadow: 0 1px 2px #0004;
-  transition: background-color 0.1s, border-color 0.1s;
   z-index: 1;
-  &:hover { background-color: var(--note-hover); border-color: var(--note-hover-border); color: #fff; z-index: 4; }
+  /* Only hovering fades: selecting thousands of notes would otherwise restyle and repaint them all every frame of it. */
+  &:hover { background-color: var(--note-hover); border-color: var(--note-hover-border); color: #fff; z-index: 4; transition: background-color 0.1s, border-color 0.1s; }
   &[data-singer="2"] { background-color: var(--note-2); border-color: var(--note-2-border); color: var(--violet-text); }
   &[data-singer="2"]:hover { background-color: var(--note-2-hover); }
   &[data-type="golden"], &[data-type="golden-rap"] { background-color: var(--warning-soft); border-color: var(--amber-33); color: var(--amber-73); }
@@ -487,7 +487,8 @@
     background-color: var(--note-selected);
     border-color: var(--note-selected-border);
     color: var(--note-selected-text);
-    box-shadow: 0 0 0 1px var(--note-edge), 0 0 14px var(--note-glow);
+    /* A spread, not a blur: blurring every selected note's glow takes the GPU 100+ ms a frame with thousands. */
+    box-shadow: 0 0 0 1px var(--note-edge), 0 0 0 4px var(--note-glow);
     z-index: 3;
   }
   &[data-selected="true"][data-singer="2"] { background-color: var(--note-2-selected); border-color: var(--note-2-selected-border); }
