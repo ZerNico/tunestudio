@@ -189,7 +189,8 @@ describe("gameLauncherLayer", () => {
     const script = `#!/bin/sh\nprintf '%s\\n' "$@" "env:$TRY_MARK:$ELECTRON_RUN_AS_NODE" > "${out}.part"\nmv "${out}.part" "${out}"\nsleep 5\n`;
     fs.writeFileSync(game, script, { mode: 0o755 });
     expect(await start(game, ["--songpath", "/a folder/Song"], { TRY_MARK: "x" })).toEqual({ kind: "started" });
-    await expect.poll(() => fs.existsSync(out)).toBe(true);
+    // A started shell can take a while to write on a busy machine.
+    await expect.poll(() => fs.existsSync(out), { timeout: 4000 }).toBe(true);
     expect(fs.readFileSync(out, "utf8")).toBe("--songpath\n/a folder/Song\nenv:x:\n");
   });
 
