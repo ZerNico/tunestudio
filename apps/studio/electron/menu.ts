@@ -38,7 +38,7 @@ export async function sendEditCommand(command: EditCommand, window?: BaseWindow)
 const PROJECT_ITEMS: { id: MenuCommand; label: string; accelerator?: string }[] = [
   { id: "export-games", label: "Export for Games", accelerator: "CmdOrCtrl+E" },
   { id: "export-usdb", label: "Export for USDB", accelerator: "Shift+CmdOrCtrl+E" },
-  // The game's name isn't in the label: the menu is built once, and the game is a setting.
+  // The game's name isn't in the label: the menu is built once, and the game is the one tried last (or found first).
   { id: "try-in-game", label: "Try in Game", accelerator: "CmdOrCtrl+T" },
   { id: "song-details", label: "Song Details", accelerator: "CmdOrCtrl+I" },
   { id: "close-project", label: "Close Project" },

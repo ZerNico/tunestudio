@@ -1,4 +1,4 @@
-/** "Try in game": which games there are, choosing one's app, and trying a project's song in the chosen game. */
+/** "Try in game": which games there are, choosing one's app, and trying a project's song in one. */
 import { Effect } from "effect";
 
 import { GAME_NAMES } from "../../../src/lib/games";
@@ -19,7 +19,6 @@ export const gameHandlers = {
       return yield* games.choose(input.game, app);
     }),
   "games.clear": (input) => Games.use((games) => games.clear(input.game)),
-  "games.use": (input) => Games.use((games) => games.use(input.game)),
 } satisfies GroupHandlers<"games">;
 
 export const tryHandlers = {
@@ -27,7 +26,7 @@ export const tryHandlers = {
     Effect.gen(function* () {
       let warnings: readonly string[] = [];
       const tried = yield* Games.use((games) =>
-        games.tryOut((folder) =>
+        games.tryOut(input.game, (folder) =>
           withProject(input.id, (session) => exportSong(session, folder, true)).pipe(
             Effect.flatMap((result) => {
               // A replacing export never stops to ask.

@@ -131,7 +131,7 @@ export class DraftGone extends Schema.TaggedError<DraftGone>()("DraftGone", {
   message: Schema.String,
 }) {}
 
-/** The game "Try in game" uses isn't chosen and wasn't found where it is usually installed (or is gone). */
+/** The game to try a song in (or any game) isn't chosen and wasn't found where it is usually installed (or is gone). */
 export class GameNotFound extends Schema.TaggedError<GameNotFound>()("GameNotFound", {
   message: Schema.String,
 }) {}

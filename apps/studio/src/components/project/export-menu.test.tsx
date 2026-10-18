@@ -2,11 +2,13 @@ import { render, screen } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
+import type { Game } from "~/lib/games";
+
 import { ExportMenu } from "./export-menu";
 
-function setup(game: "tune-perfect" | "usdx" = "tune-perfect") {
+function setup(games: Game[] = ["tune-perfect"], shortcutGame: Game | null = games[0] ?? null) {
   const props = { onSongFolder: vi.fn(), onUsdb: vi.fn(), onTryInGame: vi.fn(), onOpen: vi.fn() };
-  render(() => <ExportMenu busy={false} game={game} tryShortcut="⌘T" {...props} />);
+  render(() => <ExportMenu busy={false} games={games} shortcutGame={shortcutGame} tryShortcut="⌘T" {...props} />);
   return { ...props, user: userEvent.setup() };
 }
 
@@ -23,14 +25,29 @@ describe("ExportMenu", () => {
     expect(onSongFolder).toHaveBeenCalledOnce();
   });
 
-  it("tries the song in the chosen game, named with its key", async () => {
-    const { onTryInGame, onOpen, user } = setup("usdx");
+  it("tries the song in each available game, with the key on the one it starts", async () => {
+    const { onTryInGame, onOpen, user } = setup(["tune-perfect", "usdx", "performous"], "usdx");
     await user.click(screen.getByTestId("export-song"));
-    const item = await screen.findByRole("menuitem", { name: /Try in UltraStar Deluxe/ });
+    const items = await screen.findAllByRole("menuitem", { name: /^Try in/ });
     expect(onOpen).toHaveBeenCalledOnce();
-    expect(item).toHaveTextContent("⌘T");
-    await user.click(item);
-    expect(onTryInGame).toHaveBeenCalledOnce();
+    expect(items.map((item) => item.textContent?.replace("⌘T", ""))).toEqual([
+      "Try in Tune Perfect",
+      "Try in UltraStar Deluxe",
+      "Try in Performous",
+    ]);
+    expect(items[0]).not.toHaveTextContent("⌘T");
+    expect(items[1]).toHaveTextContent("⌘T");
+    await user.click(items[2]!);
+    expect(onTryInGame).toHaveBeenCalledExactlyOnceWith("performous");
     expect(screen.queryByTestId("export-menu")).not.toBeInTheDocument();
+  });
+
+  it("has a plain Try in game without a game, which leaves it to main", async () => {
+    const { onTryInGame, user } = setup([]);
+    await user.click(screen.getByTestId("export-song"));
+    const item = await screen.findByRole("menuitem", { name: /^Try in/ });
+    expect(item).toHaveTextContent("Try in game⌘T");
+    await user.click(item);
+    expect(onTryInGame).toHaveBeenCalledExactlyOnceWith();
   });
 });

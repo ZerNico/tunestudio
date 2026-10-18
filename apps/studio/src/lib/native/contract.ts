@@ -211,6 +211,12 @@ export const ToolInput = Schema.Struct({ tool: ToolName });
 
 export const GameInput = Schema.Struct({ game: GameName });
 
+export const TryInGameInput = Schema.Struct({
+  id: Schema.String,
+  /** The game to start; without one, the one tried last or the first available (`defaultGame`). */
+  game: Schema.optional(GameName),
+});
+
 export const ModelFeatureInput = Schema.Struct({ feature: Schema.Literals(MODEL_FEATURES) });
 
 /** A note's stored fields (times in seconds of the main audio, pitch as MIDI). */
@@ -398,10 +404,10 @@ export class NativeRpcs extends RpcGroup.make(
   /** Writes the project as an UltraStar song folder. */
   call("project.exportSong", ExportInput, ExportResult),
   /**
-   * Exports the song into Tune Studio's own folder (replacing the last try) and starts the game the settings name with
-   * it. Fails with `GameNotFound` when that game isn't chosen and wasn't found.
+   * Exports the song into Tune Studio's own folder (replacing the last try) and starts the game with it, remembered as
+   * the one tried last. Fails with `GameNotFound` when that game (or, without one, any game) isn't available.
    */
-  call("project.tryInGame", ProjectInput, TriedInGame),
+  call("project.tryInGame", TryInGameInput, TriedInGame),
   /** Writes the chart's text for USDB (`usdb.ts`); returns what changed on the way. */
   call("project.exportUsdb", UsdbExportInput, Schema.Struct({ warnings: Schema.Array(Schema.String) })),
   /** Replaces (or removes) the cover or background; returns the project's overview with its media as they are now. */
@@ -456,14 +462,12 @@ export class NativeRpcs extends RpcGroup.make(
   /** Saves all settings and returns them as stored. */
   call("settings.set", Settings, Settings),
 
-  /** The games "Try in game" can start: the app chosen for each, and the one it would start. */
+  /** The games "Try in game" can start: the app chosen for each, the one it would start, and the one tried last. */
   query("games.status", GamesStatus),
   /** Asks for a game's app (a `.app` on macOS, else its program), checks it can be started and keeps it. */
   call("games.choose", GameInput, GamesStatus),
   /** Forgets the app chosen for a game (it is looked for where it is usually installed again). */
   call("games.clear", GameInput, GamesStatus),
-  /** Which game "Try in game" starts. */
-  call("games.use", GameInput, GamesStatus),
 
   /** What is installed of yt-dlp, QuickJS and FFmpeg. */
   query("tools.status", Schema.Array(ToolStatus)),

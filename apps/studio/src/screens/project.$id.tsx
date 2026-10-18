@@ -879,7 +879,7 @@ export default function ProjectScreen() {
     // The editor has no way to the settings but closing the project (it is in the recent projects).
     openGameSettings: () => void close("games"),
   });
-  onSettled(() => songExport.refreshGame());
+  onSettled(() => songExport.refreshGames());
 
   return (
     <div class="flex h-dvh min-h-0 flex-col overflow-hidden bg-background" data-testid="project">
@@ -944,12 +944,13 @@ export default function ProjectScreen() {
         </IconButton>
         <ExportMenu
           busy={songExport.exporting()}
-          game={songExport.game()}
+          games={songExport.available()}
+          shortcutGame={songExport.defaultGame()}
           tryShortcut={keyOf("tryInGame")}
           onSongFolder={() => void songExport.forGames()}
           onUsdb={() => void songExport.forUsdb()}
-          onTryInGame={() => void songExport.tryInGame()}
-          onOpen={() => songExport.refreshGame()}
+          onTryInGame={(game) => void songExport.tryInGame(game)}
+          onOpen={() => songExport.refreshGames()}
         />
         <Button variant="ghost" size="sm" onClick={() => void close()} data-testid="close-project">
           <XIcon />

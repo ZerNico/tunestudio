@@ -277,7 +277,10 @@ export type ExportResult = typeof ExportResult.Type;
 
 export const GameName = Schema.Literals(GAMES);
 
-/** A game as the settings show it: the app chosen for it, and the one "Try in game" would start (chosen or found). */
+/**
+ * A game as the settings show it: the app chosen for it, and the one "Try in game" would start (chosen or found). It
+ * is available when that one is there (`isAvailable`).
+ */
 export const GameStatus = Schema.Struct({
   game: GameName,
   chosen: Schema.NullOr(Schema.String),
@@ -286,7 +289,8 @@ export const GameStatus = Schema.Struct({
 });
 export type GameStatus = typeof GameStatus.Type;
 
-export const GamesStatus = Schema.Struct({ tryWith: GameName, games: Schema.Array(GameStatus) });
+/** Every game in `GAMES` order, and the one a song was last tried in. */
+export const GamesStatus = Schema.Struct({ last: Schema.NullOr(GameName), games: Schema.Array(GameStatus) });
 export type GamesStatus = typeof GamesStatus.Type;
 
 /** The song was exported into Tune Studio's own folder and the game started with it. */

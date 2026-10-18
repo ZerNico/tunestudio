@@ -54,7 +54,7 @@ describe("games", () => {
     const { dir, rpc, recorded } = await setup();
     const found = fakeGameApp(path.join(dir, "Applications"), "Tune Perfect", "tuneperfect", "#!/bin/sh\n");
     const status = await rpc.games.status();
-    expect(status.tryWith).toBe("tune-perfect");
+    expect(status.last).toBeNull();
     expect(status.games).toEqual([
       { game: "tune-perfect", chosen: null, found },
       { game: "usdx", chosen: null, found: null },
@@ -76,12 +76,11 @@ describe("games", () => {
     recorded.answers.push(usdx);
     const chosen = await rpc.games.choose({ game: "usdx" });
     expect(chosen.games[1]).toEqual({ game: "usdx", chosen: usdx, found: usdx });
-    expect((await rpc.games.use({ game: "usdx" })).tryWith).toBe("usdx");
     // The settings screen's copy of the settings doesn't undo it.
     const settings = await rpc.settings.get();
     await rpc.settings.set({
       ...settings,
-      games: { tryWith: "vocaluxe", paths: { ...settings.games.paths, vocaluxe: "/bin/sh" } },
+      games: { last: "vocaluxe", paths: { ...settings.games.paths, vocaluxe: "/bin/sh" } },
     });
     expect((await rpc.settings.get()).games).toEqual(settings.games);
 
@@ -93,14 +92,17 @@ describe("games", () => {
     const project = await openSong(rpc, dir, recorded);
 
     // Nothing chosen or found: nothing is exported or started.
-    const missing = await rpc.project.tryInGame({ id: project.id }).catch((error: unknown) => error);
-    expect(missing).toBeInstanceOf(GameNotFound);
+    const none = await rpc.project.tryInGame({ id: project.id }).catch((error: unknown) => error);
+    expect(none).toBeInstanceOf(GameNotFound);
+    expect((none as GameNotFound).message).toBe("Tune Studio couldn't find a game. Add one in Settings.");
+    const missing = await rpc.project.tryInGame({ id: project.id, game: "tune-perfect" }).catch((e: unknown) => e);
     expect((missing as GameNotFound).message).toBe("Tune Studio couldn't find Tune Perfect. Choose it in Settings.");
     expect(launched.starts).toEqual([]);
 
     const app = fakeGameApp(path.join(dir, "Applications"), "Tune Perfect", "tuneperfect", "#!/bin/sh\n");
     const tryFolder = path.join(dir, "data", "try-in-game");
     fs.mkdirSync(path.join(tryFolder, "Old Artist - Old Song"), { recursive: true });
+    // Without a game, the first available one.
     const tried = await rpc.project.tryInGame({ id: project.id });
     const song = path.join(tryFolder, "Test Artist - Night Signals");
     expect(tried).toEqual({ game: "tune-perfect", folder: song, warnings: [] });
@@ -113,18 +115,25 @@ describe("games", () => {
       { program: path.join(app, "Contents", "MacOS", "tuneperfect"), args: ["--songpath", song], env: {} },
     ]);
 
-    // Performous takes the folder alone; a game that quits at once (one open already) is reported.
+    expect((await rpc.games.status()).last).toBe("tune-perfect");
+
+    // Performous takes the folder alone, and is tried again without naming it.
     const performous = fakeGameApp(dir, "Performous", "performous", "#!/bin/sh\n");
     recorded.answers.push(performous);
     await rpc.games.choose({ game: "performous" });
-    await rpc.games.use({ game: "performous" });
+    expect((await rpc.project.tryInGame({ id: project.id, game: "performous" })).game).toBe("performous");
+    expect(launched.starts.at(-1)?.args).toEqual([song]);
+    expect((await rpc.project.tryInGame({ id: project.id })).game).toBe("performous");
+
+    // A game that quits at once (one open already) is reported, and isn't remembered.
     launched.outcome = { kind: "exited", code: 0 };
+    await rpc.project.tryInGame({ id: project.id, game: "tune-perfect" }).catch(() => {});
+    expect((await rpc.games.status()).last).toBe("performous");
     const quit = await rpc.project.tryInGame({ id: project.id }).catch((error: unknown) => error);
     expect(quit).toBeInstanceOf(GameUnusable);
     expect((quit as GameUnusable).message).toBe(
       "Performous closed right away. If it was open already, quit it and try again.",
     );
-    expect(launched.starts.at(-1)?.args).toEqual([song]);
 
     launched.outcome = { kind: "failed", code: "EACCES" };
     const denied = await rpc.project.tryInGame({ id: project.id }).catch((error: unknown) => error);
@@ -132,9 +141,11 @@ describe("games", () => {
       "Tune Studio isn't allowed to start Performous. Check that it is a program you can run.",
     );
 
-    // A chosen app that went away says so, rather than starting a found one.
+    // A chosen app that went away says so when named; without a name, an available game starts instead.
     fs.rmSync(performous, { recursive: true });
-    const gone = await rpc.project.tryInGame({ id: project.id }).catch((error: unknown) => error);
+    const gone = await rpc.project.tryInGame({ id: project.id, game: "performous" }).catch((e: unknown) => e);
     expect((gone as GameNotFound).message).toBe("Performous isn't where it was chosen. Choose it again in Settings.");
+    launched.outcome = { kind: "running" };
+    expect((await rpc.project.tryInGame({ id: project.id })).game).toBe("tune-perfect");
   });
 });

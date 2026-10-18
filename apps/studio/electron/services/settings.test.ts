@@ -71,16 +71,16 @@ describe("AppSettings", () => {
       Effect.gen(function* () {
         const settings = yield* AppSettings;
         const screen = yield* settings.get;
-        yield* settings.setGames({ tryWith: "usdx", paths: { usdx: "/Applications/UltraStarDeluxe.app" } });
+        yield* settings.setGames({ last: "usdx", paths: { usdx: "/Applications/UltraStarDeluxe.app" } });
         yield* settings.set({
           ...screen,
-          games: { tryWith: "vocaluxe", paths: { ...screen.games.paths, vocaluxe: "/bin/sh" } },
+          games: { last: "vocaluxe", paths: { ...screen.games.paths, vocaluxe: "/bin/sh" } },
         });
         return yield* settings.get;
       }),
     );
     expect(stored.games).toEqual({
-      tryWith: "usdx",
+      last: "usdx",
       paths: { ...DEFAULT_SETTINGS.games.paths, usdx: "/Applications/UltraStarDeluxe.app" },
     });
     expect(JSON.parse(fs.readFileSync(file, "utf8")).settings.games.paths.usdx).toBe(
@@ -91,18 +91,20 @@ describe("AppSettings", () => {
     expect(cleared.games.paths.usdx).toBeNull();
   });
 
-  it("defaults a stored game that isn't one, and keeps the other games' paths", async () => {
+  it("defaults a stored game that isn't one, keeps the other games' paths and drops keys it doesn't know", async () => {
     const { file, run } = setup();
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(
       file,
       JSON.stringify({
         version: 1,
-        settings: { games: { tryWith: "singstar", paths: { performous: "/opt/performous", usdx: 3, other: "/x" } } },
+        settings: {
+          games: { last: "singstar", tryWith: "usdx", paths: { performous: "/opt/performous", usdx: 3, other: "/x" } },
+        },
       }),
     );
     expect((await run(AppSettings.use((settings) => settings.get))).games).toEqual({
-      tryWith: "tune-perfect",
+      last: null,
       paths: { "tune-perfect": null, usdx: null, vocaluxe: null, performous: "/opt/performous" },
     });
   });

@@ -1,5 +1,5 @@
 import type { JSX } from "@solidjs/web";
-import { Show } from "solid-js";
+import { For, Show } from "solid-js";
 import ChevronDownIcon from "~icons/lucide/chevron-down";
 import DownloadIcon from "~icons/lucide/download";
 import FileTextIcon from "~icons/lucide/file-text";
@@ -20,18 +20,22 @@ import { type Game, tryLabel } from "~/lib/games";
 
 /**
  * The title bar's Export menu: for games (a song folder: the chart with its audio, video and cover), for USDB (the
- * chart's text, to paste into its form), or straight into a game to try the chart there.
+ * chart's text, to paste into its form), or straight into a game to try the chart there, one item per game available.
+ * With none, a plain "Try in game" item lets main say so.
  */
 export function ExportMenu(props: {
   busy: boolean;
-  /** The game "Try in game" starts. */
-  game: Game;
-  /** Its key, as shown. */
+  /** The games available, in `GAMES` order. */
+  games: readonly Game[];
+  /** The game the try key starts, whose item shows the key. */
+  shortcutGame: Game | null;
+  /** The try key, as shown. */
   tryShortcut: string;
   onSongFolder: () => void;
   onUsdb: () => void;
-  onTryInGame: () => void;
-  /** The menu opened (the game may have changed in the settings). */
+  /** Tries the song in `game`; without one, in the game main picks. */
+  onTryInGame: (game?: Game) => void;
+  /** The menu opened (a game may have been added in the settings). */
   onOpen?: () => void;
 }) {
   return (
@@ -62,11 +66,26 @@ export function ExportMenu(props: {
           Export for USDB
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => props.onTryInGame()} data-testid="try-in-game">
-          <Gamepad2Icon />
-          {tryLabel(props.game)}
-          <DropdownMenuShortcut>{props.tryShortcut}</DropdownMenuShortcut>
-        </DropdownMenuItem>
+        <For
+          each={props.games}
+          fallback={
+            <DropdownMenuItem onClick={() => props.onTryInGame()} data-testid="try-in-game">
+              <Gamepad2Icon />
+              Try in game
+              <DropdownMenuShortcut>{props.tryShortcut}</DropdownMenuShortcut>
+            </DropdownMenuItem>
+          }
+        >
+          {(game) => (
+            <DropdownMenuItem onClick={() => props.onTryInGame(game)} data-testid={`try-in-${game}`}>
+              <Gamepad2Icon />
+              {tryLabel(game)}
+              <Show when={game === props.shortcutGame}>
+                <DropdownMenuShortcut>{props.tryShortcut}</DropdownMenuShortcut>
+              </Show>
+            </DropdownMenuItem>
+          )}
+        </For>
       </DropdownMenuContent>
     </DropdownMenu>
   );

@@ -5,7 +5,7 @@
 import { Context, Effect, FileSystem, Layer, Path, Semaphore } from "effect";
 import type { ChildProcessSpawner } from "effect/process";
 
-import { GAME_NAMES, GAMES, type Game } from "../../src/lib/games";
+import { defaultGame, GAME_NAMES, GAMES, type Game } from "../../src/lib/games";
 import type { GamesStatus } from "../../src/lib/native/types";
 import { type FileError, GameNotFound, GameUnusable, mapFileError, quoted } from "../errors";
 import { AppSettings } from "../services/settings";
@@ -180,18 +180,18 @@ export function findGame(game: Game, platform: GamePlatform) {
 }
 
 interface GamesShape {
-  /** Each game's chosen app and the one "Try in game" would start. */
+  /** Each game's chosen app, the one "Try in game" would start, and the game tried last. */
   readonly status: Effect.Effect<GamesStatus>;
   /** Keeps `app` for `game` after checking it can be started. */
   readonly choose: (game: Game, app: string) => Effect.Effect<GamesStatus, GameUnusable | FileError>;
   readonly clear: (game: Game) => Effect.Effect<GamesStatus, FileError>;
-  /** The game "Try in game" starts from now on. */
-  readonly use: (game: Game) => Effect.Effect<GamesStatus, FileError>;
   /**
    * Exports a song with `exportInto` into Tune Studio's own folder (emptied first: only the last try is kept) and
-   * starts the game the settings name with the folder it returns. One try at a time.
+   * starts `game` (without one, `defaultGame`'s) with the folder it returns, remembered as the game tried last. One
+   * try at a time.
    */
   readonly tryOut: <E, R>(
+    game: Game | undefined,
     exportInto: (folder: string) => Effect.Effect<string, E, R>,
   ) => Effect.Effect<{ game: Game; folder: string }, E | GameNotFound | GameUnusable | FileError, R>;
 }
@@ -226,7 +226,7 @@ export function gamesLayer(options: { folder: string; platform: GamePlatform }) 
           return yield* run(findGame(game, options.platform));
         });
 
-      const statusOf = (stored: { tryWith: Game; paths: Record<Game, string | null> }) =>
+      const statusOf = (stored: { last: Game | null; paths: Record<Game, string | null> }) =>
         Effect.gen(function* () {
           const games = yield* Effect.forEach(
             GAMES,
@@ -238,7 +238,7 @@ export function gamesLayer(options: { folder: string; platform: GamePlatform }) 
               })),
             { concurrency: "unbounded" },
           );
-          return { tryWith: stored.tryWith, games } satisfies GamesStatus;
+          return { last: stored.last, games } satisfies GamesStatus;
         });
 
       const status = Effect.flatMap(settings.get, (stored) => statusOf(stored.games));
@@ -253,12 +253,14 @@ export function gamesLayer(options: { folder: string; platform: GamePlatform }) 
           }),
         clear: (game) =>
           Effect.flatMap(settings.setGames({ paths: { [game]: null } }), (stored) => statusOf(stored.games)),
-        use: (game) => Effect.flatMap(settings.setGames({ tryWith: game }), (stored) => statusOf(stored.games)),
-        tryOut: (exportInto) =>
+        tryOut: (asked, exportInto) =>
           lock.withPermits(1)(
             Effect.gen(function* () {
               const { games } = yield* settings.get;
-              const game = games.tryWith;
+              const game = asked ?? defaultGame(yield* statusOf(games));
+              if (!game) {
+                return yield* new GameNotFound({ message: "Tune Studio couldn't find a game. Add one in Settings." });
+              }
               const name = GAME_NAMES[game];
               const chosen = games.paths[game];
               // Nothing is exported when there is no game to start.
@@ -293,6 +295,7 @@ export function gamesLayer(options: { folder: string; platform: GamePlatform }) 
                   message: `${name} closed right away. If it was open already, quit it and try again.`,
                 });
               }
+              yield* settings.setGames({ last: game });
               return { game, folder };
             }),
           ),

@@ -22,7 +22,7 @@ test.afterEach(async () => {
   song.cleanup();
 });
 
-test("tries the song in a game: asks for one first, then exports it and starts the game with its folder", async () => {
+test("tries the song in a game: adds one first, then exports it and starts the game with its folder", async () => {
   const { app, page } = studio;
   const projectFile = path.join(song.dir, "Night Signals.tunestudio");
   await answerDialogs(app, song.folder, projectFile);
@@ -31,27 +31,31 @@ test("tries the song in a game: asks for one first, then exports it and starts t
   await page.getByRole("button", { name: "Create project" }).click();
   await expect(page.getByTestId("project")).toBeVisible();
 
-  // No game anywhere: the toast leads to the settings' Games section.
+  // No game anywhere: a plain Try in game, whose toast leads to the settings' Games section.
   await page.getByTestId("export-song").click();
-  await page.getByRole("menuitem", { name: /Try in Tune Perfect/ }).click();
-  await expect(page.getByText("Tune Studio couldn't find Tune Perfect. Choose it in Settings.")).toBeVisible();
+  await page.getByRole("menuitem", { name: /^Try in game/ }).click();
+  await expect(page.getByText("Tune Studio couldn't find a game. Add one in Settings.")).toBeVisible();
   await page.getByRole("button", { name: "Open Settings" }).click();
   const games = page.getByTestId("settings-games");
   await expect(games).toBeInViewport();
-  await expect(page.getByTestId("game-tune-perfect-path")).toHaveText("Not set");
+  await expect(page.getByTestId("games-empty")).toHaveText("No games found. Add one to try songs in it.");
 
   const gamesFolder = path.join(song.dir, "Games");
   fs.mkdirSync(gamesFolder);
   const game = fakeGame(gamesFolder, "Tune Perfect", "tuneperfect");
   await answerDialogs(app, game.app);
-  await page.getByRole("button", { name: "Choose Tune Perfect" }).click();
+  await page.getByRole("button", { name: "Add a game…" }).click();
+  await page.getByRole("menuitem", { name: "Tune Perfect…" }).click();
   await expect(page.getByTestId("game-tune-perfect-path")).toHaveText(game.app);
+  await expect(page.getByTestId("games-empty")).toBeHidden();
 
   // Back in the project, the game starts with the song's own folder, exported in Tune Studio's data.
   await page.getByTestId("rail-recent").click();
   await page.getByTestId("recent-item").click();
   await expect(page.getByTestId("project")).toBeVisible();
   await page.getByTestId("export-song").click();
+  // Only the game there is, with the try key.
+  await expect(page.getByRole("menuitem", { name: /^Try in/ })).toHaveCount(1);
   await page.getByRole("menuitem", { name: /Try in Tune Perfect/ }).click();
   await expect(page.getByText("Opened in Tune Perfect")).toBeVisible();
   await expect.poll(() => fs.existsSync(game.argv)).toBe(true);

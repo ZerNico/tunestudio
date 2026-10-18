@@ -15,9 +15,9 @@ interface SettingsShape {
   readonly set: (settings: Settings) => Effect.Effect<Settings, FileError>;
   /** Changes what is remembered between new projects. */
   readonly remember: (change: Partial<Settings["newProject"]>) => Effect.Effect<Settings, FileError>;
-  /** Changes the game "Try in game" uses, or the app chosen for one (checked by the caller). */
+  /** Changes the game tried last, or the app chosen for one (checked by the caller). */
   readonly setGames: (change: {
-    tryWith?: Settings["games"]["tryWith"];
+    last?: Settings["games"]["last"];
     paths?: Partial<Settings["games"]["paths"]>;
   }) => Effect.Effect<Settings, FileError>;
 }
@@ -84,7 +84,7 @@ export function settingsLayer(file: string) {
               const cleaned = settingsFrom({
                 ...stored,
                 games: {
-                  tryWith: change.tryWith ?? stored.games.tryWith,
+                  last: change.last === undefined ? stored.games.last : change.last,
                   paths: { ...stored.games.paths, ...change.paths },
                 },
               });

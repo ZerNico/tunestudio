@@ -43,12 +43,12 @@ export const NewProjectSettings = Schema.Struct({
 });
 
 /**
- * The games "Try in game" opens a song in. The paths are main's own (`games.choose`, `games.clear`): the renderer can't
- * set what is run, so `settings.set` keeps the stored ones.
+ * The games "Try in game" opens a song in. They are main's own (`games.choose`, `games.clear`, a try): the renderer
+ * can't set what is run, so `settings.set` keeps the stored ones.
  */
 export const GameSettings = Schema.Struct({
-  /** The game "Try in game" uses. */
-  tryWith: Schema.Literals(GAMES),
+  /** The game a song was last tried in, which Mod+T starts again. */
+  last: Schema.NullOr(Schema.Literals(GAMES)),
   /** Each game's chosen app (a `.app` bundle on macOS, else the program); null: look for it where it is usually installed. */
   paths: Schema.Struct({
     "tune-perfect": Schema.NullOr(Schema.String),
@@ -79,7 +79,7 @@ export const DEFAULT_SETTINGS: Settings = {
   audio: { format: "m4a", bitrate: 256, normalization: "off" },
   video: { download: true, format: "mp4", maxResolution: 1080, maxFps: 60 },
   newProject: { language: null },
-  games: { tryWith: "tune-perfect", paths: { "tune-perfect": null, usdx: null, vocaluxe: null, performous: null } },
+  games: { last: null, paths: { "tune-perfect": null, usdx: null, vocaluxe: null, performous: null } },
 };
 
 /**
@@ -121,7 +121,7 @@ export function settingsFrom(stored: unknown): Settings {
     },
     newProject: { language: pick("newProject", "language", NewProjectSettings.fields.language) },
     games: {
-      tryWith: pick("games", "tryWith", GameSettings.fields.tryWith),
+      last: pick("games", "last", GameSettings.fields.last),
       paths: {
         "tune-perfect": gamePath("tune-perfect"),
         usdx: gamePath("usdx"),

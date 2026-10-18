@@ -10,10 +10,10 @@ import { toast, toastError } from "~/components/ui/toast";
 import { revealLabel } from "~/lib/desktop";
 import { GameNotFound } from "~/lib/errors";
 import { songFileName } from "~/lib/file-names";
-import { GAME_NAMES, type Game } from "~/lib/games";
+import { defaultGame, GAME_NAMES, type Game, isAvailable } from "~/lib/games";
 import { native } from "~/lib/native/client";
 import { errorMessage } from "~/lib/native/errors";
-import type { EditorSong } from "~/lib/native/types";
+import type { EditorSong, GamesStatus } from "~/lib/native/types";
 
 /** Shows a file or folder in Finder or Explorer. */
 export function reveal(path: string) {
@@ -29,10 +29,15 @@ export function createSongExport(options: {
   openGameSettings: () => void;
 }) {
   const [exporting, setExporting] = createSignal(false);
-  /** The game "Try in game" starts, as the settings said when last asked. */
-  const [game, setGame] = createSignal<Game>("tune-perfect");
+  /** The games as main said when last asked; null until it has. */
+  const [games, setGames] = createSignal<GamesStatus | null>(null);
   /** A song folder that is there already, asked about before it's replaced. */
   const [replacing, setReplacing] = createSignal<{ folder: string; existing: string } | null>(null);
+
+  /** Asks main which games there are (one may have been added in the settings, in another window too). */
+  const refreshGames = () => {
+    native.games.status().then(setGames, (error: unknown) => console.error(error));
+  };
 
   /** Exports into `folder`, replacing a song folder there only with `replace`. */
   const exportTo = async (folder: string, replace: boolean) => {
@@ -60,24 +65,31 @@ export function createSongExport(options: {
   return {
     exporting,
     replacing,
-    game,
-
-    /** Reads which game "Try in game" starts (the settings may have changed in another window). */
-    refreshGame() {
-      native.settings.get().then(
-        (settings) => setGame(settings.games.tryWith),
-        (error: unknown) => console.error(error),
-      );
+    /** The games a song can be tried in, in `GAMES` order. */
+    available: (): Game[] =>
+      games()
+        ?.games.filter(isAvailable)
+        .map((entry) => entry.game) ?? [],
+    /** The game Mod+T starts (`defaultGame`); null when there is none or main wasn't asked yet. */
+    defaultGame: (): Game | null => {
+      const status = games();
+      return status ? defaultGame(status) : null;
     },
 
-    /** Exports the song into Tune Studio's own folder and opens the chosen game with it. */
-    async tryInGame() {
+    refreshGames,
+
+    /**
+     * Exports the song into Tune Studio's own folder and opens `game` with it; without one, the game main picks: the
+     * one tried last, else the first available.
+     */
+    async tryInGame(game?: Game) {
       if (exporting()) return;
       setExporting(true);
+      const title = game ? `Couldn't open ${GAME_NAMES[game]}` : "Couldn't open a game";
       try {
         await options.saved();
-        const result = await native.project.tryInGame({ id: options.project() });
-        setGame(result.game);
+        const result = await native.project.tryInGame({ id: options.project(), game });
+        setGames((status) => status && { ...status, last: result.game });
         toast.add({
           type: "success",
           title: `Opened in ${GAME_NAMES[result.game]}`,
@@ -85,14 +97,16 @@ export function createSongExport(options: {
         });
       } catch (error) {
         if (error instanceof GameNotFound) {
+          // The menu's games may be old.
+          refreshGames();
           toast.add({
             type: "error",
-            title: `Couldn't open ${GAME_NAMES[game()]}`,
+            title,
             description: errorMessage(error),
             actionProps: { children: "Open Settings", onClick: () => options.openGameSettings() },
           });
         } else {
-          toastError(`Couldn't open ${GAME_NAMES[game()]}`, error);
+          toastError(title, error);
         }
       } finally {
         setExporting(false);
