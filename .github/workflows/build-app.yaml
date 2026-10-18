@@ -35,20 +35,20 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
 
-      # The app shows package.json's version in development, so a release's tag has to match it.
-      - name: Check the tag matches the app's version
-        if: inputs.tag != ''
-        run: |
-          version="v$(jq -r .version package.json)"
-          if [ "$version" != "$TUNESTUDIO_VERSION" ]; then
-            echo "::error::The tag $TUNESTUDIO_VERSION doesn't match apps/studio/package.json's version ($version)."
-            exit 1
-          fi
-
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: package.json
+
+      # The app shows package.json's version in development, so a release's tag has to match it.
+      - name: Check the tag matches the app's version
+        if: inputs.tag != ''
+        run: |
+          version="v$(bun -p "require('./package.json').version")"
+          if [ "$version" != "$TUNESTUDIO_VERSION" ]; then
+            echo "::error::The tag $TUNESTUDIO_VERSION doesn't match apps/studio/package.json's version ($version)."
+            exit 1
+          fi
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
