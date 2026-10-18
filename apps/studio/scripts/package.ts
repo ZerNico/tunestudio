@@ -19,6 +19,9 @@ import { checkPackage } from "./check-package.ts";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const stageDir = path.join(root, ".electron-app");
 const outputDir = path.join(root, "release");
+// macOS's icon leaves the margin Apple's grid asks for; Windows and Linux draw icons edge to edge, so theirs fills it.
+const macIcon = path.join(root, "resources/icons/icon.png");
+const fullIcon = path.join(root, "resources/icons/icon-full.png");
 
 const args = process.argv.slice(2);
 const archName = args.includes("--arch") ? args[args.indexOf("--arch") + 1] : process.arch;
@@ -107,14 +110,14 @@ const config: Configuration = {
       description: "Tune Studio project",
       role: "Editor",
       mimeType: "application/x-tunestudio",
-      icon: path.join(root, "resources/icons/icon.png"),
+      icon: process.platform === "darwin" ? macIcon : fullIcon,
     },
   ],
   npmRebuild: false,
   nodeGypRebuild: false,
   mac: {
     category: "public.app-category.music",
-    icon: path.join(root, "resources/icons/icon.png"),
+    icon: macIcon,
     // No Developer ID yet: skip electron-builder's signing and sign ad-hoc in `afterPack`.
     identity: null,
     minimumSystemVersion: "12.0",
@@ -127,12 +130,12 @@ const config: Configuration = {
   },
   dmg: { artifactName: `${PRODUCT_NAME}_${version}_${archName}.dmg` },
   win: {
-    icon: path.join(root, "resources/icons/icon.png"),
+    icon: fullIcon,
     target: dirOnly ? ["dir"] : ["nsis"],
   },
   nsis: { artifactName: `${PRODUCT_NAME}_${version}_${archName}-setup.exe`, oneClick: true, perMachine: false },
   linux: {
-    icon: path.join(root, "resources/icons/icon.png"),
+    icon: fullIcon,
     category: "AudioVideo",
     syncDesktopName: true,
     target: dirOnly ? ["dir"] : ["AppImage"],
