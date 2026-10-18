@@ -15,7 +15,8 @@
     "test:e2e": "turbo run test:e2e",
     "lint": "oxlint",
     "format": "oxfmt",
-    "format:check": "oxfmt --check"
+    "format:check": "oxfmt --check",
+    "release": "bun scripts/release.ts"
   },
   "devDependencies": {
     "@shadcn/lint": "^0.2.1",

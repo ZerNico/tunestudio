@@ -16,6 +16,7 @@ bun run build        # turbo build all
 bun run typecheck    # turbo typecheck all
 bun run test         # Vitest in every package (no build needed)
 bun run test:e2e     # build, then the Playwright Electron end-to-end tests
+bun run release 0.2.0  # on a clean main: set the app's version, commit and tag v0.2.0 (see Releasing)
 ```
 
 ## Universal Conventions
@@ -69,6 +70,22 @@ rg -n "createFileRoute" apps/*/src/routes      # find routes
 rg -n "export function" apps/studio/src/components/ui   # find UI primitives
 rg -n '^  "[a-z]+\.[a-zA-Z]+":' apps/studio/electron/rpc/handlers   # find RPC handlers
 ```
+
+## CI and Releasing
+
+- **CI** (`.github/workflows/ci.yaml`, on pull requests and pushes to main, Linux only): lint, format check, typecheck
+  and Vitest's `unit`, `ui` and `electron` projects. No e2e or packaging there: both need the release build of the
+  native addon (Rust, whisper.cpp), which only the release build makes
+- **Releasing**: `bun run release 0.2.0` on an up-to-date, clean main sets `apps/studio/package.json`'s version (the
+  one the app shows), commits "Release v0.2.0" and tags `v0.2.0`; then `git push origin main v0.2.0`. The tag starts
+  `draft-release.yaml`: `build-app.yaml` packages macOS Apple Silicon (dmg), Windows x64 (installer) and Linux x64
+  (AppImage) on their own runners, then a draft GitHub release gets the installers and a changelog of the commits
+  since the previous tag. Check the draft and publish it by hand. A tag that doesn't match the version fails the build
+- **Dry run**: `gh workflow run build-app.yaml --ref <branch>` (or Actions → Build app → Run workflow) packages all
+  three as the run's artifacts (kept 7 days), without a release
+- Packaging checks what it made (`apps/studio/scripts/check-package.ts`): the addon and its GPU libraries, the
+  archive's files, no source maps, and that the addon loads. Installers are unsigned (ad-hoc on macOS), and the app
+  doesn't update itself
 
 ## Definition of Done
 
