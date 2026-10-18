@@ -1,7 +1,6 @@
 # Tune Studio
 
-A desktop editor for UltraStar karaoke charts, in the [TunePerfect](https://tuneperfect.org) family. Give it a song
-and it makes the chart for you: it separates the voice, finds the lyrics and charts the notes. Then you fine-tune it
+A desktop editor for UltraStar karaoke charts. Give it a song and it makes the chart for you: it separates the voice, finds the lyrics and charts the notes. Then you fine-tune it
 in the editor and export it for your games or for USDB.
 
 ![The editor with an automatically made chart of "Amazing Grace"](docs/images/editor.png)
@@ -20,12 +19,13 @@ in the editor and export it for your games or for USDB.
 
 ## Getting started
 
-You need [Bun](https://bun.sh) and a [Rust toolchain](https://rustup.rs) (for the native addon), on an Apple Silicon
-Mac for now.
+Prerequisites:
+
+- [Bun](https://bun.sh)
+- [Rust](https://rustup.rs), for the native addon that `bun run dev` builds
 
 ```bash
 bun install
-cd apps/studio && bun run native:build && cd ../..
 bun run dev
 ```
 
@@ -40,4 +40,4 @@ non-commercial use only. The app lists every model with its license in Settings.
 
 ## License
 
-[MIT](LICENSE). The downloaded model weights keep their own licenses.
+[MIT](LICENSE)

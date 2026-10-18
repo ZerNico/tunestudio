@@ -19,7 +19,7 @@ bun run typecheck        # route tree, main process, e2e, renderer
 bun run test             # Vitest: unit + ui + electron projects (no build needed)
 bun run test:watch       # Vitest in watch mode
 bun run test:e2e         # Playwright end-to-end tests against the build (run `build` first; root turbo does)
-bun run native:build     # the Rust addon (needs a Rust toolchain); once before `dev`, again after native/ changes
+bun run native:build     # the Rust addon (needs a Rust toolchain); `dev` runs this first
 bun run native:test      # the addon's Rust tests (STFT round trip, chunk stitching)
 bun run native:build:release  # optimized; `build` runs this
 bun run shots            # screenshots of every start-screen state to ../../.local/shots/prod (build first)

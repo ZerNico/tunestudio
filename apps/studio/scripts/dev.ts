@@ -1,4 +1,4 @@
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -14,7 +14,8 @@ import { DEV_SERVER_PORT } from "./dev-port";
 /**
  * Development loop: starts Vite, bundles the main process and preload in watch mode, restarts
  * Electron when the main process changed and only reloads its windows when just the preload
- * did. Renderer changes hot-reload through Vite. Arguments are passed on to the app.
+ * did. Renderer changes hot-reload through Vite. Arguments are passed on to the app. The native
+ * addon is built first (cargo's own check makes that quick when nothing changed).
  */
 const DEV_SERVER_URL = `http://localhost:${DEV_SERVER_PORT}`;
 const SERVER_TIMEOUT_MS = 30_000;
@@ -36,6 +37,16 @@ function shutdown(code: number, reason?: string) {
   if (vite.exitCode === null) vite.kill();
   if (electron?.exitCode === null) electron.kill();
   process.exit(code);
+}
+
+const native = spawnSync("bun", ["run", "native:build"], {
+  cwd: root,
+  stdio: "inherit",
+  shell: process.platform === "win32",
+});
+if (native.status !== 0) {
+  console.error("\n[dev] Building the native addon failed, not starting the app.");
+  process.exit(native.status || 1);
 }
 
 // Vite's own binary, not `bun run dev:vite`: killing a package-manager wrapper can leave
