@@ -1,0 +1,60 @@
+name: Build and create draft release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+jobs:
+  build-app:
+    name: Build app
+    uses: ./.github/workflows/build-app.yaml
+    with:
+      tag: ${{ github.ref_name }}
+    secrets: inherit
+
+  create-draft-release:
+    name: Create draft release
+    runs-on: ubuntu-latest
+    needs: [build-app]
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Download installers
+        uses: actions/download-artifact@v6
+        with:
+          path: artifacts
+          pattern: tunestudio-*
+
+      # The changelog lists the commits since the previous release's tag; the first release has none to compare with.
+      - name: Find the previous release
+        id: previous
+        run: echo "tag=$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' "${GITHUB_REF_NAME}^" 2>/dev/null || true)" >> "$GITHUB_OUTPUT"
+
+      - name: Generate changelog
+        id: changelog
+        if: steps.previous.outputs.tag != ''
+        uses: requarks/changelog-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ github.ref_name }}
+          writeToFile: false
+          # The commits aren't Conventional Commits: list them under "Other Changes" instead of dropping them.
+          includeInvalidCommits: true
+          excludeTypes: build,docs,style
+
+      - name: Create draft release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          draft: true
+          body: ${{ steps.changelog.outputs.changes || 'The first release of Tune Studio.' }}
+          files: artifacts/**/*
+          fail_on_unmatched_files: true

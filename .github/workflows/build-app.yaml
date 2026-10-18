@@ -1,0 +1,81 @@
+name: Build app
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: "The Git tag to build (e.g., v1.0.0)"
+        required: true
+        type: string
+  # A dry run: the installers as artifacts of the run, with the version from apps/studio/package.json, no release.
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build (${{ matrix.platform.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - { name: macOS arm64, os: macos-latest, artifact: tunestudio-macos-arm64 }
+          - { name: Windows x64, os: windows-latest, artifact: tunestudio-windows-x64 }
+          - { name: Linux x64, os: ubuntu-24.04, artifact: tunestudio-linux-x64 }
+
+    runs-on: ${{ matrix.platform.os }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+        working-directory: apps/studio
+    env:
+      # The installers' and the app's version; empty in a dry run, which takes package.json's.
+      TUNESTUDIO_VERSION: ${{ inputs.tag }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      # The app shows package.json's version in development, so a release's tag has to match it.
+      - name: Check the tag matches the app's version
+        if: inputs.tag != ''
+        run: |
+          version="v$(jq -r .version package.json)"
+          if [ "$version" != "$TUNESTUDIO_VERSION" ]; then
+            echo "::error::The tag $TUNESTUDIO_VERSION doesn't match apps/studio/package.json's version ($version)."
+            exit 1
+          fi
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      # whisper.cpp and ONNX Runtime's crates take most of the build; keep their compiled output between runs.
+      - name: Cache the native addon's build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/studio/native -> target
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build and package
+        run: bun run package
+
+      # The release keeps the installers; the artifacts only carry them to it (or to whoever runs a dry run), and
+      # count against the account's storage while they last.
+      - name: Upload installers
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ matrix.platform.artifact }}
+          path: |
+            apps/studio/release/*.dmg
+            apps/studio/release/*-setup.exe
+            apps/studio/release/*.AppImage
+          if-no-files-found: error
+          # Already compressed.
+          compression-level: 0
+          retention-days: ${{ inputs.tag != '' && 1 || 7 }}

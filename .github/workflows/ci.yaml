@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# Everything here runs on Linux: none of it needs the native addon (its index.cjs and index.d.ts are committed), and
+# the platform builds are checked by build-app.yaml when a release is made.
+jobs:
+  lint-and-format:
+    name: Lint and format
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Format check
+        run: bun run format:check
+
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      # The studio's typecheck regenerates the route tree, which is committed.
+      - name: Check the generated route tree is up to date
+        run: git diff --exit-code -- apps/studio/src/routeTree.gen.ts
+
+  test:
+    name: Tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: UltraStar package tests
+        working-directory: packages/ultrastar
+        run: bun run test
+
+      # The `scripts` project (the build's license list) builds with Vite and reads the addon's crates; build-app.yaml
+      # covers it on every platform, since the build fails on a license problem.
+      - name: Studio tests
+        working-directory: apps/studio
+        run: bunx vitest run --project unit --project ui --project electron
