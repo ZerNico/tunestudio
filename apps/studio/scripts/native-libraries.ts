@@ -12,6 +12,12 @@ export const GPU_LIBRARIES: Record<string, string[]> = {
   "win32-arm64": ["DirectML.dll"],
 };
 
+/**
+ * The systems whose addon runs Whisper on the GPU through Vulkan (`cfg(vulkan)` in `native/build.rs`). It doesn't link
+ * the Vulkan loader (`native/src/vulkan.rs`); `scripts/check-package.ts` checks that it doesn't.
+ */
+export const VULKAN_SYSTEMS = new Set(["linux-x64", "win32-x64"]);
+
 /** `darwin-arm64`, `win32-x64`, ...: this machine, which the addon is built for. */
 export const currentSystem = () => `${process.platform}-${process.arch}`;
 

@@ -9,6 +9,11 @@ fn main() {
         ("windows", "aarch64") => println!("cargo:rustc-cfg=gpu=\"directml\""),
         _ => {}
     }
+    // Whisper's GPU backend is Vulkan here (the `vulkan` feature in Cargo.toml), as `cfg(vulkan)`.
+    println!("cargo::rustc-check-cfg=cfg(vulkan)");
+    if arch == "x86_64" && (os == "windows" || os == "linux") {
+        println!("cargo:rustc-cfg=vulkan");
+    }
     // The WebGPU runtime (Dawn) ships as a library next to the addon.
     match std::env::var("CARGO_CFG_TARGET_OS").as_deref() {
         Ok("macos") => {

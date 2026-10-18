@@ -30,6 +30,8 @@ jobs:
     env:
       # The installers' and the app's version; empty in a dry run, which takes package.json's.
       TUNESTUDIO_VERSION: ${{ inputs.tag }}
+      # Whisper's Vulkan backend (x64 Windows and Linux) is built with this SDK's headers and shader compiler.
+      VULKAN_VERSION: 1.4.363.0
 
     steps:
       - name: Checkout repository
@@ -60,6 +62,26 @@ jobs:
         with:
           workspaces: apps/studio/native -> target
           key: whisper-flags-1
+
+      - name: Install the Vulkan SDK (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP "vulkansdk.exe"
+          curl.exe -fsSL -o $installer "https://sdk.lunarg.com/sdk/download/$env:VULKAN_VERSION/windows/vulkansdk-windows-X64-$env:VULKAN_VERSION.exe"
+          $install = Start-Process $installer -ArgumentList "--accept-licenses --default-answer --confirm-command install" -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "The Vulkan SDK installer failed ($($install.ExitCode))." }
+          "VULKAN_SDK=C:\VulkanSDK\$env:VULKAN_VERSION" >> $env:GITHUB_ENV
+          "C:\VulkanSDK\$env:VULKAN_VERSION\Bin" >> $env:GITHUB_PATH
+
+      - name: Install the Vulkan SDK (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          curl -fsSL "https://sdk.lunarg.com/sdk/download/$VULKAN_VERSION/linux/vulkansdk-linux-x86_64-$VULKAN_VERSION.tar.xz" | tar -xJ -C "$RUNNER_TEMP"
+          sdk="$RUNNER_TEMP/$VULKAN_VERSION/x86_64"
+          # whisper-rs-sys links libvulkan by name only; the addon doesn't keep it (native/src/vulkan.rs).
+          { echo "VULKAN_SDK=$sdk"; echo "LIBRARY_PATH=$sdk/lib"; } >> "$GITHUB_ENV"
+          echo "$sdk/bin" >> "$GITHUB_PATH"
 
       - name: Install dependencies
         run: bun install --frozen-lockfile

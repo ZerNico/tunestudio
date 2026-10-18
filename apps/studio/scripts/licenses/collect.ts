@@ -14,7 +14,7 @@ import * as esbuild from "esbuild";
 
 import type { Notice, Notices } from "../../src/lib/licenses.ts";
 import { electronBuildOptions } from "../build-electron.ts";
-import { currentSystem, GPU_LIBRARIES } from "../native-libraries.ts";
+import { currentSystem, GPU_LIBRARIES, VULKAN_SYSTEMS } from "../native-libraries.ts";
 
 const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const textsDir = path.join(appDir, "scripts/licenses/texts");
@@ -315,8 +315,8 @@ const DAWN_SYSTEMS = new Set(
 
 /**
  * The C and C++ code the crates bring: whisper.cpp (built from whisper-rs-sys's sources), ONNX Runtime (pyke's
- * prebuilt static library, version from ort-sys's download list), the GPU libraries that come with it, and clang's
- * runtime on macOS (`native/build.rs`). Their texts come from the sources where they are there, else from `texts/`.
+ * prebuilt static library, version from ort-sys's download list), the GPU libraries that come with it, the Vulkan
+ * headers ggml's Vulkan backend is compiled with, and clang's runtime on macOS (`native/build.rs`). Their texts come from the sources where they are there, else from `texts/`.
  */
 export function nativeLibraries(crates: CargoPackage[], system: string) {
   const entries: Entry[] = [];
@@ -367,6 +367,15 @@ export function nativeLibraries(crates: CargoPackage[], system: string) {
       license: "BSD-3-Clause",
       url: "https://dawn.googlesource.com/dawn",
       text: committedText("dawn.txt"),
+    });
+  }
+  if (VULKAN_SYSTEMS.has(system)) {
+    entries.push({
+      name: "Vulkan-Headers (Vulkan-Hpp)",
+      version: null,
+      license: "MIT",
+      url: "https://github.com/KhronosGroup/Vulkan-Headers",
+      text: committedText("vulkan-headers.txt"),
     });
   }
   if (system === "win32-x64") {

@@ -113,6 +113,17 @@ fn confidence(segment: &whisper_rs::WhisperSegment) -> f64 {
 }
 
 impl Transcribe {
+    /// Loads the model and its working memory, on the GPU or not.
+    fn start(&self, use_gpu: bool) -> Result<WhisperState> {
+        let mut parameters = WhisperContextParameters::default();
+        parameters.use_gpu(use_gpu);
+        let context = WhisperContext::new_with_params(&self.model, parameters)
+            .map_err(|error| Error::from_reason(format!("The listening model couldn't be loaded: {error}")))?;
+        context
+            .create_state()
+            .map_err(|error| Error::from_reason(format!("The listening model couldn't start: {error}")))
+    }
+
     fn threads(&self) -> usize {
         self.options.threads.map(|threads| threads as usize).unwrap_or_else(|| {
             std::thread::available_parallelism().map(|count| count.get().min(8)).unwrap_or(4)
@@ -187,11 +198,9 @@ impl Task for Transcribe {
     type JsValue = Transcript;
 
     fn compute(&mut self) -> Result<Self::Output> {
-        let context = WhisperContext::new_with_params(&self.model, WhisperContextParameters::default())
-            .map_err(|error| Error::from_reason(format!("The listening model couldn't be loaded: {error}")))?;
-        let mut state = context
-            .create_state()
-            .map_err(|error| Error::from_reason(format!("The listening model couldn't start: {error}")))?;
+        // On the GPU when there is one; on the CPU when the GPU can't take the model (too little
+        // memory, a driver that refuses).
+        let mut state = self.start(true).or_else(|_| self.start(false))?;
 
         let ranges = self.ranges();
         let mixed = self.options.mixed.unwrap_or(false);

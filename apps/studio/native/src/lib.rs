@@ -13,3 +13,5 @@ mod refiners;
 mod runtime;
 mod separate;
 mod transcribe;
+#[cfg(vulkan)]
+mod vulkan;

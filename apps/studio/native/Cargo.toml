@@ -22,6 +22,12 @@ realfft = "3.5"
 # Whisper on the Apple GPU.
 whisper-rs = { version = "0.16", features = ["metal"] }
 
+# Whisper on the GPU through Vulkan on x64 Windows and Linux (`cfg(vulkan)` from build.rs). The addon
+# doesn't link the Vulkan loader: `vulkan.rs` opens it when there is one.
+[target.'cfg(all(target_arch = "x86_64", any(target_os = "windows", target_os = "linux")))'.dependencies]
+whisper-rs = { version = "0.16", features = ["vulkan"] }
+libloading = "0.9"
+
 # The separation model on the GPU where ort ships a runtime for it (see `gpu` in build.rs): WebGPU
 # on Apple Silicon and x64 Windows and Linux, DirectML on Windows on ARM. ort has no runtime for
 # Intel Macs at all, and only the CPU on Linux on ARM.
