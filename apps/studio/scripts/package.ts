@@ -14,6 +14,7 @@ import { Arch, build, type Configuration, Platform } from "electron-builder";
 
 import { APP_ID, COPYRIGHT, PRODUCT_NAME } from "../electron/identity";
 import packageJson from "../package.json";
+import { checkPackage } from "./check-package.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const stageDir = path.join(root, ".electron-app");
@@ -31,7 +32,7 @@ if (archName !== process.arch) {
 const arch = archName === "arm64" ? Arch.arm64 : Arch.x64;
 const dirOnly = args.includes("--dir");
 
-const version = (process.env.TUNESTUDIO_VERSION ?? packageJson.version).replace(/^v/, "");
+const version = (process.env.TUNESTUDIO_VERSION || packageJson.version).replace(/^v/, "");
 const electronVersion: string = (await import("electron/package.json")).default.version;
 
 function run(command: string, commandArgs: string[]) {
@@ -58,6 +59,8 @@ function stage() {
     description: packageJson.description,
     author: { name: "Nico Franke" },
     main: "dist-electron/main.cjs",
+    // Electron's app ID on Linux (Wayland), matching the installed .desktop file (`syncDesktopName`).
+    desktopName: "tunestudio.desktop",
   };
   fs.writeFileSync(path.join(stageDir, "package.json"), JSON.stringify(stagedPackage, null, 2));
 }
@@ -131,6 +134,7 @@ const config: Configuration = {
   linux: {
     icon: path.join(root, "resources/icons/icon.png"),
     category: "AudioVideo",
+    syncDesktopName: true,
     target: dirOnly ? ["dir"] : ["AppImage"],
   },
   appImage: { artifactName: `${PRODUCT_NAME}_${version}_${archName}.AppImage` },
@@ -139,11 +143,14 @@ const config: Configuration = {
   afterPack: async (context) => {
     // Flipping fuses modifies the binary, so it has to happen before signing.
     await context.packager.addElectronFuses(context, fuses);
+    let resources = path.join(context.appOutDir, "resources");
     if (context.electronPlatformName === "darwin") {
       const app = path.join(context.appOutDir, `${PRODUCT_NAME}.app`);
       // Ad-hoc signature: required for Apple Silicon to run the app.
       execFileSync("codesign", ["--force", "--deep", "--sign", "-", app]);
+      resources = path.join(app, "Contents/Resources");
     }
+    checkPackage(resources);
   },
 };
 
@@ -153,4 +160,4 @@ const platform =
 run("bun", ["run", "build"]);
 stage();
 // Building from the staging directory keeps the workspace's node_modules out of the app.
-await build({ projectDir: stageDir, targets: platform.createTarget(null, arch), config });
+await build({ projectDir: stageDir, targets: platform.createTarget(null, arch), config, publish: "never" });

@@ -44,6 +44,7 @@
   },
   "devDependencies": {
     "@effect/vitest": "4.0.4",
+    "@electron/asar": "3.4.1",
     "@electron/fuses": "^1.8.0",
     "@iconify-json/lucide": "^1.2.144",
     "@napi-rs/cli": "^3.10.5",

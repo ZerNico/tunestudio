@@ -14,6 +14,7 @@ import * as esbuild from "esbuild";
 
 import type { Notice, Notices } from "../../src/lib/licenses.ts";
 import { electronBuildOptions } from "../build-electron.ts";
+import { currentSystem, GPU_LIBRARIES } from "../native-libraries.ts";
 
 const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const textsDir = path.join(appDir, "scripts/licenses/texts");
@@ -305,11 +306,12 @@ export function nativeEntries(manifestPath = path.join(appDir, "native/Cargo.tom
   return { crates: sortEntries(entries), libraries: libraries.entries, problems: [...problems, ...libraries.problems] };
 }
 
-/** `darwin-arm64`, `win32-x64`, ...: what `scripts/native.ts` builds for. */
-export const currentSystem = () => `${process.platform}-${process.arch}`;
-
-/** The GPU libraries each system's addon loads (as in `scripts/native.ts`). */
-const DAWN_SYSTEMS = new Set(["darwin-arm64", "linux-x64", "win32-x64"]);
+/** The systems whose addon loads WebGPU's Dawn. */
+const DAWN_SYSTEMS = new Set(
+  Object.entries(GPU_LIBRARIES)
+    .filter(([, libraries]) => libraries.some((library) => library.includes("webgpu_dawn")))
+    .map(([system]) => system),
+);
 
 /**
  * The C and C++ code the crates bring: whisper.cpp (built from whisper-rs-sys's sources), ONNX Runtime (pyke's
