@@ -283,9 +283,24 @@ export interface DownloadedMedia {
 }
 
 /** Lines yt-dlp prints for Tune Studio (see `--progress-template` and `--print`). */
-const PROGRESS = /^@progress (\d+) (\S+) (\S+)$/;
+const PROGRESS = /^@progress (\d+) (\S+) (\S+) (\S+) (\S+)$/;
 const FILE = /^@file (.+)$/;
 const DURATION = /^@duration (\d+(?:\.\d+)?)$/;
+
+/**
+ * Where a download is from one `@progress` line: bytes when yt-dlp knows the size. A stream in fragments (HLS) has
+ * only an estimate, from the fragments so far, that changes with every one; its fragments done count instead, so
+ * the bar only moves forward.
+ */
+function streamProgress(step: string, [, downloaded, size, estimate, index, count]: RegExpExecArray): Progress {
+  const done = Number(downloaded);
+  const total = Number(size);
+  const fragments = Number(count);
+  if (!total && fragments > 0) {
+    return { step, done: Math.round((Number(index) / fragments) * 100), total: 100, unit: "percent" };
+  }
+  return { step, done, total: Math.max(total || Number(estimate) || 0, done) };
+}
 
 /**
  * Downloads one stream with yt-dlp into `folder` as `<name>.<ext>`, reporting the bytes as
@@ -318,7 +333,7 @@ function fetchStream(
         "--quiet",
         "--progress",
         "--progress-template",
-        "download:@progress %(progress.downloaded_bytes)s %(progress.total_bytes)s %(progress.total_bytes_estimate)s",
+        "download:@progress %(progress.downloaded_bytes)s %(progress.total_bytes)s %(progress.total_bytes_estimate)s %(progress.fragment_index)s %(progress.fragment_count)s",
         "--print",
         "pre_process:@duration %(duration)s",
         "--print",
@@ -337,11 +352,7 @@ function fetchStream(
       ],
       (line) => {
         const progress = PROGRESS.exec(line);
-        if (progress) {
-          const done = Number(progress[1]);
-          const total = Number(progress[2]) || Number(progress[3]) || 0;
-          return onProgress({ step: options.step, done, total: Math.max(total, done) });
-        }
+        if (progress) return onProgress(streamProgress(options.step, progress));
         const printed = FILE.exec(line);
         if (printed) file = printed[1]!.trim();
         const length = DURATION.exec(line);

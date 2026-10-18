@@ -80,8 +80,14 @@ if (tool === "yt-dlp") {
     const thumbnail = args.find((arg) => arg.startsWith("thumbnail:")).slice("thumbnail:".length);
     fs.writeFileSync(thumbnail.replace("%(ext)s", "jpg"), "thumbnail");
   }
-  console.log("@progress 50 100 NA");
-  console.log("@progress 100 100 NA");
+  if (format.startsWith("bestvideo")) {
+    // The video in fragments (HLS): only an estimate of its size, which changes as they come.
+    console.log("@progress 1000 NA 4000.0 1 4");
+    console.log("@progress 9000 NA 9000 4 4");
+  } else {
+    console.log("@progress 50 100 NA NA NA");
+    console.log("@progress 100 100 NA NA NA");
+  }
   console.log("@file " + file);
   process.exit(0);
 }
@@ -322,7 +328,8 @@ describe("downloadVideo", () => {
         ]);
       }
       expect(progress).toContainEqual({ step: "Downloading the audio", done: 50, total: 100 });
-      expect(progress).toContainEqual({ step: "Downloading the video", done: 100, total: 100 });
+      expect(progress).toContainEqual({ step: "Downloading the video", done: 25, total: 100, unit: "percent" });
+      expect(progress).toContainEqual({ step: "Downloading the video", done: 100, total: 100, unit: "percent" });
       // No volume step when normalization is off.
       expect(progress.map((step) => step.step)).not.toContain("Adjusting the volume");
     }).pipe(Effect.provide(layer));
