@@ -23,7 +23,15 @@ import type { GamesStatus, GameStatus } from "~/lib/native/types";
  */
 export function GamesSection() {
   const router = useRouter();
-  const [status, setStatus] = createSignal<GamesStatus | null>(null);
+  // Looked up once, then replaced by each choice's answer. null until the first lookup lands, or if it fails.
+  const [status, setStatus] = createSignal<GamesStatus | null>(
+    () =>
+      native.games.status().catch((error: unknown) => {
+        toastError("Couldn't look for the games", error);
+        return null;
+      }),
+    { loadingValue: null },
+  );
   const [busy, setBusy] = createSignal(false);
 
   const run = async (title: string, call: () => Promise<GamesStatus>) => {
@@ -39,7 +47,6 @@ export function GamesSection() {
   const choose = (game: Game) => void run("Couldn't use this app", () => native.games.choose({ game }));
 
   onSettled(() => {
-    native.games.status().then(setStatus, (error: unknown) => toastError("Couldn't look for the games", error));
     if (router.state.location.hash === "games")
       document.getElementById("games-title")?.scrollIntoView({ block: "start" });
   });

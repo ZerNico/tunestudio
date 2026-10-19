@@ -1,5 +1,5 @@
 import type { JSX } from "@solidjs/web";
-import { createMemo, createSignal, For, onCleanup, onSettled, Show } from "solid-js";
+import { createMemo, createSignal, Errored, For, Loading, Show } from "solid-js";
 import ChevronRightIcon from "~icons/lucide/chevron-right";
 import LoaderCircleIcon from "~icons/lucide/loader-circle";
 import SearchIcon from "~icons/lucide/search";
@@ -22,8 +22,6 @@ import { DOWNLOADED_TOOLS, loadNotices, matchesQuery, type Notice, type Notices 
 import { native } from "~/lib/native/client";
 import { errorMessage } from "~/lib/native/errors";
 
-type Loaded = { state: "loading" } | { state: "failed"; message: string } | { state: "ready"; notices: Notices };
-
 /**
  * The open source licenses of everything Tune Studio is built with, grouped by where it comes from. Each entry opens
  * to its notice text, which is only rendered while it is open, so hundreds of entries stay quick.
@@ -44,27 +42,9 @@ export function LicensesDialog(props: {
 
 /** The dialog's content, mounted while it is open: the notices load the first time it opens. */
 function LicensesView(props: { onShowModels: () => void }) {
-  const [loaded, setLoaded] = createSignal<Loaded>({ state: "loading" });
   const [query, setQuery] = createSignal("");
-  let gone = false;
-  onCleanup(() => (gone = true));
-
-  const load = () => {
-    setLoaded({ state: "loading" });
-    loadNotices().then(
-      (notices) => !gone && setLoaded({ state: "ready", notices }),
-      (error: unknown) => !gone && setLoaded({ state: "failed", message: errorMessage(error) }),
-    );
-  };
-  onSettled(load);
-  const failed = () => {
-    const current = loaded();
-    return current.state === "failed" ? current.message : null;
-  };
-  const notices = () => {
-    const current = loaded();
-    return current.state === "ready" ? current.notices : null;
-  };
+  // Loads when the dialog first opens. Try again recomputes it.
+  const notices = createMemo(() => loadNotices());
 
   return (
     <>
@@ -103,27 +83,29 @@ function LicensesView(props: { onShowModels: () => void }) {
       </DialogHeader>
       <DialogBody>
         <div class="flex flex-col gap-7">
-          <Show when={loaded().state === "loading"}>
-            <p class="m-0 flex items-center gap-2 text-[11.5px] text-muted-foreground" aria-live="polite">
-              <LoaderCircleIcon class="size-4 animate-spin text-primary" />
-              Loading the licenses…
-            </p>
-          </Show>
-          <Show when={failed()}>
-            {(message) => (
+          <Errored
+            fallback={(error, retry) => (
               <div class="flex flex-col items-start gap-3">
                 <Note tone="error" testid="licenses-error">
-                  Couldn't load the licenses. {message()}
+                  Couldn't load the licenses. {errorMessage(error())}
                 </Note>
-                <Button variant="outline" size="sm" onClick={load}>
+                <Button variant="outline" size="sm" onClick={retry}>
                   Try again
                 </Button>
               </div>
             )}
-          </Show>
-          <Show when={notices()}>
-            {(ready) => <NoticeGroups notices={ready()} query={query()} onShowModels={props.onShowModels} />}
-          </Show>
+          >
+            <Loading
+              fallback={
+                <p class="m-0 flex items-center gap-2 text-[11.5px] text-muted-foreground" aria-live="polite">
+                  <LoaderCircleIcon class="size-4 animate-spin text-primary" />
+                  Loading the licenses…
+                </p>
+              }
+            >
+              <NoticeGroups notices={notices()} query={query()} onShowModels={props.onShowModels} />
+            </Loading>
+          </Errored>
         </div>
       </DialogBody>
     </>
