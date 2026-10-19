@@ -81,6 +81,35 @@ describe("PianoRoll", () => {
     expect(sharp).toHaveAttribute("data-sharp");
   });
 
+  it("draws the chart's grid down the roll, every 4th and 16th line stronger, just before its time", () => {
+    // 0.125 s steps from 10 s: 12.5 px apart in 100 px (10 s to 11 s).
+    render(() => (
+      <PianoRoll
+        notes={[]}
+        breaks={[]}
+        range={range}
+        view={view}
+        grid={{ start: 10, step: 0.125 }}
+        width={100}
+        height={180}
+        {...handlers()}
+      />
+    ));
+    const lines = screen.getAllByTestId("grid-line");
+    expect(lines.map((line) => line.style.left)).toEqual([
+      "-1px",
+      "11.5px",
+      "24px",
+      "36.5px",
+      "49px",
+      "61.5px",
+      "74px",
+      "86.5px",
+      "99px",
+    ]);
+    expect(lines.map((line) => line.dataset.level)).toEqual(["2", "0", "0", "0", "1", "0", "0", "0", "1"]);
+  });
+
   it("places each note by time and pitch, coloured by singer and type", () => {
     render(() => (
       <PianoRoll

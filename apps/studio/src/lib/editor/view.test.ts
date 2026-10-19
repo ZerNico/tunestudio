@@ -7,6 +7,8 @@ import {
   onPage,
   revealSpan,
   formatTime,
+  gridLevel,
+  gridLines,
   pitchName,
   pitchRange,
   pitchToY,
@@ -73,6 +75,16 @@ describe("ruler", () => {
 
   it("marks whole steps on screen without float drift", () => {
     expect(rulerTicks({ start: 0.05, pxPerSecond: 1000 }, 400)).toEqual([0.1, 0.2, 0.3, 0.4]);
+  });
+
+  it("draws every grid step when they are far enough apart, else every 4th, 16th …", () => {
+    // 0.05 s steps from 1 s: 10 px apart at 200 px/s.
+    const grid = { start: 1, step: 0.05 };
+    expect(gridLines(grid, { start: 1.02, pxPerSecond: 200 }, 40)).toEqual([1, 2, 3, 4]);
+    // 1.5 px apart: every 4th (6 px) is still too close, every 16th (24 px) isn't.
+    expect(gridLines(grid, { start: 0, pxPerSecond: 30 }, 100)).toEqual([-16, 0, 16, 32]);
+    expect([0, 1, 4, 16, -16].map(gridLevel)).toEqual([2, 0, 1, 2, 2]);
+    expect(gridLines({ start: 0, step: 0 }, view, 100)).toEqual([]);
   });
 
   it("formats times as minutes and seconds", () => {

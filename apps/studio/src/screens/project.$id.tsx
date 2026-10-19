@@ -52,6 +52,7 @@ import {
   type DrawnNote,
   type LineBreak,
   drawnNotes,
+  gridStep,
   lineBreaks,
   lineIndexAt,
   lineSpans,
@@ -1022,6 +1023,7 @@ export default function ProjectScreen() {
                   breaks={visibleBreaks()}
                   range={range()}
                   view={view()}
+                  grid={{ start: chart().gap, step: gridStep(chart()) }}
                   width={width()}
                   height={size().height}
                   pitch={prefs.pitch() ? pitch() : null}

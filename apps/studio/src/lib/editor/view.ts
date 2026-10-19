@@ -106,6 +106,33 @@ export function rulerTicks(view: TimeView, width: number, minPx?: number): numbe
   return ticks;
 }
 
+/** The chart's grid: its first line (#GAP) and the step between lines (seconds). */
+export interface Grid {
+  start: number;
+  step: number;
+}
+
+/** How many steps apart the grid lines on screen are, from fine to coarse: each a beat's or a bar's worth. */
+const GRID_STRIDES = [1, 4, 16, 64, 256];
+
+/** How strong a grid line is: every step (0), every 4th (1), every 16th (2). */
+export const gridLevel = (index: number) => (index % 16 === 0 ? 2 : index % 4 === 0 ? 1 : 0);
+
+/**
+ * The grid lines on screen, as step counts from the grid's start (its time is `start + index * step`): every step when
+ * they are at least `minPx` apart, else only every 4th, 16th … that is.
+ */
+export function gridLines(grid: Grid, view: TimeView, width: number, minPx = 8): number[] {
+  if (!(grid.step > 0)) return [];
+  const stride = GRID_STRIDES.find((count) => count * grid.step * view.pxPerSecond >= minPx) ?? GRID_STRIDES.at(-1)!;
+  const span = stride * grid.step;
+  const first = Math.ceil((view.start - grid.start) / span - 1e-9);
+  const last = Math.floor((view.start + visibleSeconds(view, width) - grid.start) / span + 1e-9);
+  const lines: number[] = [];
+  for (let i = first; i <= last; i++) lines.push(i * stride);
+  return lines;
+}
+
 /** "1:07.4" (tenths, cut off, not rounded), or "1:07" without them. */
 export function formatTime(seconds: number, tenths = true): string {
   const sign = seconds < 0 ? "-" : "";

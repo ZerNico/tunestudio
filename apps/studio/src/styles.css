@@ -70,6 +70,9 @@
   --footer: #171c1f;
   --field: #111416;            /* input wells */
   --border-soft: #222629;
+  --grid-step: #e7ebe90a;      /* the piano roll's grid lines: every step, every 4th, every 16th */
+  --grid-beat: #e7ebe917;
+  --grid-bar: #e7ebe92b;
   --subtle-foreground: #a1aaa8;
   --faint-foreground: #66746c;
   --primary-soft: #2d3b23;
@@ -513,6 +516,13 @@
   &[data-inactive]:not([data-selected="true"]):hover { opacity: 0.6; }
   &[data-pending] { animation: note-pending 1.1s ease-in-out infinite alternate; }
   @media (prefers-reduced-motion: reduce) { &[data-pending] { opacity: 0.55; } }
+}
+
+/* A grid line down the piano roll: data-level 0 (a step), 1 (every 4th) or 2 (every 16th). */
+@utility roll-grid {
+  background-color: var(--grid-step);
+  &[data-level="1"] { background-color: var(--grid-beat); }
+  &[data-level="2"] { background-color: var(--grid-bar); }
 }
 
 /* A line break in the piano roll: data-singer, data-selected="true" (solid and light, so it stands apart from the green

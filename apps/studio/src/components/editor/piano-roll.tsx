@@ -6,6 +6,9 @@ import { followDrag } from "~/lib/editor/drag";
 import { type DragPreview, type NotePart, previewed, type RollScale } from "~/lib/editor/note-editing";
 import type { Tool } from "~/lib/editor/tools";
 import {
+  type Grid,
+  gridLevel,
+  gridLines,
   type PitchRange,
   pitchName,
   pitchToY,
@@ -89,8 +92,8 @@ export interface SelectionBox {
 
 /**
  * The notes on screen against time and pitch: rows per semitone (C rows a little lighter, labelled every C and E),
- * each note a bar with its syllable, line breaks dashed at their switch times (fainter when the chart doesn't store
- * one). Only what is in view is given; the playhead is drawn over all lanes (`Playhead`).
+ * lines down them on the chart's grid, each note a bar with its syllable, line breaks dashed at their switch times
+ * (fainter when the chart doesn't store one). Only what is in view is given; the playhead is drawn over all lanes (`Playhead`).
  *
  * Notes look as `roll-note` (styles.css) says: selected ones lime with resize grips, overlapping ones a red border and
  * ⚠, rap ones italic. What a press does depends on the tool: with Select a click on empty space is `onEmptyClick` (at
@@ -109,6 +112,8 @@ export function PianoRoll(props: {
   voice?: SungPitch | null;
   range: PitchRange;
   view: TimeView;
+  /** The chart's grid, drawn as lines down the roll (every 4th and 16th stronger; only those when zoomed out). */
+  grid?: Grid;
   /** The drawing area (without the gutter). */
   width: number;
   height: number;
@@ -313,6 +318,20 @@ export function PianoRoll(props: {
             />
           )}
         </For>
+        <Show when={props.grid}>
+          {(grid) => (
+            <For each={gridLines(grid(), props.view, props.width)}>
+              {(index) => (
+                <div
+                  data-testid="grid-line"
+                  data-level={gridLevel(index)}
+                  class="pointer-events-none absolute inset-y-0 w-px roll-grid"
+                  style={{ left: `${breakX(props.view, grid().start + index * grid().step)}px` }}
+                />
+              )}
+            </For>
+          )}
+        </Show>
         <Show when={props.pitch}>
           {(pitch) => (
             <PitchTrace
