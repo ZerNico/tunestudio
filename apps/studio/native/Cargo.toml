@@ -15,7 +15,7 @@ napi-build = "2.6"
 napi = { version = "3.14", default-features = false, features = ["napi8"] }
 napi-derive = "3.6"
 whisper-rs = "0.16"
-ort = "=2.0.0-rc.14"
+ort = "=2.0.0-rc.15"
 realfft = "3.5"
 
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -32,10 +32,10 @@ libloading = "0.9"
 # on Apple Silicon and x64 Windows and Linux, DirectML on Windows on ARM. ort has no runtime for
 # Intel Macs at all, and only the CPU on Linux on ARM.
 [target.'cfg(any(all(target_os = "macos", target_arch = "aarch64"), all(target_arch = "x86_64", any(target_os = "windows", target_os = "linux"))))'.dependencies]
-ort = { version = "=2.0.0-rc.14", features = ["webgpu"] }
+ort = { version = "=2.0.0-rc.15", features = ["webgpu"] }
 
 [target.'cfg(all(target_os = "windows", target_arch = "aarch64"))'.dependencies]
-ort = { version = "=2.0.0-rc.14", features = ["directml"] }
+ort = { version = "=2.0.0-rc.15", features = ["directml"] }
 
 # Inference runs in whisper.cpp and our loops over samples; keep dependencies optimized in
 # debug builds so development runs take seconds, not minutes.
