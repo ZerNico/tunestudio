@@ -6,7 +6,7 @@ import type { StoredRecent } from "../services/recents";
 import { readChart, readSong } from "./chart";
 import { readMeta } from "./database";
 import { readLyrics } from "./lyrics";
-import { listMedia, readChunk } from "./media";
+import { listMedia, readChunk, withMediaLock } from "./media";
 import type { ProjectSession } from "./projects";
 import { ImportWarnings } from "./schema";
 
@@ -59,6 +59,14 @@ export function projectOverview(session: ProjectSession) {
       lyrics: yield* readLyrics(session.db),
     } satisfies ProjectOverview;
   });
+}
+
+/**
+ * The overview after a change to the media, read while no other change to them runs: replies to changes made one after
+ * the other never come with an older media list than the reply before.
+ */
+export function overviewAfterMediaChange(session: ProjectSession) {
+  return withMediaLock(session.db, projectOverview(session));
 }
 
 /** Covers larger than this get no thumbnail. */

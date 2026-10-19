@@ -8,7 +8,7 @@ import { syllabify } from "../../charting/syllables";
 import { setArtwork } from "../../project/artwork";
 import { applyChartChanges } from "../../project/chart-changes";
 import { readEditorChart } from "../../project/editor-chart";
-import { projectOverview } from "../../project/overview";
+import { overviewAfterMediaChange, projectOverview } from "../../project/overview";
 import { sungPitch } from "../../project/pitch";
 import { Projects } from "../../project/projects";
 import { removeVideo, replaceSongMedia, separateSong } from "../../project/song-media";
@@ -59,14 +59,14 @@ export const projectHandlers = {
       const path = yield* allowedPath(input.path);
       const session = yield* project(input.id);
       yield* replaceSongMedia(session, input.role, path);
-      return yield* projectOverview(session);
+      return yield* overviewAfterMediaChange(session);
     }),
   "project.removeVideo": (input) =>
-    withProject(input.id, (session) => Effect.andThen(removeVideo(session), projectOverview(session))),
+    withProject(input.id, (session) => Effect.andThen(removeVideo(session), overviewAfterMediaChange(session))),
   "project.separate": (input) =>
     progressStream((onProgress) =>
       Effect.flatMap(project(input.id), (session) =>
-        Effect.andThen(separateSong(session, onProgress), projectOverview(session)),
+        Effect.andThen(separateSong(session, onProgress), overviewAfterMediaChange(session)),
       ),
     ),
   "project.setArtwork": (input) =>
@@ -78,7 +78,7 @@ export const projectHandlers = {
             ? { kind: "file" as const, path: yield* allowedPath(input.choice.path) }
             : input.choice;
         yield* setArtwork(session, input.role, choice);
-        return yield* projectOverview(session);
+        return yield* overviewAfterMediaChange(session);
       }),
     ),
   "project.applyChanges": (input) =>
