@@ -48,6 +48,7 @@ jobs:
           # The commits aren't Conventional Commits: list them under "Other Changes" instead of dropping them.
           includeInvalidCommits: true
           excludeTypes: build,docs,style
+          excludeScopes: release
 
       - name: Create draft release
         uses: softprops/action-gh-release@v3

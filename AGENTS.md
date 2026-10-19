@@ -77,15 +77,27 @@ rg -n '^  "[a-z]+\.[a-zA-Z]+":' apps/studio/electron/rpc/handlers   # find RPC h
   and Vitest's `unit`, `ui` and `electron` projects. No e2e or packaging there: both need the release build of the
   native addon (Rust, whisper.cpp), which only the release build makes
 - **Releasing**: `bun run release 0.2.0` on an up-to-date, clean main sets `apps/studio/package.json`'s version (the
-  one the app shows), commits "Release v0.2.0" and tags `v0.2.0`; then `git push origin main v0.2.0`. The tag starts
-  `draft-release.yaml`: `build-app.yaml` packages macOS Apple Silicon (dmg), Windows x64 (installer) and Linux x64
-  (AppImage) on their own runners, then a draft GitHub release gets the installers and a changelog of the commits
-  since the previous tag. Check the draft and publish it by hand. A tag that doesn't match the version fails the build
+  one the app shows), commits "chore(release): v0.2.0" and tags `v0.2.0`; then `git push origin main v0.2.0`. The tag
+  starts `draft-release.yaml`: `build-app.yaml` packages macOS Apple Silicon (dmg), Windows x64 (installer) and Linux
+  x64 (AppImage) on their own runners, then a draft GitHub release gets the installers and a changelog of the commits
+  since the previous tag, grouped by type (`build`, `docs`, `style` and the release commit left out, see Commits).
+  Check the draft and publish it by hand. A tag that doesn't match the version fails the build
 - **Dry run**: `gh workflow run build-app.yaml --ref <branch>` (or Actions → Build app → Run workflow) packages all
   three as the run's artifacts (kept 7 days), without a release
 - Packaging checks what it made (`apps/studio/scripts/check-package.ts`): the addon and its GPU libraries, the
   archive's files, no source maps, and that the addon loads. Installers are unsigned (ad-hoc on macOS), and the app
   doesn't update itself
+
+## Commits
+
+- **Conventional Commits**: `type(scope): summary`, the summary lowercase and in the imperative, no period, e.g.
+  `fix(editor): keep the selection when undoing a split` or `feat(import): read P3 duets`
+- **Types**: `feat` (something users can do or see that's new), `fix` (a bug users hit), `perf`, `refactor`, `test`,
+  `docs`, `build` (packaging, dependencies, the native build), `ci` (workflows), `chore` (everything else). The release
+  notes group commits by type and leave out `build`, `docs` and `style`, so pick the type for what users notice
+- **Scope** (optional): the area, e.g. `editor`, `import`, `export`, `usdb`, `native`, `transcribe`, `mac`, `windows`
+- **Breaking changes**: `feat!:` plus a `BREAKING CHANGE:` footer saying what changed
+- The body (optional) says why, wrapped at 72 characters
 
 ## Definition of Done
 

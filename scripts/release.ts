@@ -32,6 +32,6 @@ if (current === version) fail(`The app is at ${version} already.`);
 fs.writeFileSync(manifest, text.replace(`"version": "${current}"`, `"version": "${version}"`));
 
 git("add", manifest);
-git("commit", "--message", `Release ${tag}`);
+git("commit", "--message", `chore(release): ${tag}`);
 git("tag", "--annotate", tag, "--message", tag);
 console.log(`Tagged ${tag}. Push it to build the draft release:\n  git push origin main ${tag}`);
