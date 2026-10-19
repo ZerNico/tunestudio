@@ -9,6 +9,7 @@ import { soloChart, syntheticBytes, tempDir, testRuntime, writeSong } from "../t
 import { importSong, inspectSong } from "../ultrastar/song-import";
 import { mediaResponse, parseRange } from "./media";
 import { mediaUrl } from "./media-url";
+import { APP_ORIGIN } from "./schemes";
 
 let cleanups: (() => void | Promise<void>)[] = [];
 afterEach(async () => {
@@ -34,7 +35,7 @@ async function setup() {
     }),
   );
   const fetchMedia = (url: string, init?: RequestInit) =>
-    mediaResponse(new Request(url, init), (effect) => runtime.runPromise(effect));
+    mediaResponse(new Request(url, init), (effect) => runtime.runPromise(effect), APP_ORIGIN);
   return { runtime, session, url: mediaUrl(session.id, mediaId), fetchMedia };
 }
 
@@ -47,6 +48,8 @@ describe("media:// protocol", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("Content-Type")).toBe("audio/mpeg");
     expect(response.headers.get("Accept-Ranges")).toBe("bytes");
+    // The app's pages may fetch it (scrubbing decodes it).
+    expect(response.headers.get("Access-Control-Allow-Origin")).toBe(APP_ORIGIN);
     expect(response.headers.get("Content-Length")).toBe(String(audio.length));
     expect((await body(response)).equals(audio)).toBe(true);
   });

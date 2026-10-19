@@ -72,6 +72,7 @@ import { createNoteEditing, previewChart } from "~/lib/editor/note-editing";
 import { createPlayback } from "~/lib/editor/playback";
 import { createEditorPrefs } from "~/lib/editor/prefs";
 import { createProjectMedia } from "~/lib/editor/project-media";
+import { createScrub } from "~/lib/editor/scrub";
 import { breaksOnly, NOTHING, notesOnly, type Selection } from "~/lib/editor/selection";
 import { keyOf } from "~/lib/editor/shortcuts";
 import { createSingAlong, microphoneProblem } from "~/lib/editor/sing-along";
@@ -216,6 +217,13 @@ export default function ProjectScreen() {
 
   const prefs = createEditorPrefs();
   const tones = createTones({ notes });
+  /** The playhead's drag heard: the selected source where it is, while paused. */
+  const scrub = createScrub({
+    url: () => {
+      const source = playback.source();
+      return source ? playbackUrls()[source] : undefined;
+    },
+  });
   const singAlong = createSingAlong({ notes, length });
   const toggleSingAlong = (on: boolean) => {
     if (!on) return singAlong.stop();
@@ -281,6 +289,7 @@ export default function ProjectScreen() {
     () => prefs.volumes(),
     (volumes) => {
       playback.setVolume(volumes.song);
+      scrub.setVolume(volumes.song);
       tones.setVolume(volumes.tones);
     },
   );
@@ -342,9 +351,12 @@ export default function ProjectScreen() {
     visibleItems(lines(), view().start, view().start + visibleSeconds(view(), width()), longestLine()),
   );
 
+  /** Moves the playhead, kept on the song; returns where it went (the playback's time reads the old one until then). */
   const seek = (seconds: number) => {
     scrolledAway = false;
-    playback.seek(Math.min(length(), Math.max(0, seconds)));
+    const at = Math.min(length(), Math.max(0, seconds));
+    playback.seek(at);
+    return at;
   };
   /**
    * A click on empty space in the roll moves the playhead at once; a double-click (which adds a note there) puts it back
@@ -356,6 +368,11 @@ export default function ProjectScreen() {
     // The second click of a double-click keeps where the first one started.
     if (!beforeClick || now - beforeClick.at > DOUBLE_CLICK_MS) beforeClick = { time: playback.time(), at: now };
     seek(seconds);
+  };
+  /** The playhead dragged (its head or its line): heard there while paused. */
+  const scrubTo = (seconds: number) => {
+    const at = seek(seconds);
+    if (!playback.playing()) scrub.at(at);
   };
   const undoClickSeek = () => {
     const before = beforeClick;
@@ -867,6 +884,7 @@ export default function ProjectScreen() {
       document.removeEventListener("paste", onPaste);
       playback.dispose();
       tones.dispose();
+      scrub.dispose();
       singAlong.stop();
       stopKeyHints();
     };
@@ -1056,6 +1074,9 @@ export default function ProjectScreen() {
                   lyricNote={notes().find((note) => note.id === editing.editingLyric()) ?? null}
                   onLyricDone={(text, move) => editing.finishLyric(text, move)}
                   autoScroll={autoScroll}
+                  playhead={playback.time()}
+                  onPlayheadDrag={scrubTo}
+                  onPlayheadDragEnd={() => scrub.end()}
                 />
               </NoteMenu>
             </div>
@@ -1092,7 +1113,8 @@ export default function ProjectScreen() {
               view={view()}
               width={width()}
               time={playback.time()}
-              onScrub={seek}
+              onScrub={scrubTo}
+              onScrubEnd={() => scrub.end()}
               onDoubleClick={(seconds) => loop.clearAt(seconds)}
               autoScroll={autoScroll}
             />

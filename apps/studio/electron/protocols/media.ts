@@ -20,10 +20,12 @@ const notFound = () => new Response(null, { status: 404 });
 /**
  * Answers a `media://<session>/<media id>` request from an open project, streaming the
  * requested bytes from its chunks. Unknown sessions (closed projects) and media are 404s.
+ * The app's pages (`appOrigin`) may also fetch them (scrubbing decodes a file).
  */
 export function mediaResponse(
   request: Request,
   run: <A>(effect: Effect.Effect<A, never, Projects>) => Promise<A>,
+  appOrigin: string,
 ): Promise<Response> {
   const url = URL.parse(request.url);
   const mediaId = Number(url?.pathname.slice(1));
@@ -48,6 +50,7 @@ export function mediaResponse(
         "Accept-Ranges": "bytes",
         "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff",
+        "Access-Control-Allow-Origin": appOrigin,
       });
       const range = parseRange(request.headers.get("Range"), row.size);
       if (range === false) {

@@ -262,7 +262,7 @@ function start() {
     });
   } else handleRendererProtocol(rendererDir, contentSecurityPolicy(false));
 
-  protocol.handle(MEDIA_SCHEME, (request) => mediaResponse(request, (effect) => runtime.runPromise(effect)));
+  protocol.handle(MEDIA_SCHEME, (request) => mediaResponse(request, (effect) => runtime.runPromise(effect), appOrigin));
   handleGrantedPaths();
   handleClipboard();
 

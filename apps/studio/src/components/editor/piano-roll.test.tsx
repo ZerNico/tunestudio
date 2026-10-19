@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
-import { flush } from "solid-js";
+import { createSignal, flush } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
 
 import type { DrawnNote, LineSpan } from "~/lib/editor/chart";
@@ -173,6 +173,46 @@ describe("PianoRoll", () => {
     expect(props.onEmptyClick).not.toHaveBeenCalled();
     flush();
     expect(screen.queryByTestId("selection-box")).toBeNull();
+  });
+
+  it("lets the playhead's line be dragged with Select, a click on it being one on empty space", () => {
+    const props = { ...handlers(), onPlayheadDrag: vi.fn(), onPlayheadDragEnd: vi.fn() };
+    const [tool, setTool] = createSignal<Tool>("select");
+    render(() => (
+      <PianoRoll
+        notes={[]}
+        breaks={[]}
+        range={range}
+        view={view}
+        width={800}
+        height={180}
+        {...props}
+        tool={tool()}
+        playhead={12}
+      />
+    ));
+    rollArea();
+    const grip = screen.getByTestId("playhead-grip");
+    // Centred on the line, 200 px in.
+    expect(grip.style.left).toBe("200.5px");
+    grip.setPointerCapture = () => {};
+    fireEvent.pointerDown(grip, { button: 0, clientX: 200, clientY: 50, pointerId: 1 });
+    fireEvent.pointerMove(grip, { clientX: 350, clientY: 50, pointerId: 1 });
+    expect(props.onPlayheadDrag).toHaveBeenLastCalledWith(13.5);
+    fireEvent.pointerUp(grip, { clientX: 350, clientY: 50, pointerId: 1 });
+    expect(props.onPlayheadDragEnd).toHaveBeenCalledOnce();
+    // Not a selection box, nor a click.
+    expect(props.onBox).not.toHaveBeenCalled();
+    expect(props.onEmptyClick).not.toHaveBeenCalled();
+    fireEvent.pointerDown(grip, { button: 0, clientX: 200, clientY: 50, pointerId: 1 });
+    fireEvent.pointerUp(grip, { clientX: 201, clientY: 50, pointerId: 1 });
+    expect(props.onEmptyClick).toHaveBeenCalledWith(12.01);
+    fireEvent.dblClick(grip, { clientX: 200, clientY: 15 });
+    expect(props.onEmptyDoubleClick).toHaveBeenCalledWith({ time: 12, pitch: 71 });
+    // Other tools draw or cut there.
+    setTool("draw");
+    flush();
+    expect(screen.queryByTestId("playhead-grip")).toBeNull();
   });
 
   it("lets a line break's line be grabbed with Select, drawn solid when it is selected", () => {

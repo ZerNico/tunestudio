@@ -658,6 +658,61 @@ test("scrubbing to the roll's edge scrolls the view, and the playhead goes on wi
   expect(time!.split("/")[0]!.trim() > before.at(-1)!).toBe(true);
 });
 
+test("dragging the playhead while paused plays the song there, a short grain at a time", async () => {
+  makePlayable(song);
+  await openSong();
+  const { page } = studio;
+  // Every grain started, by where in the song it starts.
+  await page.evaluate(() => {
+    const grains: number[] = [];
+    Object.assign(window, { e2eGrains: grains });
+    const start = AudioBufferSourceNode.prototype.start;
+    AudioBufferSourceNode.prototype.start = function (when?: number, offset?: number, duration?: number) {
+      grains.push(offset ?? 0);
+      return start.call(this, when, offset, duration);
+    };
+  });
+  const grains = () => page.evaluate(() => (window as Window & { e2eGrains?: number[] }).e2eGrains ?? []);
+  await seekTo(0.2);
+  const ruler = (await page.getByTestId("time-ruler").boundingBox())!;
+  const head = (await page.getByTestId("playhead-head").boundingBox())!;
+  await page.mouse.move(head.x + head.width / 2, head.y + head.height / 2);
+  await page.mouse.down();
+  // The file is decoded on the first move: the drag is heard once it is in.
+  for (let i = 0; i < 40 && (await grains()).length === 0; i++) {
+    await page.mouse.move(ruler.x + ruler.width * (i % 2 ? 0.3 : 0.4), head.y + head.height / 2, { steps: 4 });
+    await page.waitForTimeout(50);
+  }
+  await page.mouse.up();
+  const heard = await grains();
+  expect(heard.length).toBeGreaterThan(0);
+  // The last grain is where the playhead was let go ("0:01.8 / 0:06", tenths cut off).
+  const [minutes, seconds] = (await page.getByTestId("transport-time").textContent())!.split("/")[0]!.trim().split(":");
+  const at = Number(minutes) * 60 + Number(seconds);
+  expect(heard.at(-1)! - at).toBeGreaterThanOrEqual(0);
+  expect(heard.at(-1)! - at).toBeLessThan(0.1);
+});
+
+test("the playhead's line is dragged in the roll too, and a double-click there still adds a note", async () => {
+  await openSong();
+  const { page } = studio;
+  const roll = (await page.getByTestId("roll-area").boundingBox())!;
+  const time = async () => (await page.getByTestId("transport-time").textContent())!.split("/")[0]!.trim();
+  // A click on empty space (the top row) puts the playhead there; its line is then pressed where it is.
+  const y = roll.y + 4;
+  await page.mouse.click(roll.x + roll.width * 0.1, y);
+  const before = await time();
+  await page.mouse.move(roll.x + roll.width * 0.1, y);
+  await page.mouse.down();
+  await page.mouse.move(roll.x + roll.width * 0.3, y, { steps: 6 });
+  await page.mouse.up();
+  expect(await time()).not.toBe(before);
+  await expect(page.getByTestId("selection-box")).toHaveCount(0);
+  // A double-click lands on the line after its first click: it adds a note as on empty space.
+  await page.mouse.dblclick(roll.x + roll.width * 0.6, y);
+  await expect(page.getByTestId("roll-note")).toHaveCount(6);
+});
+
 test("the title bar lists the chart's problems and shows the one chosen", async () => {
   const { page } = studio;
   await openSong();

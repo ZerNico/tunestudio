@@ -1,6 +1,7 @@
 /**
  * Content Security Policy for the app's pages. Everything the app needs is bundled; `data:`
- * covers inlined fonts and cover thumbnails, `media:` the media of open projects. Vite's HMR
+ * covers inlined fonts and cover thumbnails, `media:` the media of open projects (fetched too: scrubbing decodes
+ * them). Vite's HMR
  * socket is only reachable in development.
  */
 export function contentSecurityPolicy(development: boolean): string {
@@ -13,7 +14,7 @@ export function contentSecurityPolicy(development: boolean): string {
     "font-src 'self' data:",
     "img-src 'self' data: blob: media:",
     "media-src 'self' blob: media:",
-    `connect-src 'self'${development ? " ws://localhost:*" : ""}`,
+    `connect-src 'self' media:${development ? " ws://localhost:*" : ""}`,
     "frame-src 'none'",
     "worker-src 'self' blob:",
     "object-src 'none'",

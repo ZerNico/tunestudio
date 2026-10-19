@@ -25,8 +25,12 @@ describe("contentSecurityPolicy", () => {
   });
 
   it("opens Vite's HMR socket in development only", () => {
-    expect(directives(contentSecurityPolicy(true)).get("connect-src")).toEqual(["'self'", "ws://localhost:*"]);
-    expect(directives(contentSecurityPolicy(false)).get("connect-src")).toEqual(["'self'"]);
+    expect(directives(contentSecurityPolicy(true)).get("connect-src")).toEqual([
+      "'self'",
+      "media:",
+      "ws://localhost:*",
+    ]);
+    expect(directives(contentSecurityPolicy(false)).get("connect-src")).toEqual(["'self'", "media:"]);
   });
 
   it("declares each directive once", () => {

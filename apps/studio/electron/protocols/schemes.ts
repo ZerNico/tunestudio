@@ -34,7 +34,10 @@ export function registerSchemes() {
       scheme: APP_SCHEME,
       privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, codeCache: true },
     },
-    // `stream` lets <audio> and <video> seek with Range requests.
-    { scheme: MEDIA_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+    // `stream` lets <audio> and <video> seek with Range requests; `corsEnabled` lets the app's pages fetch them.
+    {
+      scheme: MEDIA_SCHEME,
+      privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true },
+    },
   ]);
 }

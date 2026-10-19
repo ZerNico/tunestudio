@@ -149,8 +149,13 @@ export function PianoRoll(props: {
   /** That note, from all of them (not only those in view). */
   lyricNote?: DrawnNote | null;
   onLyricDone: (text: string | null, move?: 1 | -1) => void;
-  /** Scrolls the view while the selection box is at the roll's edge. */
+  /** Scrolls the view while the selection box (or the playhead) is dragged at the roll's edge. */
   autoScroll?: AutoScroll;
+  /** Where the playhead is (seconds): with Select its line is grabbed here too, dragged as its head is. */
+  playhead?: number;
+  /** The playhead's line is dragged to `seconds`, and let go. */
+  onPlayheadDrag?: (seconds: number) => void;
+  onPlayheadDragEnd?: () => void;
 }) {
   let area: HTMLDivElement | undefined;
   /** The time and pitch under a pointer. */
@@ -270,6 +275,26 @@ export function PianoRoll(props: {
     });
     window.addEventListener("keydown", escape, true);
   };
+  /** A press on the playhead's line: a drag scrubs, a click is one on empty space there. */
+  const startPlayheadDrag = (event: PointerEvent & { currentTarget: HTMLDivElement }) => {
+    const grip = event.currentTarget;
+    const rect = area!.getBoundingClientRect();
+    /** The time under the pointer (at the roll's edge when past it, while the view scrolls). */
+    const timeAt = (pointer: PointerEvent) =>
+      xToTime(props.view, Math.min(props.width, Math.max(0, pointer.clientX - rect.left)));
+    grip.setPointerCapture(event.pointerId);
+    followDrag({
+      press: event,
+      target: grip,
+      threshold: "x",
+      autoScroll: props.autoScroll,
+      onMove: ({ event: pointer }) => props.onPlayheadDrag?.(timeAt(pointer)),
+      onStop: () => props.onPlayheadDragEnd?.(),
+      onUp: (dragged, pointer) => {
+        if (!dragged) props.onEmptyClick(timeAt(pointer));
+      },
+    });
+  };
   const rows = () => {
     const pitches: number[] = [];
     for (let pitch = props.range.high; pitch >= props.range.low; pitch--) pitches.push(pitch);
@@ -374,6 +399,27 @@ export function PianoRoll(props: {
           be checked against it every frame (tens of ms with thousands on screen). Presses between them reach the roll.
         */}
         <div class="pointer-events-none absolute inset-0 will-change-transform">
+          {/*
+            The playhead's line is dragged as its head is (with Select), in a narrow strip under the breaks' grips and
+            the notes. A click or double-click there is one on empty space (a double-click's first click moved the
+            playhead here).
+          */}
+          <Show when={props.tool === "select" && props.onPlayheadDrag && props.playhead !== undefined}>
+            <div
+              class="pointer-events-auto absolute inset-y-0 w-1 -translate-x-1/2 cursor-ew-resize"
+              style={{ left: `${timeToX(props.view, props.playhead!) + 0.5}px` }}
+              onPointerDown={(event) => {
+                if (event.button !== 0) return;
+                event.stopPropagation();
+                startPlayheadDrag(event);
+              }}
+              onDblClick={(event) => {
+                event.stopPropagation();
+                props.onEmptyDoubleClick(pointAt(event));
+              }}
+              data-testid="playhead-grip"
+            />
+          </Show>
           <For each={props.breaks}>
             {(item) => (
               <>

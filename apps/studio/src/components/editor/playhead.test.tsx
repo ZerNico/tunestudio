@@ -20,11 +20,12 @@ describe("Playhead", () => {
     expect(screen.queryByTestId("playhead")).not.toBeInTheDocument();
   });
 
-  it("scrubs while its head is dragged", () => {
+  it("scrubs while its head is dragged, saying when it is let go", () => {
     const onScrub = vi.fn();
+    const onScrubEnd = vi.fn();
     render(() => (
       <div>
-        <Playhead view={view} width={800} time={12} onScrub={onScrub} />
+        <Playhead view={view} width={800} time={12} onScrub={onScrub} onScrubEnd={onScrubEnd} />
       </div>
     ));
     const head = screen.getByTestId("playhead-head");
@@ -44,5 +45,8 @@ describe("Playhead", () => {
     fireEvent.pointerDown(head, { button: 0, pointerId: 1, clientX: GUTTER_PX + 200 });
     fireEvent.pointerMove(head, { pointerId: 1, clientX: GUTTER_PX + 350 });
     expect(onScrub).toHaveBeenLastCalledWith(13.5);
+    expect(onScrubEnd).not.toHaveBeenCalled();
+    fireEvent(head, new Event("lostpointercapture"));
+    expect(onScrubEnd).toHaveBeenCalledOnce();
   });
 });
