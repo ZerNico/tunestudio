@@ -38,6 +38,11 @@ Tune Studio's charting uses Mel-Band RoFormer (voice separation), Whisper (heari
 (tempo), GAME (notes) and an aligner fine-tuned from Meta's MMS. The GAME and MMS-derived weights are for
 non-commercial use only. The app lists every model with its license in Settings.
 
+## Training
+
+The models Tune Studio trained itself (the aligner, its syllable-start head and the note refiners) are rebuilt,
+evaluated and exported in [training/](training/README.md), a Python project of its own.
+
 ## License
 
 [MIT](LICENSE)

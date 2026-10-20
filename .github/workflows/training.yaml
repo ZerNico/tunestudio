@@ -1,0 +1,54 @@
+name: Training
+
+# The training project's fast tests and ruff, only when something they cover changes: Linux torch comes with the CUDA
+# wheels (a few GB), so this stays out of ci.yaml. The slow tests need songs and models that are never in git.
+on:
+  pull_request:
+    paths:
+      - training/**
+      - apps/studio/electron/charting/data/**
+      - apps/studio/electron/charting/fixtures/**
+      - .github/workflows/training.yaml
+  push:
+    branches:
+      - main
+    paths:
+      - training/**
+      - apps/studio/electron/charting/data/**
+      - apps/studio/electron/charting/fixtures/**
+      - .github/workflows/training.yaml
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Training tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: training
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+          cache-dependency-glob: training/uv.lock
+
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Lint and format check
+        run: uv run ruff check && uv run ruff format --check
+
+      - name: Test
+        run: uv run pytest

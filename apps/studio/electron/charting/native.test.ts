@@ -1,6 +1,6 @@
 /**
  * The native addon's chart functions against the PoC on real songs. Local only: needs the goldens
- * (TUNESTUDIO_CHART_GOLDENS), the exported models (TUNESTUDIO_CHART_MODELS, the PoC's out/export) and a built addon
+ * (TUNESTUDIO_CHART_GOLDENS), the exported models (TUNESTUDIO_CHART_MODELS, a `tst export` folder) and a built addon
  * (`bun run native:build`).
  */
 import fs from "node:fs";

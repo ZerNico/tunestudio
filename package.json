@@ -13,6 +13,8 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "test:e2e": "turbo run test:e2e",
+    "test:training": "uv run --directory training pytest",
+    "lint:training": "uv run --directory training ruff check && uv run --directory training ruff format --check",
     "lint": "oxlint",
     "format": "oxfmt",
     "format:check": "oxfmt --check",

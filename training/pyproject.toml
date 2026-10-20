@@ -1,0 +1,76 @@
+[project]
+name = "tunestudio-training"
+version = "0.1.0"
+description = "Rebuild, evaluate and export the chart-generation models Tune Studio ships"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = [
+  "audio-separator>=0.47.0",
+  "beat-this",
+  "ctc-forced-aligner",
+  "httpx>=0.28.1",
+  "numpy>=2.5.3",
+  "onnx>=1.23.2",
+  "onnxruntime>=1.30.0",
+  "onnxscript>=0.7.2",
+  "scikit-learn>=1.9.1",
+  "skl2onnx>=1.20.0",
+  "soundfile>=0.14.0",
+  "torch>=2.14.1",
+  "torchaudio>=2.11.0",
+  "torchfcpe>=0.0.4",
+  # Only listed so that Windows takes it from the CUDA index along with torch (audio-separator needs it).
+  "torchvision>=0.29.1",
+  "transformers>=5.19.0",
+  "uroman>=1.3.1.1",
+]
+
+[project.scripts]
+tst = "tunestudio_training.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.11.13,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff==0.17.1"]
+
+[tool.uv.sources]
+# Windows wheels on PyPI are CPU-only, so Windows takes torch from PyTorch's CUDA index (they run on the CPU too).
+# Linux wheels on PyPI include CUDA and macOS ones MPS. Same versions as PyPI's: macOS and Linux resolve as before.
+torch = [{ index = "pytorch-cuda", marker = "sys_platform == 'win32'" }]
+torchaudio = [{ index = "pytorch-cuda", marker = "sys_platform == 'win32'" }]
+torchvision = [{ index = "pytorch-cuda", marker = "sys_platform == 'win32'" }]
+beat-this = { git = "https://github.com/CPJKU/beat_this", rev = "b95c8ab0c58c2d9fcfd40508ae8dffbc05ac4f5c" }
+ctc-forced-aligner = { git = "https://github.com/MahmoudAshraf97/ctc-forced-aligner", rev = "64293cc6d711e57666c4a8b098e9fd93b381fd88" }
+
+[[tool.uv.index]]
+name = "pytorch-cuda"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m 'not slow' --strict-markers"
+markers = [
+  "slow: needs the real library, models or stems (uv run pytest -m slow)",
+  "mps: needs Apple Silicon's GPU",
+  "cuda: needs a CUDA GPU",
+]
+filterwarnings = [
+  "ignore::DeprecationWarning:torch.*",
+  "ignore::torch.jit.TracerWarning",
+  "ignore:Exporting a model to ONNX with a batch_size other than 1:UserWarning",
+  "ignore:You are using the legacy TorchScript-based ONNX export:DeprecationWarning",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.ruff.lint.isort]
+known-local-folder = ["conftest"]

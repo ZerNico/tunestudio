@@ -1,7 +1,7 @@
 /**
- * Test helper: the auto-tuner PoC's recorded stage calls for real songs (`poc/scripts/golden_dump.py`), so each
- * ported function can be checked against the PoC on real data. They contain song lyrics, so they stay out of the
- * repository: tests that use them run only when TUNESTUDIO_CHART_GOLDENS points at the PoC's `out/golden` folder.
+ * Test helper: the Python pipeline's recorded stage calls for real songs (`tst goldens` in `training/`), so each
+ * ported function can be checked against it on real data. They contain song lyrics, so they stay out of the
+ * repository: tests that use them run only when TUNESTUDIO_CHART_GOLDENS points at the goldens folder.
  */
 import fs from "node:fs";
 import path from "node:path";

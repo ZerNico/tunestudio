@@ -14,6 +14,8 @@
     "**/drizzle/**/snapshot.json",
     "apps/studio/electron/charting/data/**",
     "apps/studio/electron/charting/fixtures/**",
+    "training/model-cards/**",
+    "training/splits/**",
     "**/styles.css",
     "**/dist/**",
     "**/dist-electron/**",

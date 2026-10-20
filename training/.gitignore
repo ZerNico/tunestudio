@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+# Libraries, datasets, stems, checkpoints, runs, exports and goldens (lyrics, audio, weights): never in git.
+.local/
+# This machine's paths and devices (`tst init` writes it).
+tst.toml

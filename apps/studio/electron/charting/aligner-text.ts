@@ -1,8 +1,8 @@
 /**
  * Lyrics as the aligner reads them: ctc-forced-aligner's `preprocess_text(..., romanize=True, split_size="word")`
  * (text_normalize, uroman, normalize_uroman) without Python. The normalization sets and the per-character
- * romanization come from `data/aligner-text.json` (read on first use, `tables.ts`), generated from the PoC's packages by
- * `poc/scripts/export_text_tables.py`; tests compare the tokens with the PoC's for thousands of lines.
+ * romanization come from `data/aligner-text.json` (read on first use, `tables.ts`), generated from the Python packages
+ * by `tst fixtures` in `training/`; tests compare the tokens with Python's for thousands of lines.
  *
  * Supported scripts: Latin, Hangul and Chinese characters (they romanize character by character in uroman).
  */

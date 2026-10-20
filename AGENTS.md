@@ -71,11 +71,27 @@ rg -n "export function" apps/studio/src/components/ui   # find UI primitives
 rg -n '^  "[a-z]+\.[a-zA-Z]+":' apps/studio/electron/rpc/handlers   # find RPC handlers
 ```
 
+## Training (`training/`)
+
+- A Python (uv) project, not a Bun workspace: rebuilds, evaluates and exports the models the app downloads, and records
+  the goldens and generates the tables and fixtures `apps/studio/electron/charting` tests against
+  (`cd training && uv sync && uv run tst init --library <songs> && uv run tst status`,
+  [training/README.md](training/README.md))
+- Python with type hints, ruff-clean at 120 columns (`bun run lint:training`, or `uv run ruff check` and
+  `uv run ruff format` in `training/`: the dev group pins ruff, so don't use `uvx ruff`)
+- Tests: `bun run test:training` (the fast suite, offline, seconds), `uv run pytest -m slow` in `training/` with the
+  real data. A change to what tst makes is checked with `tst fingerprint` before and after, and the exports with
+  `tst export all --verify` (byte for byte against `training/shipped.sha256`)
+- Never commit lyrics, audio, charts, weights, datasets, goldens or outputs: they live in the git-ignored
+  `training/.local/` (or where `training/tst.toml` and the `TST_*` variables point). Split lists (song names, chart
+  hashes) and `shipped.sha256` are fine
+
 ## CI and Releasing
 
 - **CI** (`.github/workflows/ci.yaml`, on pull requests and pushes to main, Linux only): lint, format check, typecheck
   and Vitest's `unit`, `ui` and `electron` projects. No e2e or packaging there: both need the release build of the
-  native addon (Rust, whisper.cpp), which only the release build makes
+  native addon (Rust, whisper.cpp), which only the release build makes. `training.yaml` runs the training project's
+  ruff and fast tests, only when `training/` or the app's generated charting tables change
 - **Releasing**: `bun run release 0.2.0` on an up-to-date, clean main sets `apps/studio/package.json`'s version (the
   one the app shows), commits "chore(release): v0.2.0" and tags `v0.2.0`; then `git push origin main v0.2.0`. The tag
   starts `draft-release.yaml`: `build-app.yaml` packages macOS Apple Silicon (dmg), Windows x64 (installer) and Linux
