@@ -2,7 +2,8 @@
  * Builds and packages the app with electron-builder for the current platform:
  *   bun scripts/package.ts [--arch arm64|x64] [--dir]
  * `--dir` only produces the unpacked app. The version comes from `TUNESTUDIO_VERSION` or
- * package.json. Installers are unsigned for now (ad-hoc signature on macOS).
+ * package.json. Installers are unsigned for now (ad-hoc signature on macOS). On macOS the app also goes into a
+ * `.app.tar.gz` next to the dmg: what the app's updater installs (`electron/updates/`).
  */
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -181,8 +182,12 @@ const config: Configuration = {
       resources = path.join(app, "Contents/Resources");
     }
     checkPackage(resources);
+    packedDir = context.appOutDir;
   },
 };
+
+/** Where electron-builder put the packed app (the folder holding the `.app` on macOS). */
+let packedDir: string | undefined;
 
 const platform =
   process.platform === "darwin" ? Platform.MAC : process.platform === "win32" ? Platform.WINDOWS : Platform.LINUX;
@@ -191,3 +196,14 @@ run("bun", ["run", "build"]);
 stage();
 // Building from the staging directory keeps the workspace's node_modules out of the app.
 await build({ projectDir: stageDir, targets: platform.createTarget(null, arch), config, publish: "never" });
+
+if (process.platform === "darwin" && !dirOnly && packedDir) {
+  // tar keeps the bundle's symlinks, modes and ad-hoc signature as they are.
+  run("tar", [
+    "-czf",
+    path.join(outputDir, `${PRODUCT_NAME}_${version}_${archName}.app.tar.gz`),
+    "-C",
+    packedDir,
+    `${PRODUCT_NAME}.app`,
+  ]);
+}

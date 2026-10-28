@@ -6,6 +6,7 @@ import { MODEL_FEATURES } from "../models";
 import { Settings } from "../settings";
 import {
   AudioFileDetails,
+  AvailableUpdate,
   ChosenImage,
   CoverCandidate,
   DownloadedDraft,
@@ -484,4 +485,13 @@ export class NativeRpcs extends RpcGroup.make(
   withProgress("models.download", ModelFeatureInput, Progress, Schema.Array(ModelFeatureStatus)),
   /** Deletes a feature's models to free the space; then how every feature stands. */
   call("models.remove", ModelFeatureInput, Schema.Array(ModelFeatureStatus)),
+
+  /** A newer release to tell the user about at start: the first window that asks in a run gets it, the others null. */
+  query("updates.announce", nullable(AvailableUpdate)),
+  /** Asks GitHub for the latest release now (the settings' button); null when this is the latest. */
+  query("updates.check", nullable(AvailableUpdate)),
+  /** Downloads and checks the update found, reporting progress. */
+  withProgress("updates.download", Schema.Void, Progress, Schema.Void),
+  /** Quits to install the downloaded update (every window saves first); the new version starts afterwards. */
+  command("updates.restart", Schema.Void),
 ) {}

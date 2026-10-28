@@ -85,6 +85,7 @@ electron/
 ├── models/               # Model downloads, and the features the settings screen lists
 ├── native/               # Loads the Rust addon
 ├── tools/                # yt-dlp, QuickJS and FFmpeg: sources, downloads, unzipping, running them
+├── updates/              # Updating the app from its GitHub releases: the signed feed, the service, installing
 ├── testing.ts            # Test helpers: temp folders, synthetic songs, a test runtime, fake addon and models
 ├── csp.ts                # Content Security Policy (also applied to the dev server's pages)
 ├── dev-reload.ts         # Dev-only: reload windows when only the preload was rebuilt
@@ -287,6 +288,34 @@ resources/icons/          # App icon: icon.svg → icon.png (macOS, with Apple's
 - Models: one `ensureAll(CHART_MODELS)` download (1.6 GB as the app counts, binary units): our aligner and note refiners and ONNX exports of FCPE and Beat This! from Hugging Face (`tuneperfect/*`, pinned revisions), and GAME as openvpi's v1.0.3 release zip from GitHub, unpacked with `unzip` and checked file by file (`unpack`).
 - Tests: synthetic ones and committed fixtures (words, never song lyrics) run everywhere; the pipeline's recorded calls on real songs (`goldens.ts`, made by `tst goldens` in `training/`) run when `TUNESTUDIO_CHART_GOLDENS` points at them, the native ones (`native.test.ts`) also need `TUNESTUDIO_CHART_MODELS` (an export folder, `tst export`), `TUNESTUDIO_CHART_GAME` and a built addon.
 
+### Updates (`electron/updates/`, `src/lib/updates.ts`)
+
+- The packaged app updates itself from the latest published GitHub release, without Apple's or Microsoft's signing.
+  Each release has `latest.json` (each system's update file: name as GitHub stores it, size, SHA-256) and
+  `latest.json.sig`, an Ed25519 signature of its bytes (`scripts/update-manifest.ts` in the release job). The app
+  trusts the feed only with the signature of the public key it was built with (`updates/key.ts`, from
+  `scripts/update-key.ts`) and a download only with the feed's size and hash. Node's own `crypto`, no Tauri or
+  minisign. The private key is the repository's `TUNESTUDIO_UPDATE_KEY` secret (and the owner's backup). A new key
+  only reaches users with a release carrying its public half
+- `Updates` (`updates.ts`) asks once per run: `releases/latest` redirects to the latest published release's tag, and
+  that tag's `latest.json` and `.sig` are read (one release's pair, the version must be the tag's). The first window
+  shows a toast ("Update and restart", or "Download" for a copy that can't replace itself), the settings' About has
+  "Check for updates". A failed check at start is silent (logged). Downloads go to `<data>/updates/<version>/`,
+  emptied at the next start. Only `updates.restart` makes quitting install it: it quits the usual way (every page
+  saves, the services close, a second quit meanwhile waits for it), then main installs the staged update
+  (`install.ts`) and the new version starts once this one has exited. A failed install starts the old one again
+- Installing (`install.ts`): macOS swaps the `.app` bundle (copied beside it, then renamed in, the old one put back if
+  that fails, an administrator's password only where the folder or bundle isn't writable). The old bundle stays until
+  the app has exited, then a detached shell removes it and opens the bundle. A file the app downloaded has no
+  quarantine flag, so Gatekeeper doesn't ask, but each build's ad-hoc signature differs, so macOS may ask for the
+  microphone again. A copy run from the dmg or translocated by macOS (opened from Downloads without moving it) can't
+  update and gets the release page. Windows runs the new installer silently (`/S --updated --force-run`, electron-
+  updater's arguments), only for a copy the installer put there. Linux replaces the AppImage. Windows and Linux are
+  untested
+- Only the packaged app updates (`main.ts` passes the options); development, tests and `TUNESTUDIO_OFFLINE` get
+  `noUpdates`. Tests: `updates.test.ts` (fake GitHub), `install.test.ts` (a bundle swap, macOS only),
+  `scripts/update-manifest.test.ts` (CI runs it with the studio tests)
+
 ### Settings (`src/lib/settings.ts`, `electron/services/settings.ts`, `/settings`)
 
 - One schema shared by renderer and main; `settingsFrom` keeps every still-valid stored value and defaults the rest, so adding or dropping an option never resets the others. Stored as `<data>/settings.json` (`{ version: 1, settings }`).
@@ -306,7 +335,7 @@ resources/icons/          # App icon: icon.svg → icon.png (macOS, with Apple's
 - `vite build` writes `dist/licenses.json` (`licensesPlugin` in `plugin.ts`, collected by `collect.ts`); it is generated, never committed, so it can't go stale. It lists the npm packages whose code is in the renderer bundle (Vite's rendered modules, assets, CSS `@import`s, `~icons/*` as `@iconify-json/*`) and in main/preload (esbuild's metafile with the build's options), the Rust crates the addon links (`cargo metadata --filter-platform` for this machine; build scripts' and proc macros' crates left out), its C/C++ libraries (whisper.cpp, ONNX Runtime with its version from ort-sys, Dawn, DXC, DirectML, compiler-rt, per system) and Electron's LICENSE. Workspace packages are skipped. Each text is stored once (`texts`)
 - A package or crate without a known SPDX license (copyleft isn't on the list) or without a license file fails the build. One that really ships no file gets its text from `scripts/licenses/texts/` via `MISSING_TEXTS`; texts for ONNX Runtime (named by version: an ort bump fails until its LICENSE and ThirdPartyNotices are added), Dawn and the others live there too
 - The renderer fetches it (`loadNotices`, `src/lib/licenses.ts`) only when the dialog opens. The dev server serves the last build's file, else empty lists with a note. Downloaded tools are a static list there (`DOWNLOADED_TOOLS`); models stay in the Models section; Chromium's `LICENSES.chromium.html` is opened in the browser by main (`app.openChromiumLicenses`)
-- Settings' About section (`about-section.tsx`): version, the app's MIT text (the repo's `LICENSE`, imported `?raw`) and the licenses dialog (`licenses-dialog.tsx`). Tests: `scripts/licenses/collect.test.ts` (Vitest project `scripts`; builds with Vite and checks the real list, skipped without cargo), `about-section.test.tsx`, and the About test in `e2e/settings.spec.ts`
+- Settings' About section (`about-section.tsx`): version, Check for updates, the app's MIT text (the repo's `LICENSE`, imported `?raw`) and the licenses dialog (`licenses-dialog.tsx`). Tests: `scripts/licenses/collect.test.ts` (Vitest project `scripts`; builds with Vite and checks the real list, skipped without cargo), `about-section.test.tsx`, and the About test in `e2e/settings.spec.ts`
 
 ### Start screen
 

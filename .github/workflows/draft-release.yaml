@@ -11,7 +11,6 @@ jobs:
     uses: ./.github/workflows/build-app.yaml
     with:
       tag: ${{ github.ref_name }}
-    secrets: inherit
 
   create-draft-release:
     name: Create draft release
@@ -31,6 +30,21 @@ jobs:
         with:
           path: artifacts
           pattern: tunestudio-*
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # The app's updater reads the published release's latest.json and trusts it only with this key's signature
+      # (apps/studio/electron/updates/). This is the only job that has the key.
+      - name: Sign the update feed
+        env:
+          TUNESTUDIO_UPDATE_KEY: ${{ secrets.TUNESTUDIO_UPDATE_KEY }}
+        run: bun apps/studio/scripts/update-manifest.ts artifacts "$GITHUB_REF_NAME"
 
       # The changelog lists the commits since the previous release's tag; the first release has none to compare with.
       - name: Find the previous release

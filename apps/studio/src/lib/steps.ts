@@ -3,6 +3,9 @@
  * A model is only downloaded the first time.
  */
 
+/** Downloading an update of Tune Studio. */
+export const DOWNLOADING_THE_UPDATE = "Downloading the update";
+
 /** Getting a new project's song: downloading it or copying the file, then separating the voice. */
 export const DOWNLOADING_THE_AUDIO = "Downloading the audio";
 export const DOWNLOADING_THE_VIDEO = "Downloading the video";

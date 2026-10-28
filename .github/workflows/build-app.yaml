@@ -105,6 +105,7 @@ jobs:
           name: ${{ matrix.platform.artifact }}
           path: |
             apps/studio/release/*.dmg
+            apps/studio/release/*.app.tar.gz
             apps/studio/release/*-setup.exe
             apps/studio/release/*.AppImage
           if-no-files-found: error

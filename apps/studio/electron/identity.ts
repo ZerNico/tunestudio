@@ -7,6 +7,9 @@ export const PRODUCT_NAME = "Tune Studio";
 
 export const APP_ID = "org.tuneperfect.studio";
 
+/** The GitHub repository whose releases the app updates from. */
+export const REPOSITORY = "ZerNico/tunestudio";
+
 export const COPYRIGHT = `© ${new Date().getFullYear()} Nico Franke`;
 
 /** The window background, painted before the renderer's first frame to avoid a white flash. */

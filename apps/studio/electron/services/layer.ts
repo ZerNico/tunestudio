@@ -11,6 +11,7 @@ import { projectsLayer } from "../project/projects";
 import type { Downloads } from "../tools/downloads";
 import type { Platform } from "../tools/sources";
 import { Tools, toolsLayer } from "../tools/tools";
+import { noUpdates, type UpdatesOptions, updatesLayer } from "../updates/updates";
 import type { AppLog } from "./app-log";
 import type { Desktop } from "./desktop";
 import { draftsLayer } from "./drafts";
@@ -50,6 +51,8 @@ export interface StudioServicesOptions {
   launcher?: Layer.Layer<GameLauncher>;
   /** The app downloads for real from the tool hosts; tests from a fake internet, or nowhere. */
   downloads: Layer.Layer<Downloads>;
+  /** How the app updates itself; without, it never does (tests, development). */
+  updates?: UpdatesOptions;
 }
 
 /**
@@ -78,6 +81,9 @@ export function studioServices(options: StudioServicesOptions) {
     options.models ??
       modelsLayer({ folder: options.modelsFolder }).pipe(Layer.provide(Layer.mergeAll(downloads, options.log))),
     options.native ?? nativeLayer(options.nativeFolder),
+    options.updates
+      ? updatesLayer(options.updates).pipe(Layer.provide(Layer.mergeAll(downloads, options.log)))
+      : noUpdates,
   ).pipe(Layer.provide(NodeServices.layer));
   return Layer.mergeAll(own, downloads, options.log, options.desktop, NodeServices.layer);
 }

@@ -32,6 +32,10 @@ import { startRpcServer } from "./rpc/server";
 import { makeRuntime } from "./runtime";
 import { Desktop } from "./services/desktop";
 import { PathGrants } from "./services/path-grants";
+import { apply, installation, type Staged } from "./updates/install";
+import { UPDATE_PUBLIC_KEY } from "./updates/key";
+import { UPDATE_TARGETS, type UpdateTarget } from "./updates/manifest";
+import { Updates } from "./updates/updates";
 import { loadWindowState, saveWindowState } from "./window-state";
 import { createWindows, projectFilesIn, type Windows } from "./windows";
 
@@ -74,6 +78,9 @@ const dataDir = app.getPath("userData");
 
 const logger = createLogger(app.getPath("logs"));
 
+const offline = process.env.TUNESTUDIO_OFFLINE === "1";
+const updateTarget = `${process.platform}-${process.arch}`;
+
 // `TUNESTUDIO_OFFLINE` keeps tests from downloading yt-dlp and FFmpeg; `TUNESTUDIO_APP_FOLDERS` from finding the
 // computer's own games (macOS: where apps are looked for instead, separated by `:`).
 const runtime = makeRuntime(logger, {
@@ -81,9 +88,43 @@ const runtime = makeRuntime(logger, {
   appVersion: app.getVersion(),
   // Packaged, the addon sits in the app's resources, outside the archive.
   nativeFolder: app.isPackaged ? path.join(process.resourcesPath, "native") : path.join(app.getAppPath(), "native"),
-  offline: process.env.TUNESTUDIO_OFFLINE === "1",
+  offline,
   appFolders: process.env.TUNESTUDIO_APP_FOLDERS?.split(":").filter((folder) => folder !== ""),
+  // Only the packaged app updates itself, from the GitHub releases (`electron/updates/`).
+  updates:
+    app.isPackaged && !offline
+      ? {
+          folder: path.join(dataDir, "updates"),
+          version: app.getVersion(),
+          target: UPDATE_TARGETS.includes(updateTarget as UpdateTarget) ? (updateTarget as UpdateTarget) : null,
+          installation: installation({ platform: process.platform, execPath: process.execPath, env: process.env }),
+          publicKey: UPDATE_PUBLIC_KEY,
+          quit: () => app.quit(),
+        }
+      : undefined,
 });
+
+/** Logs a failed update install. */
+function updateFailed(error: unknown) {
+  logger.write("ERROR", "updates", `Installing the update: ${error instanceof Error ? error.message : String(error)}`);
+}
+
+/**
+ * Puts a downloaded update in place while quitting, after the services are closed, and starts the new version once
+ * this one has exited. A failed install starts this version again.
+ */
+function installUpdate(staged: Staged) {
+  try {
+    apply(staged, (error) => {
+      updateFailed(error);
+      app.relaunch();
+    });
+  } catch (error) {
+    updateFailed(error);
+    // macOS and Linux start the old version again themselves.
+    if (staged.kind === "windows") app.relaunch();
+  }
+}
 
 /** Whether an IPC message comes from the top-level frame of one of the app's own pages. */
 function fromAppFrame(frame: Electron.WebFrameMain | null) {
@@ -285,24 +326,36 @@ function start() {
     return contents ? BrowserWindow.fromWebContents(contents) : null;
   });
 
-  // Quitting lets every page save what is waiting, then waits while services release what they hold (projects, child
-  // processes) and the log is flushed, a few seconds each at most. The windows are hidden first, so nothing more is
-  // edited.
+  // Quitting hides the windows, lets every page save, waits while services release what they hold, installs an update
+  // the user restarted for, and flushes the log, a few seconds each at most. Another quit meanwhile waits for it.
+  let quitStarted = false;
   let released = false;
+  let staged: Staged | null = null;
   app.on("before-quit", (event) => {
     if (released) return;
     event.preventDefault();
-    released = true;
+    if (quitStarted) return;
+    quitStarted = true;
     const open = BrowserWindow.getAllWindows();
     for (const window of open) window.hide();
     const timeout = new Promise((resolve) => setTimeout(resolve, QUIT_TIMEOUT_MS));
     void Promise.all(open.map((window) => flushPage(window.webContents)))
-      .then(() => {
+      .then(async () => {
         quitting = true;
+        staged = await runtime.runPromise(Updates.use((updates) => updates.staged));
         return Promise.race([runtime.dispose(), timeout]);
       })
       .catch((error: unknown) => logger.write("ERROR", "main", `Quitting: ${String(error)}`))
-      .finally(() => logger.flush().finally(() => app.quit()));
+      .finally(() => {
+        if (staged) installUpdate(staged);
+        // A turn later: an installer that fails to start says so on the next tick, and its log line must be flushed.
+        setImmediate(() => {
+          void logger.flush().finally(() => {
+            released = true;
+            app.quit();
+          });
+        });
+      });
   });
 
   // Project files the OS handed over before the app was ready open now; without any, the start screen.

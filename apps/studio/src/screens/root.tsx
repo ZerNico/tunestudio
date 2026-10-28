@@ -6,6 +6,7 @@ import { TooltipProvider } from "~/components/ui/tooltip";
 import { platform } from "~/lib/desktop";
 import { listenForEditCommands } from "~/lib/edit-commands";
 import { native } from "~/lib/native/client";
+import { announceUpdate } from "~/lib/updates";
 
 function blockContextMenu(event: MouseEvent) {
   const target = event.target;
@@ -27,10 +28,11 @@ function newWindowKey(event: KeyboardEvent) {
 
 /**
  * App shell around every route: tooltips, toasts, the Edit menu's Undo and Redo, a new window's key, the mouse's back
- * and forward buttons doing nothing, and the release-build right-click policy.
+ * and forward buttons doing nothing, the release-build right-click policy, and a newer release's toast.
  */
 export default function RootScreen() {
   onSettled(() => listenForEditCommands());
+  onSettled(() => void announceUpdate());
   onSettled(() => {
     window.addEventListener("mouseup", blockHistoryButtons, true);
     window.addEventListener("mousedown", blockHistoryButtons, true);

@@ -10,6 +10,7 @@ import { gameHandlers, tryHandlers } from "./handlers/games";
 import { audioHandlers, draftHandlers, youtubeHandlers } from "./handlers/new-project";
 import { projectHandlers } from "./handlers/project";
 import { songHandlers } from "./handlers/song";
+import { updateHandlers } from "./handlers/updates";
 
 export { Callers, progressStream } from "./handlers/shared";
 
@@ -25,4 +26,5 @@ export const nativeHandlers = NativeRpcs.toLayer({
   ...draftHandlers,
   ...modelHandlers,
   ...toolHandlers,
+  ...updateHandlers,
 });

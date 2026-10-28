@@ -71,6 +71,11 @@ export class ModelDownloadFailed extends Schema.TaggedError<ModelDownloadFailed>
   message: Schema.String,
 }) {}
 
+/** Checking for, downloading or installing an update of Tune Studio failed. */
+export class UpdateFailed extends Schema.TaggedError<UpdateFailed>()("UpdateFailed", {
+  message: Schema.String,
+}) {}
+
 /** Making the chart failed: the song couldn't be read, or the lyrics couldn't be found in the vocals. */
 export class ChartFailed extends Schema.TaggedError<ChartFailed>()("ChartFailed", {
   message: Schema.String,

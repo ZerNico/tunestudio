@@ -8,6 +8,7 @@ import { appLogLayer } from "./services/app-log";
 import { desktopLayer } from "./services/desktop-electron";
 import { studioServices } from "./services/layer";
 import { COVER_HOSTS, downloadsLayer, LYRICS_HOSTS, MODEL_HOSTS, THUMBNAIL_HOSTS, TOOL_HOSTS } from "./tools/downloads";
+import type { UpdatesOptions } from "./updates/updates";
 
 export interface RuntimeOptions {
   /** The app's data directory (recent projects live there). */
@@ -19,6 +20,8 @@ export interface RuntimeOptions {
   offline?: boolean;
   /** Where macOS apps (the games) are looked for, instead of the Applications folders (tests). */
   appFolders?: readonly string[];
+  /** How the packaged app updates itself; without, it never does. */
+  updates?: UpdatesOptions;
 }
 
 /**
@@ -42,6 +45,7 @@ export function makeRuntime(logger: Logger, options: RuntimeOptions) {
           ? []
           : [...TOOL_HOSTS, ...THUMBNAIL_HOSTS, ...COVER_HOSTS, ...LYRICS_HOSTS, ...MODEL_HOSTS],
       }),
+      updates: options.updates,
       log: appLogLayer(logger),
       desktop: desktopLayer,
     }),

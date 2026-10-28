@@ -167,6 +167,17 @@ export const RangeChart = Schema.Struct({
 });
 export type RangeChart = typeof RangeChart.Type;
 
+/** A newer release of Tune Studio. */
+export const AvailableUpdate = Schema.Struct({
+  /** Without the tag's "v". */
+  version: Schema.String,
+  /** Its release page on GitHub, with its notes and installers. */
+  page: Schema.String,
+  /** Whether this copy can install it itself; otherwise it is downloaded from the page. */
+  installable: Schema.Boolean,
+});
+export type AvailableUpdate = typeof AvailableUpdate.Type;
+
 /** How far a long call (an import, a download, separating, charting) is. */
 export const Progress = Schema.Struct({
   /** The step under way, for the progress label (`src/lib/steps.ts`). */

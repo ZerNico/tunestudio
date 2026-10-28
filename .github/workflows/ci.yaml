@@ -79,8 +79,9 @@ jobs:
         working-directory: packages/ultrastar
         run: bun run test
 
-      # The `scripts` project (the build's license list) builds with Vite and reads the addon's crates; build-app.yaml
-      # covers it on every platform, since the build fails on a license problem.
+      # The `scripts` project's license list builds with Vite and reads the addon's crates; build-app.yaml covers it on
+      # every platform, since the build fails on a license problem. Its update feed test is quick and runs here, so a
+      # broken feed shows before a release job needs it.
       - name: Studio tests
         working-directory: apps/studio
-        run: bunx vitest run --project unit --project ui --project electron
+        run: bunx vitest run --project unit --project ui --project electron && bunx vitest run --project scripts scripts/update-manifest.test.ts
