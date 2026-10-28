@@ -1,16 +1,20 @@
 /**
  * Scrubbing: while the playhead is dragged, the selected source is heard where it is, a short grain at a time (Web
  * Audio, from the file decoded on the first drag and kept until another file is scrubbed; one that fails is tried
- * again on the next drag). Moving on plays the next grain; holding still goes quiet.
+ * again on the next drag). Moving on plays the next grain; holding still repeats a longer stretch from there, so a
+ * syllable can be heard whole.
  */
 
-/** How long each grain sounds, and its fades so it doesn't click (seconds). */
+/** A drag's grains: how long each sounds, and its fades so it doesn't click (seconds). */
 const GRAIN = 0.09;
 const FADE = 0.01;
 /** At most one grain this often (ms): a fast drag skips the times in between. */
 const EVERY_MS = 45;
-/** Enough to hear syllables, and half the memory of a 44.1 kHz decode. */
-const SAMPLE_RATE = 22050;
+/** Held this long without a move (ms), the playhead starts repeating where it is. */
+const HOLD_MS = 120;
+/** The held stretch (seconds), and how often it starts (ms). */
+const LOOP = 0.04;
+const LOOP_EVERY_MS = 60;
 
 async function fetchAndDecode(url: string, context: AudioContext): Promise<AudioBuffer> {
   const response = await fetch(url);
@@ -40,10 +44,12 @@ export function createScrub(options: {
   let lastGrain = -Infinity;
   /** A grain held back to keep the pace: the latest time asked for. */
   let waiting: { seconds: number; timer: ReturnType<typeof setTimeout> } | null = null;
+  /** Repeating a held playhead's stretch, or waiting to start. */
+  let holding: ReturnType<typeof setTimeout> | null = null;
 
   const audio = () => {
     if (!context) {
-      context = options.context?.() ?? new AudioContext({ sampleRate: SAMPLE_RATE });
+      context = options.context?.() ?? new AudioContext();
       output = context.createGain();
       output.gain.value = volume;
       output.connect(context.destination);
@@ -81,9 +87,10 @@ export function createScrub(options: {
     sounding = null;
   };
 
-  const grain = (seconds: number) => {
+  /** Plays from `seconds`; false if there is nothing to hear there (yet). */
+  const grain = (seconds: number, length = GRAIN) => {
     const samples = buffer();
-    if (!samples || seconds < 0 || seconds >= samples.duration) return;
+    if (!samples || seconds < 0 || seconds >= samples.duration) return false;
     lastGrain = now();
     quiet();
     const { context, output } = audio();
@@ -93,37 +100,55 @@ export function createScrub(options: {
     const gain = context.createGain();
     gain.gain.setValueAtTime(0, at);
     gain.gain.linearRampToValueAtTime(1, at + FADE);
-    gain.gain.setValueAtTime(1, at + GRAIN - FADE);
-    gain.gain.linearRampToValueAtTime(0, at + GRAIN);
+    gain.gain.setValueAtTime(1, at + length - FADE);
+    gain.gain.linearRampToValueAtTime(0, at + length);
     source.connect(gain).connect(output);
-    source.start(at, seconds, GRAIN);
+    source.start(at, seconds, length);
     const playing = { source, gain };
     sounding = playing;
     source.addEventListener("ended", () => {
       if (sounding === playing) sounding = null;
     });
+    return true;
+  };
+
+  const stopHolding = () => {
+    if (holding) clearTimeout(holding);
+    holding = null;
   };
 
   const cancelWaiting = () => {
     if (waiting) clearTimeout(waiting.timer);
     waiting = null;
+    stopHolding();
+  };
+
+  /** A grain at `seconds`, then, if the playhead stays there, the stretch from there over and over. */
+  const grainThenHold = (seconds: number) => {
+    if (!grain(seconds)) return;
+    const repeat = () => {
+      grain(seconds, LOOP);
+      holding = setTimeout(repeat, LOOP_EVERY_MS);
+    };
+    holding = setTimeout(repeat, HOLD_MS);
   };
 
   return {
-    /** The playhead is at `seconds`: a grain from there, now or (to keep the pace) a moment later. */
+    /** The playhead is at `seconds`: a grain from there, now or (to keep the pace) soon; repeated if it stays. */
     at: (seconds: number) => {
       // The source may have changed since the last grain: its decoding starts now, whatever the pace.
       buffer();
+      stopHolding();
       const wait = lastGrain + EVERY_MS - now();
       if (wait <= 0) {
         cancelWaiting();
-        grain(seconds);
+        grainThenHold(seconds);
       } else if (waiting) waiting.seconds = seconds;
       else {
         const timer = setTimeout(() => {
           const next = waiting!.seconds;
           waiting = null;
-          grain(next);
+          grainThenHold(next);
         }, wait);
         waiting = { seconds, timer };
       }

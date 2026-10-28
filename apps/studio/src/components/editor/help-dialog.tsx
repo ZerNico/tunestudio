@@ -44,7 +44,7 @@ const MOUSE: { term: string; says: string }[] = [
   { term: "The line break lane", says: "Double-click to add a line break there." },
   {
     term: "The ruler's markers",
-    says: "Drag the start and end handles, the preview flag or the medley band to move them. Drag the playhead's head, or its line in the roll, to scrub and hear the audio as you go.",
+    says: "Drag the start and end handles, the preview flag or the medley band to move them. Drag the playhead's head, or its line in the roll, to scrub and hear the audio as you go; hold it still to hear that spot again and again.",
   },
   {
     term: "A singer's chip (duets)",

@@ -124,6 +124,32 @@ describe("scrub", () => {
     expect(context.grains[0]!.stop).not.toBeNull();
   });
 
+  it("repeats a longer stretch where the playhead is held, until it moves or the drag ends", async () => {
+    const { scrub, decoded, later, offsets, context } = setup();
+    scrub.at(0);
+    await decoded();
+    vi.useFakeTimers();
+    later(100);
+    scrub.at(3);
+    later(100);
+    expect(offsets()).toEqual([3]);
+    later(20);
+    expect(offsets()).toEqual([3, 3]);
+    expect(context.grains[1]!.length).toBeCloseTo(0.04);
+    later(60);
+    expect(offsets()).toEqual([3, 3, 3]);
+    // A move plays a grain there and stops repeating the old spot.
+    later(50);
+    scrub.at(4);
+    expect(offsets()).toEqual([3, 3, 3, 4]);
+    expect(context.grains[2]!.stop).not.toBeNull();
+    later(100);
+    expect(offsets()).toEqual([3, 3, 3, 4]);
+    scrub.end();
+    later(1000);
+    expect(offsets()).toEqual([3, 3, 3, 4]);
+  });
+
   it("decodes another source when it is scrubbed", async () => {
     const { scrub, loads, decoded, setUrl } = setup();
     scrub.at(1);
