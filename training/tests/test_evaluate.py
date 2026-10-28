@@ -42,6 +42,20 @@ def test_compare_marks_clear_differences(capsys):
     assert "English (12 songs)" in out
 
 
+def test_compare_leaves_out_songs_without_golden_notes(capsys):
+    songs = [f"S - {i}" for i in range(12)]
+    _run("a", {s: 0.5 for s in songs})
+    _run("b", {s: 0.6 for s in songs})
+    for s in songs[:4]:  # charts without golden notes: no golden scores in either run
+        for name in ("a", "b"):
+            path = chain.run_dir("dev", name) / s / "scores.json"
+            path.write_text(json.dumps(json.loads(path.read_text()) | {"golden_f1": float("nan")}))
+    evaluate.compare("dev", "a", "b")
+    out = capsys.readouterr().out
+    golden = next(line for line in out.splitlines() if line.startswith("golden_f1"))
+    assert "nan" not in golden and "8/0" in golden and "(8 songs)" in golden
+
+
 def test_compare_needs_both_runs():
     _run("a", {"S - 1": 0.5})
     with pytest.raises(chain.Missing) as e:

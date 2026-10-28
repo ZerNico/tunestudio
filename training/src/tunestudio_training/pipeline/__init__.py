@@ -1,6 +1,6 @@
 """The default chart pipeline, as Tune Studio runs it: audio + lyrics in, an UltraStar chart out. Vocal stem, pitch
 track, beat grid, whole-song alignment of the lyrics, syllable starts moved to the boundary head's peaks, GAME's
-notes per line, the pitch corrector, learned note ends, then octaves, golden notes and line breaks. Every stage
+notes per line, the pitch corrector, learned note ends, then octaves, line breaks and golden notes. Every stage
 caches its result in the work dir.
 
 Tune Studio's TypeScript/Rust pipeline is a port of this one, checked against goldens recorded from it (`tst goldens`).
@@ -17,7 +17,21 @@ import numpy as np
 
 from tunestudio_training import paths, recipes
 
-from . import align, beats, boundary, chart, ends, game, lyrics, notefix, onnx_models, pitch, separate, ultrastar
+from . import (
+    align,
+    beats,
+    boundary,
+    chart,
+    ends,
+    game,
+    golden,
+    lyrics,
+    notefix,
+    onnx_models,
+    pitch,
+    separate,
+    ultrastar,
+)
 
 # Syllable starts move to the boundary head's peaks by one-to-one assignment (boundary.assign) within ±0.3 s.
 # cost 0.5 (vs 1.0; dev+sel note_f1 +0.004/+0.005, syllable_f1 +0.007, fewer short notes; 2.0 is clearly worse,
@@ -27,8 +41,9 @@ BOUNDARY = {"radius": 0.3, "min_prob": 0.3, "cost": 0.5}
 NOTEFIX_THRESHOLD = 0.5  # a note moves when the corrector is at least this sure of a shift
 GAP_UNITS = 1  # beats kept free before a note that starts a syllable
 # Options for `run`: the learned steps' checkpoints (None switches a step off), another GAME model, and "dump_notes",
-# which writes every note's notefix features (before any correction) to notes.json for `tst dataset notes`.
-OPTIONS = ("notefix", "boundary_model", "ends_model", "game_model", "dump_notes")
+# which writes every note's notefix features (before any correction) to notes.json for `tst dataset notes`, and
+# "golden": how to pick the golden notes (golden.mark's options, default the shipped model).
+OPTIONS = ("notefix", "boundary_model", "ends_model", "game_model", "dump_notes", "golden")
 
 
 def default_learned() -> dict[str, str]:
@@ -313,8 +328,12 @@ def run(
     hdr.setdefault("CREATOR", "auto-tuner")
     hdr["VOCALS"] = vocals.name
     chart.fix_octaves(out_lines, grid, track, tuning, wav, model.sr)
-    chart.mark_golden(out_lines, grid, track, tuning)
+    gilding = opts.get("golden") or {"method": "model"}
+    if gilding.get("method") == "rule":  # before the clean-up, as it shipped (a golden note stops a "~" merging)
+        chart.mark_golden(out_lines, grid, track, tuning)
     song = chart.build_song(chart.split_lines(out_lines, grid), grid, hdr)
+    if gilding.get("method", "model") != "rule":  # the model sees the finished lines
+        golden.mark(song.voices[0], grid, track, tuning, gilding)
     (work / "meta.json").write_text(
         json.dumps({"bpm": bpm, "t0": t0, "beat_residual": residual, "tuning": tuning, "timings": t}, indent=2)
     )

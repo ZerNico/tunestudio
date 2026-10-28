@@ -32,6 +32,6 @@ class BoundaryRecipe:
 ALIGNER = AlignerRecipe()
 BOUNDARY = BoundaryRecipe()
 # The checkpoints Tune Studio ships (the pipeline's defaults). `tst train` won't overwrite them without --force.
-SHIPPED = {"aligner": "aligner-ft2", "boundary": "b1", "notefix": "nf4", "ends": "e3"}
+SHIPPED = {"aligner": "aligner-ft2", "boundary": "b1", "notefix": "nf4", "ends": "e3", "golden": "g1"}
 # openvpi's GAME release, unzipped under <models>/game/ (not retrained here).
 GAME = "GAME-1.0.3-large-onnx"

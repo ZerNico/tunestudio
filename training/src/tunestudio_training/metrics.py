@@ -40,6 +40,11 @@ class Scores:
     note_f1_off: float  # note_f1 + offset within max(OFFSET_TOL, 20% of the reference note): note ends / gaps
     frame_f1: float  # F1 of note time with the right pitch class: `combined` as recall, the same over our note time
     # as precision, so notes that are too long cost as much as notes that are too short
+    # Golden notes (see golden_scores): NaN where a song has nothing to judge them by.
+    golden_f1: float = float("nan")
+    golden_precision: float = float("nan")
+    golden_recall: float = float("nan")
+    golden_count_ratio: float = float("nan")  # our golden notes / the chart's
 
     def row(self) -> dict:
         return {k: round(v, 3) for k, v in asdict(self).items()}
@@ -47,6 +52,7 @@ class Scores:
 
 ONSET_TOL = 0.1
 OFFSET_TOL = 0.1
+GOLDEN_OVERLAP = 0.5
 
 
 def _note_list(song: Song) -> list[tuple[float, float, int, bool]]:
@@ -84,6 +90,55 @@ def _f1(ref: list, gen: list, pitch: bool, tol: float = ONSET_TOL, offsets: bool
     return 2 * p * r / (p + r) if hits else 0.0
 
 
+def _golden_list(song: Song) -> list[tuple[float, float]]:
+    """(onset s, offset s) of the golden notes (rap golden notes are rap: they score no pitch)."""
+    return [
+        (song.beat_to_sec(n.start), song.beat_to_sec(n.start + n.length)) for n in song.notes() if n.type == "golden"
+    ]
+
+
+def golden_pairs(ref: list[tuple[float, float]], gen: list[tuple[float, float]]) -> list[tuple[int, int]]:
+    """One-to-one matches of golden notes, (ref index, gen index). A pair may match when the onsets are within
+    ONSET_TOL, as in note_f1, or when the notes overlap by GOLDEN_OVERLAP of the shorter one: our notes are cut
+    differently from the chart's (a held syllable as two notes, a start 150 ms off), and those are already counted by
+    note_f1 and onset_f1. This scores which sung moment is golden. Best overlap first, pitch ignored."""
+    pairs = []
+    for i, (ra, rb) in enumerate(ref):
+        for j, (ga, gb) in enumerate(gen):
+            overlap = max(0.0, min(rb, gb) - max(ra, ga)) / max(min(rb - ra, gb - ga), 1e-6)
+            close = abs(ga - ra) <= ONSET_TOL
+            if close or overlap >= GOLDEN_OVERLAP:
+                pairs.append((-(overlap + close), abs(ga - ra), i, j))
+    used_r, used_g, out = set(), set(), []
+    for *_, i, j in sorted(pairs):
+        if i not in used_r and j not in used_g:
+            used_r.add(i)
+            used_g.add(j)
+            out.append((i, j))
+    return out
+
+
+def golden_scores(ref: Song, gen: Song) -> dict[str, float]:
+    """Precision, recall and F1 of our golden notes against the chart's, and the count ratio (ours / theirs).
+
+    A tenth of the hand-made charts have no golden notes: that is the charter's style, not something in the song, so
+    those songs have no golden precision, recall, F1 or ratio (NaN), and `tst compare` leaves them out of those
+    metrics. When we mark none and the chart has some, recall and F1 are 0 and precision is NaN (nothing to judge)."""
+    nan = float("nan")
+    r, g = _golden_list(ref), _golden_list(gen)
+    if not r:
+        return {"golden_f1": nan, "golden_precision": nan, "golden_recall": nan, "golden_count_ratio": nan}
+    hits = len(golden_pairs(r, g))
+    p = hits / len(g) if g else nan
+    rec = hits / len(r)
+    return {
+        "golden_f1": 2 * hits / (len(r) + len(g)),
+        "golden_precision": p,
+        "golden_recall": rec,
+        "golden_count_ratio": len(g) / len(r),
+    }
+
+
 def _frame_f1(hits: int, ref_frames: int, gen_frames: int) -> float:
     p, r = hits / max(gen_frames, 1), hits / max(ref_frames, 1)
     return 2 * p * r / (p + r) if hits else 0.0
@@ -118,6 +173,7 @@ def compare(ref: Song, gen: Song) -> Scores:
         pitch_within1=float(np.mean(np.abs(pc) <= 1)) if len(pc) else 0.0,
         combined=float(np.sum(pc == 0) / max(rv.sum(), 1)),
         tempo_ratio=ratio,
+        **golden_scores(ref, gen),
     )
 
 

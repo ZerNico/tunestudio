@@ -14,6 +14,8 @@ tunestudio-note-refiners:
   [notes, 5] for the shifts -2..2 semitones.
 - ends.onnx: the note-end regressor (e3). Input `features` [notes, 27]; output `variable` [notes, 1], seconds to add
   to each note's end.
+- golden.onnx: the golden-note model (g1). Input `features` [notes, 50] (pipeline.golden.FEATURES); outputs `label`
+  and `probabilities` [notes, 2], the second how likely a charter gilds the note.
 
 fcpe-onnx and beat-this-onnx: the upstream pitch and beat models as the pipeline runs them, unchanged weights.
 """
@@ -140,8 +142,11 @@ def export_aligner(out: Path, head_path: Path, vocals: list[str]) -> None:
         )
 
 
-def export_refiners(out: Path, notefix_path: Path, ends_path: Path, data_path: Path | None) -> None:
-    """Both refiners as ONNX, checked against scikit-learn on the notes dataset (`data_path`, None: unchecked)."""
+def export_refiners(
+    out: Path, notefix_path: Path, ends_path: Path, golden_path: Path, data_path: Path | None, golden_runs: list[Path]
+) -> None:
+    """The refiners and the golden-note model as ONNX, checked against scikit-learn: the refiners on the notes dataset
+    (`data_path`), the golden notes on the charts of `golden_runs` (None, empty: unchecked)."""
     import onnx.helper
     from skl2onnx import to_onnx
 
@@ -162,6 +167,7 @@ def export_refiners(out: Path, notefix_path: Path, ends_path: Path, data_path: P
     out.mkdir(parents=True, exist_ok=True)
     # The note dataset is only the check's input. The graphs depend on the models alone.
     from tunestudio_training.pipeline import ends as ends_step
+    from tunestudio_training.pipeline import golden as golden_step
     from tunestudio_training.pipeline import notefix as notefix_step
 
     data = np.load(data_path) if data_path else None
@@ -181,6 +187,16 @@ def export_refiners(out: Path, notefix_path: Path, ends_path: Path, data_path: P
         target_opset={"": 17, "ai.onnx.ml": 3},
     )
     (out / "ends.onnx").write_bytes(onx.SerializeToString())
+    gm = golden_step.load_model(golden_path)
+    trees = float32_splits(gm["trees"])
+    onx = to_onnx(
+        trees,
+        initial_types=[("features", FloatTensorType([None, len(golden_step.FEATURES)]))],
+        options={id(trees): {"zipmap": False}},
+        target_opset={"": 17, "ai.onnx.ml": 3},
+    )
+    (out / "golden.onnx").write_bytes(onx.SerializeToString())
+    check_golden(out / "golden.onnx", gm, golden_runs)
     (out / "notefix.json").write_text(json.dumps({"classes": [int(c) for c in nf.classes_], "threshold": 0.5}) + "\n")
     if data is None:
         print("refiners: no notes dataset, so the ONNX files aren't checked against scikit-learn (--data)")
@@ -199,6 +215,51 @@ def export_refiners(out: Path, notefix_path: Path, ends_path: Path, data_path: P
     pred = session(out / "ends.onnx").run(None, {"features": F})[0].ravel()
     ref = en.predict(F)
     print(f"ends     {len(F)} notes  max|Δ| {np.abs(pred - ref).max() * 1000:.3f}ms")
+
+
+def float32_splits(trees):
+    """A copy of HistGradientBoosting trees whose split thresholds are rounded down to float32. ONNX keeps thresholds
+    as float32, and skl2onnx rounds them to the nearest, so a float32 feature just above a threshold could go left in
+    ONNX and right in scikit-learn (on the golden model's training notes, probabilities moved by up to 0.1). No float32
+    lies between a threshold and its rounding down, so float32 features take the same branches in both."""
+    import copy
+
+    trees = copy.deepcopy(trees)
+    for predictors in trees._predictors:
+        for predictor in predictors:
+            t = predictor.nodes["num_threshold"]
+            t32 = t.astype(np.float32)
+            up = t32.astype(np.float64) > t
+            t32[up] = np.nextafter(t32[up], np.float32(-np.inf))
+            predictor.nodes["num_threshold"] = t32.astype(np.float64)
+    return trees
+
+
+def check_golden(path: Path, model: dict, runs: list[Path]) -> None:
+    """golden.onnx against the trees on the charts of `runs`: the probabilities, each song's golden count and its
+    golden notes."""
+    if not runs:
+        print("golden: no evaluation run, so golden.onnx isn't checked against scikit-learn (--golden-check)")
+        return
+    from tunestudio_training import golden as golden_train
+    from tunestudio_training.pipeline import golden as golden_step
+
+    onnx_model = session(path)
+    songs = golden_train.examples(runs)
+    worst, counts, picks = 0.0, 0, 0
+    for e in songs:
+        ref = golden_step.probabilities(model, e["X"])
+        got = onnx_model.run(["probabilities"], {"features": e["X"].astype(np.float32)})[0][:, 1].astype(np.float64)
+        worst = max(worst, float(np.abs(got - ref).max(initial=0)))
+        counts += round(ref.sum()) == round(got.sum())
+        pick = model["pick"]
+        picks += np.array_equal(
+            golden_step.pick(ref, e["structure"], **pick), golden_step.pick(got, e["structure"], **pick)
+        )
+    print(
+        f"golden   {len(songs)} songs  proba max|Δ| {worst:.2e}  count same {counts}/{len(songs)}"
+        f"  golden notes same {picks}/{len(songs)}"
+    )
 
 
 def spectrum(y: torch.Tensor, n_fft: int, hop: int, eps: float = 0.0) -> torch.Tensor:
@@ -372,13 +433,16 @@ def decide(proba: np.ndarray, classes: np.ndarray) -> np.ndarray:
     return np.where(proba[np.arange(len(k)), k] >= 0.5, classes[k], 0)
 
 
-def export(repo: str, out: Path, vocals: list[str], models: dict[str, Path], data: Path | None) -> None:
+def export(
+    repo: str, out: Path, vocals: list[str], models: dict[str, Path], data: Path | None, golden_runs: list[Path]
+) -> None:
     """Write one repo's files into `out` (its model card and license included). `vocals`: songs to check the aligner,
-    FCPE and Beat This! exports on; `data`: the note dataset the refiners are checked on."""
+    FCPE and Beat This! exports on; `data`: the note dataset the refiners are checked on; `golden_runs`: the
+    evaluation runs the golden-note model is checked on."""
     if repo == "tunestudio-aligner":
         export_aligner(out, models["boundary"], vocals)
     elif repo == "tunestudio-note-refiners":
-        export_refiners(out, models["notefix"], models["ends"], data)
+        export_refiners(out, models["notefix"], models["ends"], models["golden"], data, golden_runs)
     elif repo == "fcpe-onnx":
         export_fcpe(out, vocals)
     elif repo == "beat-this-onnx":

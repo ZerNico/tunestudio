@@ -5,7 +5,8 @@ import numpy as np
 import pytest
 
 from tunestudio_training import chain, export, metrics, paths, refiners
-from tunestudio_training.pipeline import notefix, ultrastar
+from tunestudio_training import golden as golden_training
+from tunestudio_training.pipeline import golden, notefix, ultrastar
 
 from conftest import write_song
 
@@ -81,14 +82,24 @@ def test_training_and_export_are_reproducible(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "held-out" in out and "within ±100ms" in out
 
+    rng = np.random.default_rng(0)
+    G = rng.normal(size=(2000, len(golden.FEATURES)))  # scored as float32 below, near the splits
+    gy = (G[:, 0] + rng.normal(size=len(G)) > 1).astype(np.int8)
+    (tmp_path / "g1.pkl").write_bytes(pickle.dumps(golden_training._fit([{"X": G, "y": gy}], linear=False)))
     for k in (1, 2):
-        export.export_refiners(tmp_path / f"x{k}", tmp_path / "nf1.pkl", tmp_path / "e1.pkl", data)
-    for name in ("notefix.onnx", "ends.onnx", "notefix.json"):
+        export.export_refiners(
+            tmp_path / f"x{k}", tmp_path / "nf1.pkl", tmp_path / "e1.pkl", tmp_path / "g1.pkl", data, []
+        )
+    for name in ("notefix.onnx", "ends.onnx", "golden.onnx", "notefix.json"):
         assert (tmp_path / "x1" / name).read_bytes() == (tmp_path / "x2" / name).read_bytes(), name
     nf = pickle.loads((tmp_path / "nf1.pkl").read_bytes())
     X = np.load(data)["all_X"]
     proba = export.session(tmp_path / "x1" / "notefix.onnx").run(None, {"features": X})[1]
     np.testing.assert_allclose(proba, nf.predict_proba(X), atol=1e-5)
+    G = G.astype(np.float32)
+    proba = export.session(tmp_path / "x1" / "golden.onnx").run(["probabilities"], {"features": G})[0]
+    ref = golden.probabilities(golden.load_model(tmp_path / "g1.pkl"), G)
+    np.testing.assert_allclose(proba[:, 1], ref, atol=1e-5)
     assert json.loads((tmp_path / "x1" / "notefix.json").read_text()) == {
         "classes": [-2, -1, 0, 1, 2],
         "threshold": 0.5,

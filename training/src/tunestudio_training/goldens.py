@@ -35,6 +35,7 @@ from tunestudio_training.pipeline import (
     chart,
     ends,
     game,
+    golden,
     load_track,
     lyrics,
     notefix,
@@ -138,6 +139,11 @@ def install(rec: Recorder) -> None:
         (chart, "split_lines", False),
         (chart, "line_breaks", False),
         (chart, "build_song", False),
+        (golden, "structure", False),
+        (golden, "features", False),
+        (golden, "probabilities", False),
+        (golden, "pick", False),
+        (golden, "mark", True),
     ]
     for module, name, mutates in stages:
         rec.wrap(module, name, f"autotuner.{module.__name__.rsplit('.', 1)[-1]}.{name}", mutates)

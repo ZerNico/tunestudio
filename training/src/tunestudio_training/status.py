@@ -124,7 +124,7 @@ def _backbone(head: Path) -> str | None:
 def models_row() -> str:
     pipeline_aligner = paths.aligner()
     parts = []
-    for model in ("aligner", "boundary", "notefix", "ends"):
+    for model in ("aligner", "boundary", "notefix", "ends", "golden"):
         for name in _checkpoints(model):
             notes = []
             if name == recipes.SHIPPED[model]:

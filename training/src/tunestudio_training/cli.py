@@ -150,6 +150,25 @@ def _cmd_compare(args) -> None:
     evaluate.compare(args.split, args.a, args.b, args.by_language)
 
 
+def _cmd_golden(args) -> None:
+    from tunestudio_training import golden
+
+    if args.action == "rescore":
+        if len(args.args) != 3:
+            raise SystemExit("usage: tst golden rescore <split> <run> <name> --options '{...}'")
+        golden.rescore(*args.args, _options(args.options))
+    elif args.action == "plausibility":
+        if len(args.args) < 2:
+            raise SystemExit("usage: tst golden plausibility <split> <run> [<run>...]")
+        golden.plausibility(args.args[0], args.args[1:])
+    else:
+        if len(args.args) != 1:
+            raise SystemExit("usage: tst golden train <name> [--linear] [--run <split>/<run>]")
+        runs = [chain.run_dir(*r.split("/", 1)) for r in (args.run or ["train/dump"])]
+        out = paths.models() / "golden" / f"{args.args[0]}{'.json' if args.linear else '.pkl'}"
+        golden.train(runs, out, args.linear)
+
+
 def _check_stems(given: list[str] | None) -> list[str]:
     """--check's vocal stems; by default the first dev song that has them."""
     if given:
@@ -174,6 +193,7 @@ def _cmd_export(args) -> None:
         "boundary": args.boundary or Path(learned["boundary_model"]),
         "notefix": args.notefix or Path(learned["notefix"]),
         "ends": args.ends or Path(learned["ends_model"]),
+        "golden": args.golden or chain.shipped_checkpoint("golden"),
     }
     for key, path in models.items():
         chain.require(path, f"the {key} checkpoint", f"tst train {key} <name>, or --{key}")
@@ -186,8 +206,11 @@ def _cmd_export(args) -> None:
         chain.require(data, "the notes dataset", "tst dataset notes")
     elif not data.exists():
         data = None  # export_refiners says the check is skipped
+    golden_runs = [chain.run_dir(*r.split("/", 1)) for r in args.golden_check or []]
+    for run in golden_runs:
+        chain.require(run, "the evaluation run", "tst eval <split> <name>")
     for repo in repos:
-        export.export(repo, out / repo, vocals, models, data)
+        export.export(repo, out / repo, vocals, models, data, golden_runs)
     if args.verify:
         problems = chain.verify_export(out, repos)
         for p in problems:
@@ -387,6 +410,25 @@ def parser() -> argparse.ArgumentParser:
     p.set_defaults(fn=_cmd_compare)
 
     p = add(
+        "golden",
+        "golden notes: train the golden-note model, re-mark an eval run's charts with a method, judge plausibility",
+        _examples(
+            "tst golden train g2 --linear",
+            """tst golden rescore dev base g2 --options '{"method": "model", "model": "<models>/golden/g2.json"}'""",
+            "tst compare dev base g2",
+            "tst golden plausibility dev base g2",
+        ),
+    )
+    p.add_argument("action", choices=["train", "rescore", "plausibility"])
+    p.add_argument(
+        "args", nargs="*", help="train: <name>; rescore: <split> <run> <name>; plausibility: <split> <run>..."
+    )
+    p.add_argument("--options", help="rescore: pipeline.golden.mark's options as JSON")
+    p.add_argument("--run", action="append", help="train: <split>/<run> to learn from (default train/dump)")
+    p.add_argument("--linear", action="store_true", help="train: the portable JSON table (else boosted trees, .pkl)")
+    p.set_defaults(fn=_cmd_golden)
+
+    p = add(
         "export",
         "export a Hugging Face repo's ONNX models, checked against the originals",
         _examples("tst export all --verify", "tst export tunestudio-aligner --boundary .local/models/boundary/b2.pt"),
@@ -400,7 +442,11 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--boundary", type=Path, help="the boundary head (its backbone is found by name)")
     p.add_argument("--notefix", type=Path)
     p.add_argument("--ends", type=Path)
+    p.add_argument("--golden", type=Path, help="the golden-note model (tst golden train)")
     p.add_argument("--data", type=Path, help="the notes dataset the refiners are checked on")
+    p.add_argument(
+        "--golden-check", nargs="+", metavar="SPLIT/RUN", help="evaluation runs the golden-note model is checked on"
+    )
     p.set_defaults(fn=_cmd_export)
 
     p = add(

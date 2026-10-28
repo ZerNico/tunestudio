@@ -27,8 +27,9 @@ code is a port of them.
 7. **GAME** writes the notes of each line, keeping those syllable starts (by openvpi, used as released).
 8. **The pitch corrector** fixes notes a charter would write a semitone or two away. **Trained here.**
 9. **The note-end model** decides where each note ends. **Trained here.**
-10. **Clean-up** (plain code): notes moved by octaves so the melody doesn't jump, golden notes, line splits and line
-    breaks.
+10. **Clean-up** (plain code): notes moved by octaves so the melody doesn't jump, line splits and line breaks.
+11. **Golden notes** picked the way charters pick them ([gradient-boosted trees](#golden-notes-g1) and plain code).
+    **Trained here.**
 
 The models we ship, one Hugging Face repo per row group (under `tuneperfect/`):
 
@@ -38,11 +39,12 @@ The models we ship, one Hugging Face repo per row group (under `tuneperfect/`):
 |                            | `boundary.onnx`                 | says where syllables start                     | trained here                | syllable-start head on the aligner's hidden states           | `b1`            | CC BY-NC 4.0 |
 | `tunestudio-note-refiners` | `notefix.onnx`                  | moves notes to the pitch a charter would write | trained here                | pitch corrector (gradient-boosted trees)                     | `nf4`           | MIT          |
 |                            | `ends.onnx`                     | ends notes where a charter would               | trained here                | note-end regressor (gradient-boosted trees)                  | `e3`            | MIT          |
+|                            | `golden.onnx`                   | picks the notes a charter would make golden    | trained here                | golden-note classifier (gradient-boosted trees)              | `g1`            | MIT          |
 | `fcpe-onnx`                | `fcpe.onnx`                     | the singer's pitch every 10 ms                 | torchfcpe, used as released | FCPE pitch, upstream weights, exported with mel and decoding | torchfcpe 0.0.4 | MIT          |
 | `beat-this-onnx`           | `logmel.onnx`, `beat_this.onnx` | where the beats and downbeats are              | CPJKU, used as released     | Beat This! beats, upstream weights                           | `final0`        | MIT          |
 
 The shipped checkpoints are the pipeline's defaults (`recipes.SHIPPED`: the aligner `aligner-ft2`, which is also the
-boundary head's backbone, then b1, nf4 and e3) and the ones the model cards in `model-cards/` describe. Exporting them
+boundary head's backbone, then b1, nf4, e3 and g1) and the ones the model cards in `model-cards/` describe. Exporting them
 gives the shipped files byte for byte (`shipped.sha256` has their hashes). Notes come from GAME (openvpi's release,
 CC BY-NC-SA 4.0 weights), which isn't retrained here.
 
@@ -112,6 +114,62 @@ CC BY-NC-SA 4.0 weights), which isn't retrained here.
 - **How much it helps:** the first version (e1) on dev: frame_f1 +0.045, pitch_exact +0.026, and notes with the right
   start, pitch and end (note_f1_off) from 0.37 to 0.62.
 - **In the app:** `ends.onnx` runs after the pitch corrector.
+
+### Golden notes (`g1`)
+
+- **Problem:** golden notes (`*` in a chart) score double, and charters put them on the moments a singer shows off.
+  Tune Studio used to mark them with a rule: 5% of the notes, at least 0.4 s long, the most steadily sung first.
+  Charters' golden notes are mostly shorter than that (75% under 0.4 s): long for their song rather than long in seconds,
+  high in their line, at the end of a line or phrase, and often a whole melisma. The rule finds few of them.
+- **In and out:** each note's features (50 numbers: its length against the song, line, phrase and neighbours, how
+  steadily and loudly it is sung, its pitch against the song, line, phrase and neighbours, its place in the line and
+  phrase, its melisma) → how likely a charter gilds it. A song gets as many golden notes as those probabilities add
+  up to, the most likely first, picked by plain rules (`pipeline.golden.pick`): a golden group always starts on a
+  syllable, never on a "~" in the middle of a melisma, keeps the melisma together unless its tail is clearly less
+  likely (`runs` 0.7), and no tenth of the song takes more than a quarter of the golden notes.
+- **What it is:** gradient-boosted trees (scikit-learn `HistGradientBoostingClassifier`, 300 iterations of 31 leaves),
+  exported to ONNX as `golden.onnx`. Its split thresholds are rounded down to float32 for the export, so that the
+  ONNX file gives the same probabilities (within 3e-7) and the same golden notes on all 118 test songs.
+- **Learned from:** the pipeline's notes of the 2,302 train songs of a dump run from 2026-10-09 (sel's songs and
+  artists left out), labelled by whether they match a hand-made golden note.
+- **How much it helps:** golden_f1 (golden notes matched one to one, by onset or overlap) from the shipped charts'
+  0.097 to 0.158 on dev and from 0.130 to 0.198 on sel (means, 95% CIs of the gain +0.037 to +0.085 and +0.040 to
+  +0.097), measured with m1, a logistic regression over the features, their squares and products (246 weights).
+  The trees beat m2 (m1 with the pick below) on dev and sel together, 0.183 against 0.168 (CI of the gain +0.002 to
+  +0.029), and tie it on held-out train artists, 0.193 against 0.197 (CI -0.011 to +0.002). Two charters of one song
+  agree at about 0.17, so that is near the ceiling.
+- **How it picks:** the first table (m1) could gild a lone "~" in the middle or at the end of a melisma ("deep~~[~]~"):
+  17.6% of its golden groups on held-out train artists, 7.3% of a charter's. Starting every group on a syllable
+  brings that to 1.2% and makes the golden notes look more like a charter's (the classifier's AUC 0.784 → 0.747),
+  for golden F1 0.205 → 0.198 there (CI of the change -0.011 to -0.002, with the spread cap). On dev and sel (the
+  same weights as m1, only the pick changed): 0.158 → 0.152 and 0.198 → 0.185 (CIs -0.018 to +0.005 and -0.027 to
+  +0.000), plausibility AUC 0.84 → 0.79 and 0.77 → 0.76. Capping how many repeats of a line get golden notes
+  (`repeat_cap`) is there but off: charters gild repeated lines about as often as the model (61% of their gilded
+  lines are repeated lines, the model's 66%), and a cap of 3 costs F1 another 0.007.
+- **Which data:** retraining m2 on today's pipeline changed nothing measurable: on the same 464 songs, the old
+  run's notes and a new run's gave dev 0.152 and 0.154, sel 0.189 and 0.185 (m2 itself: 0.152 and 0.185). m2 gains
+  nothing from more songs, the trees stop gaining at about 1,100, and bigger trees (800 iterations of 63 leaves,
+  1,500 of 127) scored lower.
+- **In the app:** `electron/charting/golden.ts` ports `pipeline.golden` (features and pick) and runs `golden.onnx`
+  in the native addon for the probabilities. It runs last, on the finished lines, for whole songs (Chart range leaves
+  golden notes alone). `{"golden": {"method": "rule"}}` charts with the old rule in `tst eval`. To ship other trees,
+  train them, compare them, set `recipes.SHIPPED["golden"]`, export (`tst export tunestudio-note-refiners --golden-check
+  dev/base`) and record the goldens again.
+
+```bash
+uv run tst golden train g2                # <models>/golden/g2.pkl, from the train/dump run, with PICK
+uv run tst golden rescore dev base g2 --options '{"model": ".local/models/golden/g2.pkl"}'
+uv run tst compare dev base g2            # golden_f1, golden_precision, golden_recall, golden_count_ratio
+uv run tst golden plausibility dev base g2
+```
+
+`rescore` re-marks an eval run's charts without charting again. `plausibility` prints the style of a run's golden
+notes next to the hand-made charts' (their share of the notes, length, how often they are the last, highest or
+longest of their line, in runs, spread over the song) and the AUC of a classifier telling the two apart (0.5: it
+can't). The rule scores 0.95 on dev, m1 0.84, m2's pick 0.79. The pick's options (`PICK`: "scale", "runs", "spread",
+"start", "repeat_cap") are saved with the model and can be overridden in `--options`. With `--linear`, `train` fits
+m2's logistic regression instead (a JSON table, to measure the trees against). Songs whose chart has no golden notes
+(a tenth: the charter's style) are left out of the golden metrics.
 
 ### The models used as released
 

@@ -68,8 +68,8 @@ def dump_run() -> Path:
 
 
 def checkpoint(model: str, name: str) -> Path:
-    """A checkpoint by model kind and name: aligner/<name>/, boundary/<name>.pt, notefix/<name>.pkl, ends/<name>.pkl.
-    A name with a slash is taken as a path."""
+    """A checkpoint by model kind and name: aligner/<name>/, boundary/<name>.pt, notefix/<name>.pkl, ends/<name>.pkl,
+    golden/<name>.pkl. A name with a slash is taken as a path."""
     if "/" in name or "\\" in name:
         return Path(name).expanduser()
     folder = paths.models() / model

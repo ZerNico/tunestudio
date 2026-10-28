@@ -33,7 +33,7 @@ from tunestudio_training.pipeline.audio import load
 
 METRICS = (
     "frame_f1", "note_f1", "pitch_exact", "combined", "onset_f1", "syllable_f1", "note_f1_off", "note_count_ratio",
-    "pitch_within1", "recall", "precision",
+    "pitch_within1", "recall", "precision", "golden_f1", "golden_precision", "golden_recall", "golden_count_ratio",
 )  # fmt: skip
 # frame_f1 replaced combined on 2026-10-09: combined only counts covered reference note time, so it rewards notes
 # that run on past where charters end them (learned note ends: combined -0.11, everything else better).
@@ -253,11 +253,16 @@ def _report(a: dict, b: dict, songs: list[str], rng: np.random.Generator) -> Non
             continue
         va = np.array([a[s][m] for s in songs], float)
         vb = np.array([b[s][m] for s in songs], float)
+        # The golden metrics are NaN for songs they can't judge (no golden notes in the chart): paired songs only.
+        ok = np.isfinite(va) & np.isfinite(vb)
+        if not ok.any():
+            continue
+        va, vb = va[ok], vb[ok]
         d = vb - va
         boot = rng.choice(d, size=(10_000, len(d)), replace=True).mean(axis=1)
         lo, hi = np.percentile(boot, [2.5, 97.5])
         mark = " *" if (lo > 0 or hi < 0) and abs(d.mean()) >= MIN_EFFECT else ""
-        flag = "  <- primary" if m in PRIMARY else ""
+        flag = "  <- primary" if m in PRIMARY else (f"  ({ok.sum()} songs)" if not ok.all() else "")
         print(
             f"{m:18s} {np.median(va):7.3f} {np.median(vb):7.3f} {np.median(d):+9.3f} "
             f"   [{lo:+.3f}, {hi:+.3f}]{mark:2s} {int(np.sum(d > 0.005)):6d}/{int(np.sum(d < -0.005)):<6d}{flag}"

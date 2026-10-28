@@ -1,7 +1,7 @@
 """The models from the ONNX exports Tune Studio downloads (`tst export`, hosted on Hugging Face under tuneperfect/),
 instead of PyTorch and scikit-learn. On when TST_ONNX points at the export folder (tunestudio-aligner/,
 tunestudio-note-refiners/, fcpe-onnx/, beat-this-onnx/), so a run measures what the app gets: pitch, beats, aligner
-emissions, the boundary head, notefix and ends all take this path. The goldens are recorded on it.
+emissions, the boundary head, notefix, ends and the golden notes all take this path. The goldens are recorded on it.
 """
 
 from functools import cache
@@ -116,3 +116,12 @@ class Ends:
         return (
             session("tunestudio-note-refiners/ends.onnx").run(None, {"features": np.asarray(X, np.float32)})[0].ravel()
         )
+
+
+class Golden:
+    """golden.onnx with the scikit-learn classifier's interface (predict_proba)."""
+
+    def predict_proba(self, X: np.ndarray) -> np.ndarray:
+        return session("tunestudio-note-refiners/golden.onnx").run(
+            ["probabilities"], {"features": np.asarray(X, np.float32)}
+        )[0]
