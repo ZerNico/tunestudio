@@ -259,7 +259,7 @@ export default function ProjectScreen() {
         const back = loop.back(time);
         if (back !== null) playback.seek(back);
         const now = back ?? time;
-        if (prefs.tones()) tones.frame(now, playback.speed());
+        if (prefs.tones()) tones.frame(now, playback.speed(), loop.end() ?? undefined);
         if (singAlong.on()) singAlong.frame(now, playback.speed());
         // Scrolled away, then the playhead came back on screen (or the view back to it): following goes on.
         if (scrolledAway && width() > 0 && onPage(view(), now, width())) scrolledAway = false;

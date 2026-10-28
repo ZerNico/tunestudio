@@ -138,6 +138,8 @@ export function createLoop(options: {
     },
     /** Where playing goes on from when the audio ends before the range does: its start (null: not looping). */
     restart: (): number | null => active()?.start ?? null,
+    /** Where the range ends while looping (nothing past it is heard), else null. */
+    end: (): number | null => active()?.end ?? null,
   };
 }
 

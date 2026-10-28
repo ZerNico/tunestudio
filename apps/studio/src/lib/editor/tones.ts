@@ -3,6 +3,12 @@
  * tones are scheduled a little ahead on every frame, timed from where the audio is; a jump (seek, loop, a source
  * switch) or a pause stops them and the next frame starts again from there. Rap and freestyle notes have no pitch to
  * play.
+ *
+ * The song's time is what is heard (the audio element allows for the speakers' delay), but a tone is heard only the
+ * context's latency after its scheduled time: a few ms on built-in speakers, a few hundred on Bluetooth. Tones are
+ * scheduled that much earlier, as the context reports it on every frame (the output can change while playing). So
+ * scheduling waits until the song's time moves (after starting or a seek it stays put until the first sound is
+ * heard), and stops at a loop's end (a tone scheduled past it would already be on its way when the loop goes back).
  */
 import type { NoteType } from "~/lib/native/types";
 
@@ -80,11 +86,14 @@ export function createTones(options: {
 
   /** Where playback tones are: the song time scheduled up to, and the time and context time of the last frame. */
   let scheduled: { until: number; time: number; at: number; notes: readonly ToneNote[] } | null = null;
+  /** The last frame's time while waiting for the song's time to move. */
+  let waiting: number | null = null;
 
   const stop = () => {
     for (const oscillator of sounding) oscillator.stop();
     sounding.clear();
     scheduled = null;
+    waiting = null;
   };
 
   return {
@@ -93,28 +102,39 @@ export function createTones(options: {
       tone(midi, audio().context.currentTime, PREVIEW_SECONDS);
     },
 
-    /** A frame while playing at `rate`, the audio at `time`: schedules the notes coming up. */
-    frame(time: number, rate: number) {
+    /** A frame while playing at `rate`, the audio at `time`: schedules the notes coming up, none past `end`. */
+    frame(time: number, rate: number, end = Number.POSITIVE_INFINITY) {
       const { context: ctx } = audio();
       const now = ctx.currentTime;
       const expected = scheduled ? scheduled.time + (now - scheduled.at) * rate : time;
       const notes = options.notes();
       if (scheduled && (Math.abs(time - expected) > JUMP || scheduled.notes !== notes)) stop();
+      const latency = (ctx.outputLatency || 0) + (ctx.baseLatency || 0);
+      /** When to start a sound for it to be heard as the song reaches `songTime`. */
+      const startFor = (songTime: number) => now + (songTime - time) / rate - latency;
+      /** A note's tone from when it should be heard; what is too late for that plays its rest at once. */
+      const play = (note: ToneNote) => {
+        const at = Math.max(now, startFor(note.start));
+        const until = startFor(Math.min(note.start + note.duration, end));
+        if (voiced(note.type) && until - at > 0.05) tone(note.pitch, at, until - at);
+      };
       let from: number;
       if (!scheduled) {
+        // Not heard yet: the song's time only moves once it is.
+        if (waiting === null || time <= waiting) {
+          waiting = time;
+          return;
+        }
+        waiting = null;
         // Starting (or after a jump): notes already sounding play their rest.
         for (const note of notes) {
           if (note.start >= time) break;
-          if (voiced(note.type) && note.start + note.duration > time + 0.05)
-            tone(note.pitch, now, (note.start + note.duration - time) / rate);
+          play(note);
         }
         from = time;
       } else from = scheduled.until;
-      const until = time + LOOKAHEAD * rate;
-      for (let i = firstFrom(notes, from); i < notes.length && notes[i]!.start < until; i++) {
-        const note = notes[i]!;
-        if (voiced(note.type)) tone(note.pitch, now + Math.max(0, note.start - time) / rate, note.duration / rate);
-      }
+      const until = Math.min(time + (LOOKAHEAD + latency) * rate, end);
+      for (let i = firstFrom(notes, from); i < notes.length && notes[i]!.start < until; i++) play(notes[i]!);
       scheduled = { until: Math.max(until, from), time, at: now, notes };
     },
 
