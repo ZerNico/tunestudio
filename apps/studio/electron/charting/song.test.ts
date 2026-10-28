@@ -4,16 +4,7 @@ import { callsOf, goldenSongs, loadGolden } from "./goldens";
 import type { Grid } from "./grid";
 import type { Note } from "./notes";
 import type { PitchTrack } from "./refiners";
-import {
-  bpmHeader,
-  finishLines,
-  fixed3,
-  fixOctaves,
-  gapHeader,
-  markGolden,
-  splitLines,
-  type HarmonicRatios,
-} from "./song";
+import { bpmHeader, finishLines, fixed3, fixOctaves, gapHeader, splitLines, type HarmonicRatios } from "./song";
 
 const untagged = <T extends object>(x: T & { $type?: string }): T => {
   const { $type: _, ...rest } = x;
@@ -61,16 +52,6 @@ describe.skipIf(!goldenSongs().length)("song against the PoC", () => {
       const fixed = lines(before);
       fixOctaves(fixed, untagged(grid), track, tuning, ratios);
       expect(fixed).toEqual(lines(octaves!.args_after![0]));
-
-      const [golds] = callsOf(golden, "autotuner.chart.mark_golden");
-      const marked = lines(golds!.args[0]);
-      markGolden(
-        marked,
-        untagged(golds!.args[1] as Grid & { $type: string }),
-        golds!.args[2] as PitchTrack,
-        golds!.args[3] as number,
-      );
-      expect(marked).toEqual(lines(golds!.args_after![0]));
 
       const [split] = callsOf(golden, "autotuner.chart.split_lines");
       const splitGrid = untagged(split!.args[1] as Grid & { $type: string });

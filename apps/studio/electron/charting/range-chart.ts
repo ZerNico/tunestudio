@@ -8,7 +8,7 @@ import { GAME_SAMPLE_RATE, makeChart, type ChartEngines, type ChartLanguage, typ
 import { PITCH_SAMPLE_RATE } from "./pitch-track";
 import { lineBreaks } from "./song";
 
-export type RangeEngines = Omit<ChartEngines, "beatLogits">;
+export type RangeEngines = Omit<ChartEngines, "beatLogits" | "predictGolden">;
 
 const fail = () => {
   throw new AlignFailed("The lyrics don't fit in this range. Choose more time or fewer words.");
@@ -67,6 +67,9 @@ export async function chartRange(
       ...engines,
       beatLogits: () => {
         throw new Error("Range charting must not fit a new grid");
+      },
+      predictGolden: () => {
+        throw new Error("Range charting leaves golden notes alone");
       },
     },
     onStep,

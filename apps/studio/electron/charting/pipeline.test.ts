@@ -24,6 +24,7 @@ describe("makeChart", () => {
       harmonicRatios: unused("harmonicRatios"),
       predictPitchShifts: unused("predictPitchShifts"),
       predictNoteEnds: unused("predictNoteEnds"),
+      predictGolden: unused("predictGolden"),
     };
     const input = {
       vocals16k: new Float32Array(16_000),

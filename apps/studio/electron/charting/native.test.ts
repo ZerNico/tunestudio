@@ -13,6 +13,7 @@ import type * as Addon from "../../native/index";
 import { VOCAB } from "./align";
 import type { LyricLine } from "./align-stage";
 import { beatTimes } from "./beats";
+import { goldenProbabilities, pick, PICK, structure } from "./golden";
 import { callsOf, goldenSongs, loadGolden, namedArray } from "./goldens";
 import type { Grid } from "./grid";
 import { gameRequest, type GameNote, type Note, type SyllableSpan, type TraceEntry } from "./notes";
@@ -64,6 +65,7 @@ function realEngines(): ChartEngines {
     harmonicRatios: (vocals, notes) => a.harmonicRatios(vocals, notes),
     predictPitchShifts: (features) => a.predictPitchShifts(model("tunestudio-note-refiners/notefix.onnx"), features),
     predictNoteEnds: (features) => a.predictNoteEnds(model("tunestudio-note-refiners/ends.onnx"), features),
+    predictGolden: (features) => a.predictGolden(model("tunestudio-note-refiners/golden.onnx"), features),
   };
 }
 
@@ -224,10 +226,9 @@ describe.skipIf(!addon)("native chart functions against the PoC", { timeout: 600
         },
         realEngines(),
       );
-      const [built] = callsOf(golden, "autotuner.chart.build_song");
-      const expected = (built!.result as { voices: (Note & { $type: string })[][][] }).voices[0]!.map((l) =>
-        l.map(untagged),
-      );
+      // The finished lines with their golden notes (marked last, in place).
+      const [marked] = callsOf(golden, "autotuner.golden.mark");
+      const expected = (marked!.args_after![0] as (Note & { $type: string })[][]).map((l) => l.map(untagged));
       const got = result.lines;
       const flat = (ls: Note[][]) =>
         ls.flatMap((l) => l.map((n) => `${n.type} ${n.start} ${n.length} ${n.pitch} ${n.text}`));
@@ -257,7 +258,7 @@ describe.skipIf(!addon)("native chart functions against the PoC", { timeout: 600
       });
     });
 
-    it.skipIf(!MODELS)(`corrects pitches and note ends like the PoC: ${song}`, async () => {
+    it.skipIf(!MODELS)(`corrects pitches and note ends and scores golden notes like the PoC: ${song}`, async () => {
       const golden = loadGolden(song);
       for (const call of callsOf(golden, "autotuner.notefix.apply")) {
         const [notes, trace, track, tuning, scale] = call.args as [
@@ -290,6 +291,20 @@ describe.skipIf(!addon)("native chart functions against the PoC", { timeout: 600
         applyEnds(moved, trace, deltas, untagged(grid), (call.args[5] as number | undefined) ?? 1);
         expect(moved).toEqual((call.args_after![0] as (Note & { $type: string })[]).map(untagged));
       }
+      const [byProbabilities] = callsOf(golden, "autotuner.golden.probabilities");
+      const X = Float32Array.from(byProbabilities!.args[1] as ArrayLike<number>);
+      const proba = goldenProbabilities(await addon!.predictGolden(model("tunestudio-note-refiners/golden.onnx"), X));
+      const want = Array.from(byProbabilities!.result as ArrayLike<number>, Number);
+      // ONNX Runtime on another build sums the trees in float32 a little differently: the same golden notes.
+      expect(Math.max(...proba.map((p, k) => Math.abs(p - want[k]!)))).toBeLessThan(1e-6);
+      const [byPick] = callsOf(golden, "autotuner.golden.pick");
+      const [marked] = callsOf(golden, "autotuner.golden.mark");
+      const [lines, grid] = marked!.args as [(Note & { $type: string })[][], Grid & { $type: string }];
+      const s = structure(
+        lines.map((l) => l.map(untagged)),
+        untagged(grid),
+      );
+      expect(pick(proba, s, PICK)).toEqual(Array.from(byPick!.result as ArrayLike<number>, Number));
     });
   }
 });

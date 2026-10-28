@@ -87,6 +87,12 @@ export interface NoteSpan {
   midi: number
 }
 
+/**
+ * The golden-note model (`golden.onnx`) on 50 features per note: 2 probabilities per note, of
+ * staying normal and of being golden.
+ */
+export declare function predictGolden(model: string, features: Float32Array): Promise<Float32Array>
+
 /** The note-end regressor (`ends.onnx`) on 27 features per note: seconds to add to each note's end. */
 export declare function predictNoteEnds(model: string, features: Float32Array): Promise<Float32Array>
 

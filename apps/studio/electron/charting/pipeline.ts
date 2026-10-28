@@ -8,6 +8,7 @@ import { AlignFailed, alignStage, type LineTimingFit, type LyricLine } from "./a
 import { splitWords } from "./aligner-text";
 import { beatTimes } from "./beats";
 import { assign } from "./boundary";
+import { markGolden } from "./golden";
 import { fitGrid, makeGrid, toSec, type Grid } from "./grid";
 import {
   gameRequest,
@@ -21,7 +22,7 @@ import {
 import { pitchTrack, type FullPitchTrack } from "./pitch-track";
 import { applyEnds, applyPitchShifts, endFeatures, featureMatrix, noteFeatures } from "./refiners";
 import { estimateScale, tuningOffset } from "./scale";
-import { finishLines, fixOctaves, markGolden, splitLines, type HarmonicRatios } from "./song";
+import { finishLines, fixOctaves, splitLines, type HarmonicRatios } from "./song";
 import { syllabify } from "./syllables";
 
 /** GAME's sample rate (the vocals it reads) and the CTC classes of the aligner. */
@@ -53,6 +54,7 @@ export interface ChartEngines {
   harmonicRatios(vocals44k: Float32Array, notes: { start: number; end: number; midi: number }[]): Promise<Float64Array>;
   predictPitchShifts(features: Float32Array): Promise<Float32Array>;
   predictNoteEnds(features: Float32Array): Promise<Float32Array>;
+  predictGolden(features: Float32Array): Promise<Float32Array>;
 }
 
 /** The language of the lyrics: its name as the syllable rules know it ("english") and its ISO 639-3 code ("eng"). */
@@ -241,8 +243,9 @@ export async function makeChart(
   );
   signal?.throwIfAborted();
   fixOctaves(noteLines, grid, track, tuning, harmonicPairs(ratios));
-  if (!input.passage) markGolden(noteLines, grid, track, tuning);
   const finished = finishLines(input.passage ? noteLines : splitLines(noteLines, grid), grid);
+  // Golden notes for whole songs only, on the lines the player sees.
+  if (!input.passage) await markGolden(finished.lines, grid, track, tuning, engines.predictGolden);
   return { grid, lines: finished.lines, breaks: finished.breaks, fit, track };
 }
 

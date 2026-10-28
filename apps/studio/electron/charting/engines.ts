@@ -30,5 +30,6 @@ export function chartEngines(
     harmonicRatios: (samples, notes) => addon.harmonicRatios(samples, notes),
     predictPitchShifts: (features) => addon.predictPitchShifts(path("chartPitchFix"), features),
     predictNoteEnds: (features) => addon.predictNoteEnds(path("chartNoteEnds"), features),
+    predictGolden: (features) => addon.predictGolden(path("chartGolden"), features),
   };
 }

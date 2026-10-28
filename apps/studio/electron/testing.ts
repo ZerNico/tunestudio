@@ -60,6 +60,9 @@ export const fakeAddon: NativeAddon = {
   predictPitchShifts: async (_model, features) =>
     Float32Array.from({ length: (features.length / 24) * 5 }, (_, i) => (i % 5 === 2 ? 1 : 0)),
   predictNoteEnds: async (_model, features) => new Float32Array(features.length / 27),
+  // One note in ten golden.
+  predictGolden: async (_model, features) =>
+    Float32Array.from({ length: (features.length / 50) * 2 }, (_, i) => (i % 2 ? 0.1 : 0.9)),
   // Balanced harmonics: no reason to move any note by an octave.
   harmonicRatios: async (_samples, notes) => new Float64Array(notes.length * 2),
   separationSampleRate: () => 44_100,

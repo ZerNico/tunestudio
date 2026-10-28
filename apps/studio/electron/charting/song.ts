@@ -1,15 +1,12 @@
 /**
- * Whole-song rules after every line has its notes: octave fixes, golden notes, splitting lyric lines the way charters
- * do, line breaks and the final clean-up. A port of the auto-tuner PoC's `chart.fix_octaves`, `mark_golden`,
- * `split_lines`, `line_breaks` and `build_song`.
+ * Whole-song rules after every line has its notes: octave fixes, splitting lyric lines the way charters do, line
+ * breaks and the final clean-up. A port of the auto-tuner PoC's `chart.fix_octaves`, `split_lines`, `line_breaks` and
+ * `build_song` (golden notes come after it, `golden.ts`).
  */
 import { toSec, unit, type Grid } from "./grid";
 import type { Note } from "./notes";
-import { floorMod, median, median32, pyRound } from "./numpy";
+import { median, median32, pyRound } from "./numpy";
 import type { PitchTrack } from "./refiners";
-
-/** The pitch track's frame length in seconds. */
-const HOP = 0.01;
 
 /** NumPy's argmin: the index of the first smallest value. */
 const firstMin = (values: number[]) => values.reduce((best, v, k) => (v < values[best]! ? k : best), 0);
@@ -127,49 +124,6 @@ export function fixOctaves(
   for (let i = notes.length - 1; i >= 0; i--) {
     notes[i]!.pitch += shifts[k]!;
     if (i) k = back[i - 1]![k]!;
-  }
-}
-
-/**
- * Golden notes (double points), as charters pick them: the `share` of notes with the most steadily sung time on the
- * charted pitch (at least `minSec`), spread out so no tenth of the song gets more than a quarter of them (in place).
- */
-export function markGolden(
-  lines: Note[][],
-  grid: Grid,
-  track: PitchTrack,
-  tuning: number,
-  share = 0.05,
-  minSec = 0.4,
-): void {
-  const notes = lines.flat().filter((n) => n.type === "normal");
-  let want = pyRound(share * notes.length);
-  if (want === 0) return;
-  const scored: [number, Note][] = [];
-  for (const n of notes) {
-    const a = toSec(grid, n.start);
-    const b = toSec(grid, n.start + n.length);
-    if (b - a < minSec) continue;
-    const { voiced } = voicedFrames(track, a, b, tuning);
-    const midi = n.pitch + 60;
-    let onPitch = 0;
-    for (const f of voiced) {
-      const d = Math.fround(floorMod(Math.abs(Math.fround(f - midi)), 12));
-      if (Math.min(d, Math.fround(12 - d)) <= 0.5) onPitch++;
-    }
-    scored.push([onPitch * HOP, n]);
-  }
-  const first = notes[0]!.start;
-  const last = notes.at(-1)!.start + notes.at(-1)!.length;
-  const perTenth = new Map<number, number>();
-  const cap = Math.max(1, Math.floor(want / 4));
-  for (const [onPitch, n] of scored.toSorted((x, y) => y[0] - x[0])) {
-    if (want === 0 || onPitch < minSec * 0.6) break;
-    const tenth = Math.min(9, Math.trunc((10 * (n.start - first)) / Math.max(last - first, 1)));
-    if ((perTenth.get(tenth) ?? 0) >= cap) continue;
-    perTenth.set(tenth, (perTenth.get(tenth) ?? 0) + 1);
-    n.type = "golden";
-    want--;
   }
 }
 

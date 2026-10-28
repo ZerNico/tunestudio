@@ -19,6 +19,7 @@ export const CHART_MODELS = [
   "chartBeats",
   "chartPitchFix",
   "chartNoteEnds",
+  "chartGolden",
   "chartNotes",
 ] as const;
 export const MODEL_NAMES = ["separation", "whisper", ...CHART_MODELS] as const;
@@ -84,7 +85,7 @@ const GITHUB_RELEASE_HOSTS = ["github.com", "objects.githubusercontent.com", "re
 const tuneperfect = (repo: string, revision: string, file: string) =>
   `https://huggingface.co/tuneperfect/${repo}/resolve/${revision}/${file}`;
 const ALIGNER = "4c6edce202fae335e6239c09ea17ecddcf29b42e";
-const REFINERS = "a2771cab66afedba5e79c66d17d519328cf96dcd";
+const REFINERS = "a770e8194a70c5b5f7dce8ab3b44fbe77db1a5a0";
 
 /**
  * The models, downloaded on first use rather than shipped: Kimberley Jensen's Mel-Band RoFormer
@@ -184,6 +185,16 @@ export const MODELS: Record<ModelName, ModelSource> = {
     url: tuneperfect("tunestudio-note-refiners", REFINERS, "ends.onnx"),
     sha256: "2c525b7c939f9c9d5961393783a594900d7ca52572f7014053f43d196e9cbb10",
     size: 917_242,
+  },
+  chartGolden: {
+    version: REFINERS.slice(0, 7),
+    credit: "Note refiners by Tune Studio",
+    license: "MIT",
+    label: "the golden-note model",
+    file: "charting/golden.onnx",
+    url: tuneperfect("tunestudio-note-refiners", REFINERS, "golden.onnx"),
+    sha256: "9902e7195046d0211f8745d31d47f730220d16d19ecb5e592da865b8deeb243f",
+    size: 685_192,
   },
   chartNotes: {
     version: "v1.0.3",

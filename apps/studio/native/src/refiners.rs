@@ -1,6 +1,7 @@
 //! The learned corrections after GAME (tunestudio-note-refiners, gradient-boosted trees exported
-//! to ONNX): per note, the probabilities of shifting its pitch by -2..2 semitones, and how many
-//! seconds to move its end. The features come from TypeScript (electron/charting/refiners.ts).
+//! to ONNX): per note, the probabilities of shifting its pitch by -2..2 semitones, how many
+//! seconds to move its end, and how likely a charter gilds it. The features come from TypeScript
+//! (electron/charting/refiners.ts, electron/charting/golden.ts).
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
@@ -61,4 +62,11 @@ pub fn predict_pitch_shifts(model: String, features: Float32Array) -> Result<Asy
 #[napi(ts_return_type = "Promise<Float32Array>")]
 pub fn predict_note_ends(model: String, features: Float32Array) -> Result<AsyncTask<Refine>> {
     refine(model, features, 27, "variable", "The note-end model")
+}
+
+/// The golden-note model (`golden.onnx`) on 50 features per note: 2 probabilities per note, of
+/// staying normal and of being golden.
+#[napi(ts_return_type = "Promise<Float32Array>")]
+pub fn predict_golden(model: String, features: Float32Array) -> Result<AsyncTask<Refine>> {
+    refine(model, features, 50, "probabilities", "The golden-note model")
 }

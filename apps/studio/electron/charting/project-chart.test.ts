@@ -61,13 +61,16 @@ describe("project chart", () => {
 describe.skipIf(!goldenSongs().length)("project chart against the PoC's .txt", () => {
   for (const song of goldenSongs()) {
     it(song, () => {
-      const [built] = callsOf(loadGolden(song), "autotuner.chart.build_song");
+      const golden = loadGolden(song);
+      const [built] = callsOf(golden, "autotuner.chart.build_song");
       const grid = untagged(built!.args[1] as { bpm: number; gap: number; $type: string });
-      const result = built!.result as { voices: (Note & { $type: string })[][][]; breaks: Record<string, number> };
+      const result = built!.result as { breaks: Record<string, number> };
+      // The finished lines with their golden notes (marked last, in place).
+      const [marked] = callsOf(golden, "autotuner.golden.mark");
       const chart = toProjectChart(
         {
           grid,
-          lines: result.voices[0]!.map((l) => l.map(untagged)),
+          lines: (marked!.args_after![0] as (Note & { $type: string })[][]).map((l) => l.map(untagged)),
           breaks: Object.values(result.breaks),
           fit: null,
           track: NO_TRACK,
