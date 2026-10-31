@@ -101,8 +101,8 @@ export interface EditRecorder {
   /** Changes a note; it counts as changed by hand (`edited`) unless the patch says otherwise. */
   updateNote(id: number, patch: Partial<NoteFields>): void;
   updateLine(id: number, patch: Partial<LineFields>): void;
-  /** A new note (changed by hand) or line; returns its id. */
-  createNote(fields: Omit<NoteFields, "edited">): number;
+  /** A new note (changed by hand, unless `edited` says otherwise) or line; returns its id. */
+  createNote(fields: Omit<NoteFields, "edited"> & { edited?: boolean }): number;
   createLine(fields: LineFields): number;
   deleteNote(id: number): void;
   /** Deletes a line; its notes have to be deleted or moved first. */
@@ -131,8 +131,11 @@ function same(a: object, b: object): boolean {
 
 export function createChartDocument<Selection>(options: {
   chart: EditorChart;
-  /** Saves one edit's changes (or their undo); rejects when the project couldn't take them. */
-  save: (changes: ChartChange[]) => Promise<void>;
+  /**
+   * Saves one edit's changes (or their undo), named `label`; `keepVersion` asks the project to keep a version of the
+   * chart from before them. Rejects when the project couldn't take them.
+   */
+  save: (changes: ChartChange[], edit: { label: string; keepVersion?: boolean }) => Promise<void>;
   /** Saving failed: say why and reload the chart from the project. */
   onFailed: (error: unknown) => void;
   selection: () => Selection;
@@ -161,7 +164,7 @@ export function createChartDocument<Selection>(options: {
   let saving = Promise.resolve();
   let failed = false;
 
-  const commit = (changes: ChartChange[]) => {
+  const commit = (changes: ChartChange[], saved: { label: string; keepVersion?: boolean }) => {
     applyToRows(rows, changes);
     setRowsChanged((count) => count + 1);
     // Written now, not at the next microtask: an edit right after this one (undo, then an edit) reads these rows.
@@ -169,7 +172,7 @@ export function createChartDocument<Selection>(options: {
     saving = saving.then(async () => {
       if (failed) return;
       try {
-        await options.save(changes);
+        await options.save(changes, saved);
       } catch (error) {
         failed = true;
         history.clear();
@@ -182,12 +185,12 @@ export function createChartDocument<Selection>(options: {
   /**
    * Records an edit: what `build` changes, as one undoable step. Returns false when it changed nothing. `selection` is
    * the selection after it (as of then; `selectionAfter` works it out once `build` ran, for ids it made), which redo
-   * brings back.
+   * brings back. `keepVersion` keeps a version of the chart from before it in the project (restoring one does).
    */
   const edit = (
     label: string,
     build: (tx: EditRecorder) => void,
-    edit: { merge?: string; selection?: Selection; selectionAfter?: () => Selection } = {},
+    edit: { merge?: string; selection?: Selection; selectionAfter?: () => Selection; keepVersion?: boolean } = {},
   ): boolean => {
     if (failed) return false;
     const notes = new Map<number, (NoteFields & { id: number }) | null>();
@@ -227,7 +230,7 @@ export function createChartDocument<Selection>(options: {
       },
       createNote: (fields) => {
         const id = nextId++;
-        const row = { ...fields, edited: true };
+        const row = { ...fields, edited: fields.edited ?? true };
         changes.push({ table: "note", id, before: null, after: row });
         notes.set(id, { ...row, id });
         return id;
@@ -288,7 +291,7 @@ export function createChartDocument<Selection>(options: {
     if (songBefore && !same(songBefore, songAfter))
       changes.push({ table: "song", before: songBefore, after: songAfter });
     if (changes.length === 0) return false;
-    commit(changes);
+    commit(changes, { label, keepVersion: edit.keepVersion });
     const chosen = edit.selectionAfter ? edit.selectionAfter() : edit.selection;
     const after = chosen ?? before;
     if (chosen !== undefined) options.setSelection(chosen);
@@ -321,14 +324,14 @@ export function createChartDocument<Selection>(options: {
     undo: () => {
       const step = failed ? undefined : history.undo();
       if (!step) return;
-      commit(invert(step.changes));
+      commit(invert(step.changes), { label: `Undo ${step.label}` });
       options.setSelection(step.selection.before);
       advance();
     },
     redo: () => {
       const step = failed ? undefined : history.redo();
       if (!step) return;
-      commit(step.changes);
+      commit(step.changes, { label: `Redo ${step.label}` });
       options.setSelection(step.selection.after);
       advance();
     },

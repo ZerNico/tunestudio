@@ -1,6 +1,7 @@
 import { getRouteApi, useNavigate, useRouter } from "@tanstack/solid-router";
 import { createEffect, createMemo, createSignal, flush, onSettled, Show, untrack } from "solid-js";
 import CircleHelpIcon from "~icons/lucide/circle-help";
+import HistoryIcon from "~icons/lucide/history";
 import LoaderCircleIcon from "~icons/lucide/loader-circle";
 import Redo2Icon from "~icons/lucide/redo-2";
 import Undo2Icon from "~icons/lucide/undo-2";
@@ -25,6 +26,7 @@ import { Playhead } from "~/components/editor/playhead";
 import { SingerSwitch } from "~/components/editor/singer-switch";
 import { SongDetails } from "~/components/editor/song-details";
 import { Transport } from "~/components/editor/transport";
+import { type VersionActions, VersionsDialog } from "~/components/editor/versions-dialog";
 import { VideoPreview } from "~/components/editor/video-preview";
 import { ExportMenu } from "~/components/project/export-menu";
 import { ProblemsMenu } from "~/components/project/problems-menu";
@@ -82,6 +84,7 @@ import { createSongExport } from "~/lib/editor/song-export";
 import { createSongMarkers } from "~/lib/editor/song-markers";
 import { createTones } from "~/lib/editor/tones";
 import { createTools } from "~/lib/editor/tools";
+import { restoreVersion, sameAsVersion } from "~/lib/editor/versions";
 import {
   clampView,
   fitRange,
@@ -97,6 +100,7 @@ import {
   zoomAt,
 } from "~/lib/editor/view";
 import { setFlushHandler } from "~/lib/flush";
+import { formatRelativeTime } from "~/lib/format";
 import { codeOfLanguage } from "~/lib/languages";
 import { createLatest } from "~/lib/latest";
 import type { EditCommand } from "~/lib/native/channel";
@@ -147,8 +151,8 @@ export default function ProjectScreen() {
   const doc = createMemo(() =>
     createChartDocument<Selection>({
       chart: data().chart,
-      save: async (changes) => {
-        await native.project.applyChanges({ id: overview().id, changes });
+      save: async (changes, edit) => {
+        await native.project.applyChanges({ id: overview().id, changes, ...edit });
       },
       onFailed: (error) => {
         toast.add({
@@ -170,6 +174,7 @@ export default function ProjectScreen() {
   const projectMedia = mediaFiles.media;
   const separating = mediaFiles.separating;
   const [detailsOpen, setDetailsOpen] = createSignal(false);
+  const [versionsOpen, setVersionsOpen] = createSignal(false);
   const [helpOpen, setHelpOpen] = createSignal(false);
   /** Help opens over the editor: a drag under way stops first. */
   const openHelp = () => {
@@ -919,6 +924,50 @@ export default function ProjectScreen() {
   });
   onSettled(() => songExport.refreshGames());
 
+  /** The Versions dialog's actions; the editor's edits are saved first, so a version has them. */
+  const versionActions: VersionActions = {
+    list: () => native.project.versions({ id: overview().id }),
+    save: async (name) => {
+      await doc().saved();
+      await native.project.saveVersion({ id: overview().id, name });
+    },
+    restore: async (version) => {
+      await doc().saved();
+      const kept = await native.project.readVersion({ id: overview().id, version: version.id });
+      if (sameAsVersion(doc().chart(), kept)) {
+        toast.add({ title: "The chart is already like that version." });
+        return;
+      }
+      cancelGestures();
+      const restoredIn = doc();
+      // False only when saving failed meanwhile, which says so itself and loads the chart again.
+      if (
+        !restoredIn.edit("Restore version", (tx) => restoreVersion(tx, restoredIn.chart(), kept), {
+          keepVersion: true,
+          selection: NOTHING,
+        })
+      )
+        return;
+      const revision = restoredIn.revision();
+      toast.add({
+        type: "success",
+        title: "Version restored",
+        description: `“${version.label}”, ${formatRelativeTime(version.createdAt).toLowerCase()}. The chart from before is kept as a version too.`,
+        actionProps: {
+          children: "Undo",
+          onClick: () => {
+            // Only the restore: an edit made since would be what undo takes back.
+            if (doc() === restoredIn && restoredIn.revision() === revision) runEditCommand("undo");
+            else toast.add({ title: "The chart was edited after the restore. Undo those edits first." });
+          },
+        },
+      });
+    },
+    rename: (version, name) => native.project.renameVersion({ id: overview().id, version: version.id, name }),
+    remove: (version) => native.project.deleteVersion({ id: overview().id, version: version.id }),
+    onError: toastError,
+  };
+
   return (
     <div class="flex h-dvh min-h-0 flex-col overflow-hidden bg-background" data-testid="project">
       <TitleBar
@@ -977,6 +1026,9 @@ export default function ProjectScreen() {
           <ProblemsMenu problems={problems()} onShow={showProblem} />
         </div>
 
+        <IconButton label="Versions" onClick={() => setVersionsOpen(true)} testid="versions-open">
+          <HistoryIcon />
+        </IconButton>
         <IconButton label="Help" shortcut={keyOf("help")} onClick={openHelp} testid="help-open">
           <CircleHelpIcon />
         </IconButton>
@@ -1184,6 +1236,7 @@ export default function ProjectScreen() {
         )}
       </Show>
       <HelpDialog open={helpOpen()} onOpenChange={setHelpOpen} />
+      <VersionsDialog open={versionsOpen()} onOpenChange={setVersionsOpen} actions={versionActions} />
       <SongDetails
         open={detailsOpen()}
         onOpenChange={setDetailsOpen}

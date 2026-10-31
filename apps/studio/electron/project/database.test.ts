@@ -64,6 +64,7 @@ describe("project database", () => {
       "notes",
       "singers",
       "song",
+      "versions",
     ]);
     raw.close();
 

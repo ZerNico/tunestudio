@@ -139,6 +139,30 @@ export const analysis = sqliteTable("analysis", {
   data: blob("data", { mode: "buffer" }).notNull(),
 });
 
+export const VERSION_KINDS = ["auto", "named"] as const;
+
+/**
+ * Earlier states of the chart to go back to (`versions.ts`): taken automatically before risky edits and every while,
+ * or saved and named by the user. Only the chart: media isn't kept.
+ */
+export const versions = sqliteTable(
+  "versions",
+  {
+    id: integer("id").primaryKey(),
+    createdAt: text("created_at").notNull(),
+    /** What it was taken before ("Before Auto pitch"), or the user's name for it. */
+    label: text("label").notNull(),
+    /** Automatic ones are pruned to the latest few; named ones stay until deleted. */
+    kind: text("kind", { enum: VERSION_KINDS }).notNull(),
+    /** How many notes and lines it has, for the list without decoding `data`. */
+    notes: integer("notes").notNull(),
+    lines: integer("lines").notNull(),
+    /** The chart as gzipped JSON (`EditorChart`; `readVersion` reports one it can no longer decode). */
+    data: blob("data", { mode: "buffer" }).notNull(),
+  },
+  (table) => [index("versions_kind").on(table.kind, table.createdAt)],
+);
+
 /** `key` → JSON. Unused so far: the editor keeps its view, zoom and listening settings in localStorage (`prefs.ts`). */
 export const editorState = sqliteTable("editor_state", {
   key: text("key").primaryKey(),

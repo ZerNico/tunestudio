@@ -12,6 +12,14 @@ import { overviewAfterMediaChange, projectOverview } from "../../project/overvie
 import { sungPitch } from "../../project/pitch";
 import { Projects } from "../../project/projects";
 import { removeVideo, replaceSongMedia, separateSong } from "../../project/song-media";
+import {
+  deleteVersion,
+  keepVersion,
+  listVersions,
+  readVersion,
+  renameVersion,
+  versionBeforeEdit,
+} from "../../project/versions";
 import { waveform } from "../../project/waveform";
 import { exportSong, exportUsdb } from "../../ultrastar/song-export";
 import {
@@ -84,7 +92,22 @@ export const projectHandlers = {
   "project.applyChanges": (input) =>
     withProject(input.id, (session) =>
       // A save that started finishes even if its window closes meanwhile: stopped halfway, it would roll back.
-      session.db.transaction((tx) => applyChartChanges(tx, input.changes)).pipe(Effect.uninterruptible),
+      session.db
+        .transaction((tx) =>
+          Effect.gen(function* () {
+            const remember = yield* versionBeforeEdit(tx, session, {
+              label: input.label,
+              rows: input.changes.length,
+              keep: input.keepVersion,
+            });
+            yield* applyChartChanges(tx, input.changes);
+            return remember;
+          }),
+        )
+        .pipe(
+          Effect.map((remember) => remember()),
+          Effect.uninterruptible,
+        ),
     ),
   "project.autoPitch": (input) =>
     progressStream((onProgress) =>
@@ -95,6 +118,20 @@ export const projectHandlers = {
       Effect.flatMap(project(input.id), (session) => chartProjectRange(session, input, onProgress)),
     ),
   "project.chart": (input) => withProject(input.id, (session) => readEditorChart(session.db)),
+  "project.versions": (input) => withProject(input.id, (session) => listVersions(session.db)),
+  "project.saveVersion": (input) =>
+    withProject(input.id, (session) =>
+      session.db
+        .transaction((tx) => keepVersion(tx, input.name, "named"))
+        .pipe(
+          // A named version is always stored.
+          Effect.map((version) => version!),
+        ),
+    ),
+  "project.readVersion": (input) => withProject(input.id, (session) => readVersion(session.db, input.version)),
+  "project.renameVersion": (input) =>
+    withProject(input.id, (session) => renameVersion(session.db, input.version, input.name)),
+  "project.deleteVersion": (input) => withProject(input.id, (session) => deleteVersion(session.db, input.version)),
   "project.exportUsdb": (input) =>
     Effect.gen(function* () {
       const path = yield* allowedPath(input.path);
