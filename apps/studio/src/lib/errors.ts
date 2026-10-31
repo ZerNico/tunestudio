@@ -145,3 +145,8 @@ export class GameNotFound extends Schema.TaggedError<GameNotFound>()("GameNotFou
 export class GameUnusable extends Schema.TaggedError<GameUnusable>()("GameUnusable", {
   message: Schema.String,
 }) {}
+
+/** A version of the chart is gone (deleted meanwhile) or can't be read. */
+export class VersionUnavailable extends Schema.TaggedError<VersionUnavailable>()("VersionUnavailable", {
+  message: Schema.String,
+}) {}

@@ -7,6 +7,7 @@ import { Settings } from "../settings";
 import {
   AudioFileDetails,
   AvailableUpdate,
+  ChartVersion,
   ChosenImage,
   CoverCandidate,
   DownloadedDraft,
@@ -295,7 +296,23 @@ export const ChartChange = Schema.Union([
 ]);
 export type ChartChange = typeof ChartChange.Type;
 
-export const ChartChangesInput = Schema.Struct({ id: Schema.String, changes: Schema.Array(ChartChange) });
+export const ChartChangesInput = Schema.Struct({
+  id: Schema.String,
+  changes: Schema.Array(ChartChange),
+  /** The edit's name ("Auto pitch"), which an automatic version taken before it is named after. */
+  label: Schema.optional(Schema.String),
+  /** Keep a version of the chart as it was before this edit, whatever its size (restoring one does). */
+  keepVersion: Schema.optional(Schema.Boolean),
+});
+
+/** A version's name, as the user typed it. */
+const VersionName = Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(1), Schema.isMaxLength(100));
+
+export const SaveVersionInput = Schema.Struct({ id: Schema.String, name: VersionName });
+
+export const VersionInput = Schema.Struct({ id: Schema.String, version: Schema.Number });
+
+export const RenameVersionInput = Schema.Struct({ id: Schema.String, version: Schema.Number, name: VersionName });
 
 export const AutoPitchInput = Schema.Struct({ id: Schema.String, notes: Schema.Array(Schema.Number) });
 
@@ -395,6 +412,15 @@ export class NativeRpcs extends RpcGroup.make(
   command("project.applyChanges", ChartChangesInput),
   /** The chart with its row ids, for the editor. */
   call("project.chart", ProjectInput, EditorChart),
+  /** The chart's versions, newest first. */
+  call("project.versions", ProjectInput, Schema.Array(ChartVersion)),
+  /** Keeps the chart as the project has it now as a named version (save the editor's edits first). */
+  call("project.saveVersion", SaveVersionInput, ChartVersion),
+  /** A version's chart, to restore it. */
+  call("project.readVersion", VersionInput, EditorChart),
+  /** Names a version, which keeps it until deleted. */
+  command("project.renameVersion", RenameVersionInput),
+  command("project.deleteVersion", VersionInput),
   /**
    * The pitch of these notes, worked out as the chart is made but keeping their timing (the models download on first
    * use), reporting progress; notes with nothing sung to go by are left out. Nothing is written.
