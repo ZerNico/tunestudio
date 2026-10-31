@@ -86,6 +86,20 @@ export const EditorChart = Schema.Struct({
 });
 export type EditorChart = typeof EditorChart.Type;
 
+/** An earlier state of the chart kept in the project (`electron/project/versions.ts`), as the Versions dialog lists it. */
+export const ChartVersion = Schema.Struct({
+  id: Schema.Number,
+  /** ISO timestamp. */
+  createdAt: Schema.String,
+  /** What it was taken before ("Before Auto pitch"), or the name the user gave it. */
+  label: Schema.String,
+  /** Automatic ones are pruned to the latest few; named ones stay until deleted. */
+  kind: Schema.Literals(["auto", "named"]),
+  notes: Schema.Number,
+  lines: Schema.Number,
+});
+export type ChartVersion = typeof ChartVersion.Type;
+
 /** What is sung in the vocals, for the editor: MIDI (fractional) every `hop` seconds, null where nothing is sung. */
 export const SungPitch = Schema.Struct({
   hop: Schema.Number,
