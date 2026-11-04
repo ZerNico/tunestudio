@@ -8,6 +8,7 @@ import { AlignFailed, alignStage, type LineTimingFit, type LyricLine } from "./a
 import { splitWords } from "./aligner-text";
 import { beatTimes } from "./beats";
 import { assign } from "./boundary";
+import { keepNotesApart } from "./charter-style";
 import { markGolden } from "./golden";
 import { fitGrid, makeGrid, roundTempo, toSec, type Grid } from "./grid";
 import {
@@ -246,6 +247,7 @@ export async function makeChart(
   signal?.throwIfAborted();
   fixOctaves(noteLines, grid, track, tuning, harmonicPairs(ratios));
   const finished = finishLines(input.passage ? noteLines : splitLines(noteLines, grid), grid);
+  keepNotesApart(finished.lines);
   // Golden notes for whole songs only, on the lines the player sees.
   if (!input.passage) await markGolden(finished.lines, grid, track, tuning, engines.predictGolden);
   return { grid, lines: finished.lines, breaks: finished.breaks, fit, track };
