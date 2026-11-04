@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { assign } from "./boundary";
 import { callsOf, goldenSongs, loadGolden } from "./goldens";
-import { fitGrid, makeGrid, toBeat } from "./grid";
+import { fitGrid, makeGrid, roundTempo, toBeat } from "./grid";
 import { estimateScale, snap, tuningOffset } from "./scale";
 
 interface Track {
@@ -19,6 +19,16 @@ describe("grid and scale", () => {
     // 16 grid units per beat; beat 0 on the beat before the first note.
     expect(makeGrid(96, 1.25, 3)).toEqual({ bpm: 384, gap: 2.5 });
     expect(toBeat({ bpm: 384, gap: 0 }, (60 / (384 * 4)) * 2.5)).toBe(2);
+  });
+
+  it("rounds the tempo to a whole BPM when no beat moves more than 10 ms", () => {
+    // 149.9975 over 4 minutes moves the last beat by 4 ms: #BPM 600 rather than 599.99.
+    expect(roundTempo(149.9975, 1, 0, 240)).toBe(150);
+    // 149.95 would move it by 80 ms, off the song's beats.
+    expect(roundTempo(149.95, 1, 0, 240)).toBe(149.95);
+    // What counts is the distance from the fitted beat, on either side.
+    expect(roundTempo(119.996, 100, 0, 200)).toBe(120);
+    expect(roundTempo(119.996, 0, 0, 400)).toBe(119.996);
   });
 
   it("prefers the song's scale between two semitones", () => {

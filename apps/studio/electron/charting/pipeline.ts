@@ -9,7 +9,7 @@ import { splitWords } from "./aligner-text";
 import { beatTimes } from "./beats";
 import { assign } from "./boundary";
 import { markGolden } from "./golden";
-import { fitGrid, makeGrid, toSec, type Grid } from "./grid";
+import { fitGrid, makeGrid, roundTempo, toSec, type Grid } from "./grid";
 import {
   gameRequest,
   notesFromGame,
@@ -173,7 +173,9 @@ export async function makeChart(
   if (!first) throw new AlignFailed("None of the lyrics could be found in the vocals.");
 
   onStep("notes", 0);
-  const grid = input.passage?.grid ?? makeGrid(fitted!.bpm, fitted!.t0, first.start);
+  const grid =
+    input.passage?.grid ??
+    makeGrid(roundTempo(fitted!.bpm, fitted!.t0, 0, track.times.at(-1)!), fitted!.t0, first.start);
   const songMidi = input.passage?.songMidi;
   const midi = songMidi?.some(Number.isFinite) ? songMidi : track.midi;
   const tuning = tuningOffset(midi);

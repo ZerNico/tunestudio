@@ -59,6 +59,21 @@ export function fitGrid(beats: Float64Array, downbeats: Float64Array, lo = 80, h
   return { bpm, t0, residual };
 }
 
+/** How far a rounded tempo may move a beat anywhere in the song, in seconds (a grid unit at #BPM 600 is 25 ms). */
+const ROUNDING_DRIFT = 0.01;
+
+/**
+ * The fitted tempo as a whole number when that moves no beat between `start` and `end` seconds by more than 10 ms:
+ * songs are mostly made at a whole BPM, and a fit of 149.998 would be #BPM 599.99.
+ */
+export function roundTempo(bpm: number, t0: number, start: number, end: number): number {
+  const whole = Math.round(bpm);
+  const span = Math.max(Math.abs(start - t0), Math.abs(end - t0));
+  // A beat `span` seconds from t0 is span / beat beats away; the rounded beat moves each of them by the difference.
+  const drift = span * Math.abs(1 - bpm / whole);
+  return whole > 0 && drift <= ROUNDING_DRIFT ? whole : bpm;
+}
+
 /** An UltraStar grid: `bpm` is the #BPM (4 grid units per quarter of it), `gap` the time of grid beat 0. */
 export interface Grid {
   bpm: number;
