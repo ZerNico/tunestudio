@@ -75,6 +75,8 @@ export interface MediaInput {
   role: MediaRole;
   fileName: string;
   source: MediaSource;
+  /** Where it was downloaded from, when that is worth writing down (a cover found online). */
+  url?: string | null;
 }
 
 /**
@@ -115,6 +117,7 @@ export function writeMedia(
                   size: 0,
                   sha256: "",
                   source: input.source,
+                  url: input.url ?? null,
                   createdAt: new Date().toISOString(),
                 })
                 .returning();

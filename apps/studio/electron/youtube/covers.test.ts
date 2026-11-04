@@ -7,7 +7,7 @@ import { Effect, Layer } from "effect";
 
 import { recordingDesktop, tempDir } from "../testing";
 import { DownloadFailed, Downloads, hostAllowed } from "../tools/downloads";
-import { findCovers, isVariant, normalize, scoreMatch, similarity } from "./covers";
+import { coverTagUrl, findCovers, isVariant, normalize, scoreMatch, similarity } from "./covers";
 
 let cleanups: (() => void)[] = [];
 afterEach(() => {
@@ -65,6 +65,21 @@ function fakeCatalogs(answers: Record<string, unknown> & { images?: string[] }) 
 }
 
 const SONG = { artist: "RAUM27", title: "Plattenbaum", duration: 210 };
+
+describe("coverTagUrl", () => {
+  it("names the catalog's largest image for usdb_syncer", () => {
+    expect(coverTagUrl("https://is1-ssl.mzstatic.com/image/thumb/Music123/v4/14/de/cover.jpg/1200x1200bb.jpg")).toBe(
+      "https://is1-ssl.mzstatic.com/image/thumb/Music123/v4/14/de/cover.jpg/5000x5000bb.jpg",
+    );
+    expect(coverTagUrl("https://coverartarchive.org/release-group/0b1c-77/front-1200")).toBe(
+      "https://coverartarchive.org/release-group/0b1c-77/front",
+    );
+    // Deezer's cover_xl is already its largest.
+    expect(coverTagUrl("https://cdn-images.dzcdn.net/images/cover/ab12/1000x1000-000000-80-0-0.jpg")).toBe(
+      "https://cdn-images.dzcdn.net/images/cover/ab12/1000x1000-000000-80-0-0.jpg",
+    );
+  });
+});
 
 describe("matching", () => {
   it("compares names without case, accents, punctuation or bracketed extras", () => {

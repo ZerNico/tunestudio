@@ -37,5 +37,11 @@ export const migrations: ReadonlyArray<{ readonly name: string; readonly stateme
       "CREATE TABLE `versions` (\n\t`id` integer PRIMARY KEY,\n\t`created_at` text NOT NULL,\n\t`label` text NOT NULL,\n\t`kind` text NOT NULL,\n\t`notes` integer NOT NULL,\n\t`lines` integer NOT NULL,\n\t`data` blob NOT NULL\n);",
       "CREATE INDEX `versions_kind` ON `versions` (`kind`,`created_at`);"
     ]
+  },
+  {
+    "name": "20261104204244_cover_url",
+    "statements": [
+      "ALTER TABLE `media` ADD `url` text;"
+    ]
   }
 ];

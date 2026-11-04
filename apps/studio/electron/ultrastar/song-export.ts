@@ -219,8 +219,15 @@ export function exportUsdb(
       const row = media.find((item) => item.role === role);
       return row ? (names.get(row.id) ?? null) : null;
     };
+    // A cover found online is named by its URL; the imported chart's own tags fit only the image it came with.
+    const sourceOf = (role: MediaRole) => {
+      const row = media.find((item) => item.role === role);
+      return row?.url ?? (row?.source === "imported" ? undefined : null);
+    };
+    const files = { audio: nameOf("audio"), cover: nameOf("cover"), background: nameOf("background") };
+    const sources = { cover: sourceOf("cover"), background: sourceOf("background") };
     const { text, warnings } = yield* Effect.try({
-      try: () => usdbText(chart, { audio: nameOf("audio"), cover: nameOf("cover"), background: nameOf("background") }),
+      try: () => usdbText(chart, { ...files, sources }),
       catch: (error) =>
         new ChartUnreadable({
           message: `The chart can't be exported: ${

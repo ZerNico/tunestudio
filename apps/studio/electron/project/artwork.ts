@@ -7,7 +7,7 @@ import { Effect, FileSystem, Path } from "effect";
 import type { ArtworkChoice } from "../../src/lib/native/contract";
 import { ImageUnreadable, mapFileError } from "../errors";
 import { COVER_HOSTS, Downloads, hostAllowed } from "../tools/downloads";
-import { MOST_IMAGE_BYTES } from "../youtube/covers";
+import { coverTagUrl, MOST_IMAGE_BYTES } from "../youtube/covers";
 import { imageExtension, readImage } from "./images";
 import { mediaBaseName, replaceRole } from "./media";
 import type { ProjectSession } from "./projects";
@@ -46,8 +46,10 @@ export function setArtwork(session: ProjectSession, role: ArtworkRole, choice: A
       .makeTempDirectoryScoped({ prefix: "tunestudio-artwork-" })
       .pipe(mapFileError("a temporary folder", "create"));
     let file: string | null = null;
+    let url: string | null = null;
     if (choice.kind === "found") {
       file = yield* downloadCover(choice.url, folder);
+      url = coverTagUrl(choice.url);
       if (!file) return yield* new ImageUnreadable({ message: "The cover couldn't be downloaded. Try another one." });
     } else if (choice.kind === "file") {
       const image = yield* readImage(choice.path);
@@ -58,7 +60,7 @@ export function setArtwork(session: ProjectSession, role: ArtworkRole, choice: A
     yield* replaceRole(
       session.db,
       role,
-      file ? { path: file, fileName: `${name}${SUFFIX[role]}${paths.extname(file)}`, source: "chosen" } : null,
+      file ? { path: file, fileName: `${name}${SUFFIX[role]}${paths.extname(file)}`, source: "chosen", url } : null,
     );
   }).pipe(Effect.scoped);
 }

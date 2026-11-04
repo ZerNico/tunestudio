@@ -170,6 +170,22 @@ describe("usdbText", () => {
     expect(text).not.toMatch(/#(PREVIEWSTART|MEDLEYSTARTBEAT|TAGS|VERSION):/);
   });
 
+  it("names a cover found online in co=, in place of the imported chart's cover tags", () => {
+    const imported = song({
+      extraHeaders: [["VIDEO", "v=kPBzTxZQG5Q,co=old-cover-5ce7.jpg,co-crop=0-0-900-900,bg=b.jpg"]],
+    });
+    const url = "https://is1-ssl.mzstatic.com/image/thumb/Music/cover.jpg/5000x5000bb.jpg";
+    const found = usdbText(imported, { ...NONE, sources: { cover: url } });
+    expect(found.text).toContain(`#VIDEO:v=kPBzTxZQG5Q,co=${url},bg=b.jpg\r\n`);
+    // Another image picked from a file: the old tags would fetch the old one.
+    const picked = usdbText(imported, { ...NONE, sources: { cover: null, background: null } });
+    expect(picked.text).toContain("#VIDEO:v=kPBzTxZQG5Q\r\n");
+    // The imported cover itself keeps them.
+    expect(usdbText(imported, NONE).text).toContain(
+      "#VIDEO:v=kPBzTxZQG5Q,co=old-cover-5ce7.jpg,co-crop=0-0-900-900,bg=b.jpg\r\n",
+    );
+  });
+
   it("marks a duet in the title and names its singers in the meta tags", () => {
     const chart = song();
     chart.singers = [

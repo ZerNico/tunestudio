@@ -151,6 +151,15 @@ const ItunesSearch = Schema.Struct({
 /** iTunes artwork comes in any size: the URL names it. */
 const itunesArtwork = (url: string, size: number) => url.replace(/\/\d+x\d+bb\.(jpg|png)$/, `/${size}x${size}bb.jpg`);
 
+/**
+ * The URL usdb_syncer should fetch a chosen cover from (its `co=` tag): the largest the catalog has, as its wiki
+ * asks (iTunes' 5000 px artwork, the Cover Art Archive's original), where `url` is the 1200 px one downloaded.
+ */
+export function coverTagUrl(url: string): string {
+  if (/^https:\/\/[^/]+\.mzstatic\.com\//.test(url)) return itunesArtwork(url, 5000);
+  return url.replace(/^(https:\/\/coverartarchive\.org\/release-group\/[^/]+\/front)-1200$/, "$1");
+}
+
 /** Songs in the iTunes store of the user's country (stores differ a lot), with their release's artwork. */
 function searchItunes(song: { artist: string; title: string }) {
   return Effect.gen(function* () {

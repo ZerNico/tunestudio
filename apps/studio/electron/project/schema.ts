@@ -105,6 +105,8 @@ export const media = sqliteTable("media", {
   sha256: text("sha256").notNull(),
   duration: real("duration"),
   source: text("source", { enum: MEDIA_SOURCES }).notNull(),
+  /** Where an image found online came from, for usdb_syncer's `co=` and `bg=` meta tags; null for any other file. */
+  url: text("url"),
   createdAt: text("created_at").notNull(),
 });
 

@@ -20,12 +20,13 @@ import { writeChart } from "../project/chart";
 import { orDiskFull, writeMeta } from "../project/database";
 import { readImage } from "../project/images";
 import { writeLyrics } from "../project/lyrics";
-import { type MediaRole, type MediaSource, writeMedia } from "../project/media";
+import { type MediaInput, type MediaSource, writeMedia } from "../project/media";
 import { writePitch } from "../project/pitch";
 import { Projects } from "../project/projects";
 import { type Draft, type DraftSource, Drafts } from "../services/drafts";
 import { AppSettings } from "../services/settings";
 import { Tools } from "../tools/tools";
+import { coverTagUrl } from "../youtube/covers";
 
 /** A chart has to name a tempo; this one gives 50 ms beats until the chart is made. */
 const DEFAULT_BPM = 300;
@@ -141,7 +142,7 @@ export function createDraftProject(
       }
 
       const name = songFileName(input.artist, input.title);
-      const files: { path: string; role: MediaRole; fileName: string; source: MediaSource }[] = [
+      const files: MediaInput[] = [
         { path: media.audio, role: "audio", fileName: `${name}${path.extname(media.audio)}`, source: source.media },
       ];
       if (media.vocals) {
@@ -172,6 +173,7 @@ export function createDraftProject(
         ? [`The video couldn't be downloaded, so the project only has the audio. ${media.videoProblem}`]
         : [];
       let cover: string | null = null;
+      let coverUrl: string | null = null;
       if (input.cover.kind === "thumbnail") cover = media.cover;
       if (input.cover.kind === "file") {
         const image = yield* readImage(input.cover.path);
@@ -181,6 +183,7 @@ export function createDraftProject(
       if (input.cover.kind === "found") {
         yield* onProgress({ step: "Downloading the cover", done: 0, total: 0 });
         cover = yield* downloadCover(input.cover.url, folder);
+        if (cover) coverUrl = coverTagUrl(input.cover.url);
         if (!cover) {
           cover = media.cover;
           warnings.push(
@@ -196,6 +199,7 @@ export function createDraftProject(
           role: "cover",
           fileName: `${name} [CO]${path.extname(cover)}`,
           source: source.media,
+          url: coverUrl,
         });
       }
 

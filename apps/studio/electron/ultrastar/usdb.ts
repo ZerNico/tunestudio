@@ -73,7 +73,15 @@ export interface UsdbFiles {
   audio: string | null;
   cover: string | null;
   background: string | null;
+  /**
+   * Where the cover and background came from online, for `co=` and `bg=`: a URL replaces the imported chart's tags for
+   * the image (its crop and the like too), null drops them (the image is another now), and none keeps them.
+   */
+  sources?: { cover?: string | null; background?: string | null };
 }
+
+/** The meta tag naming an image's source and the ones saying how usdb_syncer edits it ("co", "co-crop"). */
+const IMAGE_TAGS = { cover: "co", background: "bg" } as const;
 
 /**
  * The chart's text for USDB, with `files` as `#MP3`, `#COVER` and `#BACKGROUND`. The song's own meta tags (kept from a USDB
@@ -94,10 +102,17 @@ export function usdbText(chart: ProjectChart, files: UsdbFiles): { text: string;
   const kept = song.extraHeaders.find(([key]) => key === "VIDEO")?.[1];
   const imported = kept ? (parseMetaTags(kept) ?? []) : [];
   const own = new Set(["preview", "medley", "p1", "p2", "tags"]);
+  const images = (["cover", "background"] as const).filter((role) => files.sources?.[role] !== undefined);
+  const replaced = (key: string) =>
+    images.some((role) => key === IMAGE_TAGS[role] || key.startsWith(`${IMAGE_TAGS[role]}-`));
   const tags = sourceMetaTags(
-    imported.filter(([key]) => !own.has(key)),
+    imported.filter(([key]) => !own.has(key) && !replaced(key)),
     song,
   );
+  for (const role of images) {
+    const url = files.sources?.[role];
+    if (url) tags.push([IMAGE_TAGS[role], url]);
+  }
   if (!song.youtubeId && !song.youtubeAudioId) warnings.push("The song has no YouTube source.");
   for (const singer of singing) if (duet && singer.name) tags.push([`p${singer.index}`, singer.name]);
   if (song.previewStart !== null) tags.push(["preview", headerNumber(Math.round(song.previewStart * 1000) / 1000)]);

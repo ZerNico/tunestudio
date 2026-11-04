@@ -9,6 +9,7 @@ import { AppLog } from "../services/app-log";
 import { recordingDesktop, soloChart, syntheticBytes, tempDir, writeSong } from "../testing";
 import { Downloads } from "../tools/downloads";
 import { Tools } from "../tools/tools";
+import { exportUsdb } from "../ultrastar/song-export";
 import { importSong, inspectSong } from "../ultrastar/song-import";
 import { setArtwork } from "./artwork";
 import { listMedia, writeMediaToFile } from "./media";
@@ -49,8 +50,10 @@ function setup(video: boolean) {
     Layer.succeed(AppLog, { write: () => Effect.void }),
     recordingDesktop(path.join(dir, "Music")).layer,
     projectsLayer("0.0.0-test"),
-    // Found covers aren't downloaded here.
-    Layer.succeed(Downloads, { file: () => Effect.die("no downloads in tests") } as never),
+    // A found cover "downloads" as a JPEG.
+    Layer.succeed(Downloads, {
+      file: (_url: string, file: string) => Effect.sync(() => fs.writeFileSync(file, jpeg(9))),
+    } as never),
   ).pipe(Layer.provideMerge(NodeServices.layer));
   const song = writeSong(dir, "Night Signals", {
     "song.txt": soloChart(video ? "#VIDEO:clip.mp4" : ""),
@@ -85,6 +88,28 @@ describe("artwork", () => {
 
       yield* setArtwork(session, "cover", { kind: "none" });
       expect((yield* listMedia(session.db)).some((row) => row.role === "cover")).toBe(false);
+    }).pipe(Effect.provide(layer));
+  });
+
+  it.effect("keeps where a found cover came from, for usdb_syncer's co= tag", () => {
+    const { dir, layer, open } = setup(false);
+    return Effect.gen(function* () {
+      const session = yield* open;
+      const url = "https://is1-ssl.mzstatic.com/image/thumb/Music/cover.jpg/1200x1200bb.jpg";
+      yield* setArtwork(session, "cover", { kind: "found", url });
+      const row = (yield* listMedia(session.db)).find((item) => item.role === "cover");
+      expect(row!.url).toBe("https://is1-ssl.mzstatic.com/image/thumb/Music/cover.jpg/5000x5000bb.jpg");
+      const file = path.join(dir, "usdb.txt");
+      yield* exportUsdb(session, file);
+      expect(fs.readFileSync(file, "utf8")).toContain(`co=${row!.url}`);
+
+      // A picked file has no URL to name, so no co=.
+      const picked = path.join(dir, "picked.jpg");
+      fs.writeFileSync(picked, jpeg(2));
+      yield* setArtwork(session, "cover", { kind: "file", path: picked });
+      expect((yield* listMedia(session.db)).find((item) => item.role === "cover")!.url).toBeNull();
+      yield* exportUsdb(session, file);
+      expect(fs.readFileSync(file, "utf8")).not.toContain("co=");
     }).pipe(Effect.provide(layer));
   });
 
