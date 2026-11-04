@@ -70,6 +70,11 @@ describe("a line's lyrics as text", () => {
     expect(lyrics).toEqual(["Dei", "ne ", "Hund ", "zum ", "Grei", "fen ", "nah,", "~"]);
   });
 
+  it("writes the typographer's apostrophe for one typed as ´ or '", () => {
+    const { lyrics } = apply(chartOf(LINE), "Dei-ne Hand zum Grei-fen hab´n-~");
+    expect(lyrics).toEqual(["Dei", "ne ", "Hand ", "zum ", "Grei", "fen ", "hab’n", "~"]);
+  });
+
   it("splits a word's notes for more syllables, and holds the rest for fewer", () => {
     const more = apply(chartOf(LINE), "Dei-ne Hand zu-sam-men Grei-fen nah,-~");
     expect(more.lyrics).toEqual(["Dei", "ne ", "Hand ", "zu", "sam", "men ", "Grei", "fen ", "nah,", "~"]);
@@ -130,7 +135,7 @@ describe("a line's lyrics as text, with notes still without syllables", () => {
 
   it("keeps a syllable with a space in it whole, and the first note's leading space", () => {
     expect(lineText(["I'm a ", "girl"].map((lyric) => ({ lyric })))).toBe("I'm\\ a girl");
-    expect(apply(chartOf(["I'm a ", "girl"]), "I'm\\ a boy").lyrics).toEqual(["I'm a ", "boy"]);
+    expect(apply(chartOf(["I'm a ", "girl"]), "I'm\\ a boy").lyrics).toEqual(["I’m a ", "boy"]);
     expect(apply(chartOf([" Hel", "lo", " world"]), "Hel-lo there").lyrics).toEqual([" Hel", "lo", " there"]);
   });
 

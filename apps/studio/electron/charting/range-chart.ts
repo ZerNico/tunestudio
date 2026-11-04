@@ -1,3 +1,4 @@
+import { fixApostrophes } from "../../src/lib/apostrophes";
 import { rangeProblem, type TimeRange } from "../../src/lib/chart-range";
 import type { RangeChart } from "../../src/lib/native/types";
 import { isWord, wordParts } from "./align";
@@ -106,7 +107,7 @@ export async function chartRange(
         start: toSec(grid, note.start),
         duration: note.length * unit(grid),
         pitch: note.pitch + 60,
-        lyric: note.text,
+        lyric: fixApostrophes(note.text),
         type: "normal" as const,
       })),
     })),

@@ -5,6 +5,7 @@
  */
 import { ticksToSeconds } from "@tunestudio/ultrastar";
 
+import { fixApostrophes } from "../../src/lib/apostrophes";
 import type { ProjectChart, SongDetails } from "../ultrastar/chart-mapping";
 import type { ChartResult } from "./pipeline";
 import { bpmHeader, gapHeader } from "./song";
@@ -47,7 +48,7 @@ export function toProjectChart(result: ChartResult, details: ChartSongDetails): 
             start: ticksToSeconds(note.start, grid),
             duration: note.length * beatSeconds,
             pitch: note.pitch + 60,
-            lyric: note.text,
+            lyric: fixApostrophes(note.text),
             type: note.type,
           })),
         })),

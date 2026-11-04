@@ -11,6 +11,7 @@
  * and are only taken by words that need them). Words moved within the line take the line's notes in order. New words
  * with no notes to take over are refused before anything changes: there is nothing to place them on.
  */
+import { fixApostrophes } from "~/lib/apostrophes";
 import type { EditorChart } from "~/lib/native/types";
 
 import { gridStep, onGrid } from "./chart";
@@ -150,7 +151,7 @@ export function applyLineText(
 ): string | null {
   const line = chart.singers.flatMap((singer) => singer.lines).find((item) => item.id === lineId);
   if (!line || line.notes.length === 0) return "That line is gone.";
-  const typed = parseLineText(text);
+  const typed = parseLineText(fixApostrophes(text));
   // Held notes alone aren't lyrics.
   if (typed.every((word) => word.text === "")) return "Type the line's lyrics, or delete its notes.";
   const notes = line.notes.toSorted((a, b) => a.start - b.start);

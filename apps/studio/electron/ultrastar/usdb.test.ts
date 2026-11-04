@@ -143,6 +143,13 @@ describe("usdbText", () => {
     expect(text).not.toContain("#MP3");
   });
 
+  it("writes the typographer's apostrophe in the lyrics, as usdb_syncer would", () => {
+    const chart = song();
+    chart.singers[0]!.lines[0]!.notes = [note(1, "Konnt´ "), note(1.25, "‘nem")];
+    const { text } = usdbText(chart, NONE);
+    expect(text).toContain(": 0 5 2 Konnt’ \r\n: 5 5 2 ’nem\r\n");
+  });
+
   it("puts preview, medley and tags in the meta tags, keeping a USDB chart's cover there", () => {
     const { text } = usdbText(
       song({

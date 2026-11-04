@@ -11,6 +11,7 @@ import {
   ticksToSeconds,
 } from "@tunestudio/ultrastar";
 
+import { fixApostrophes } from "../../src/lib/apostrophes";
 import { formatMetaTags, parseMetaTags, sourceMetaTags } from "./meta-tags";
 
 /*
@@ -321,7 +322,8 @@ export function projectToChart(chart: ProjectChart, mediaHeaders: MediaHeaders):
           start: note.start,
           duration: note.duration,
           pitch: note.pitch,
-          lyric: note.lyric,
+          // usdb_syncer corrects these on download anyway; the file should read the same before.
+          lyric: fixApostrophes(note.lyric),
           type: note.type,
           ...(duet ? { player: singer.index } : {}),
         });
