@@ -23,13 +23,15 @@ const HOLD = "~";
 /** Splits typed words (without `-`) into syllables; a word it doesn't know stays whole. */
 export type Syllables = (word: string) => readonly string[];
 
-/** A word: its syllables (one per note) and what it says (the syllables without held notes). */
+/** A word: its syllables (one per note) and what it says (the syllables without the `~` of held notes). */
 interface Word {
   pieces: string[];
   text: string;
 }
 
-const textOf = (pieces: readonly string[]) => pieces.filter((piece) => piece !== HOLD).join("");
+/** A held note may carry the syllable's last consonants ("Ha-~nd" says "Hand"). */
+const textOf = (pieces: readonly string[]) =>
+  pieces.map((piece) => (piece.startsWith(HOLD) ? piece.slice(HOLD.length) : piece)).join("");
 const escape = (piece: string) => piece.replace(/[\\\- ]/g, (char) => `\\${char}`);
 
 /** Where lyrics put the spaces between words: before a word (" world"), after it ("world "), or unknown. */
@@ -53,7 +55,7 @@ function wordsOf(lyrics: readonly string[]): { pieces: string[]; size: number }[
       piece === "" ||
       previous.trim() === "" ||
       /\s$/.test(previous) ||
-      (/^\s/.test(lyric) && piece !== HOLD);
+      (/^\s/.test(lyric) && !piece.startsWith(HOLD));
     if (starts) words.push({ pieces: [], size: 0 });
     const word = words.at(-1)!;
     word.pieces.push(piece);

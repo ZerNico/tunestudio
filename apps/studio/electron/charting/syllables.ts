@@ -137,7 +137,7 @@ function startsWith(chars: string[], group: string, at: number): boolean {
 }
 
 /** [start, end) of each vowel sound in the (lowercase) word, in code points. */
-function nuclei(word: string[], language: string): [number, number][] {
+export function nuclei(word: string[], language: string): [number, number][] {
   const vowels = own(VOWELS, language) ?? VOWELS.english!;
   const digraphs = own(DIGRAPHS, language) ?? DIGRAPHS.english!;
   const out: [number, number][] = [];

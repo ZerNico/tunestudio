@@ -70,6 +70,13 @@ describe("a line's lyrics as text", () => {
     expect(lyrics).toEqual(["Dei", "ne ", "Hund ", "zum ", "Grei", "fen ", "nah,", "~"]);
   });
 
+  it("reads a held note with the syllable's last consonants as part of its word", () => {
+    const line = ["Durch ", "die ", "Ha", "~nd, ", "die "];
+    expect(lineText(line.map((lyric) => ({ lyric })))).toBe("Durch die Ha-~nd, die");
+    // "Hand," typed whole is the same word: its notes stay as they were.
+    expect(apply(chartOf(line), "Durch die Hand, du").lyrics).toEqual(["Durch ", "die ", "Ha", "~nd, ", "du "]);
+  });
+
   it("writes the typographer's apostrophe for one typed as ´ or '", () => {
     const { lyrics } = apply(chartOf(LINE), "Dei-ne Hand zum Grei-fen hab´n-~");
     expect(lyrics).toEqual(["Dei", "ne ", "Hand ", "zum ", "Grei", "fen ", "hab’n", "~"]);
