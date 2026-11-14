@@ -77,8 +77,8 @@ def _cached_align(
     vocals: Path, requests: list[align.Line], language: str, work: Path, pad: float
 ) -> list[list[align.WordTiming]]:
     # The aligner joins the key by name (the same key on every machine), and the ONNX aligner's emissions differ
-    # slightly, so it has its own alignments.
-    extra = ([pad] if pad else []) + [Path(align.model_path()).name]
+    # slightly, so it has its own alignments. So does each romanization of the language.
+    extra = ([pad] if pad else []) + [Path(align.model_path()).name, align.romanization(language)]
     if onnx_models.folder():
         extra.append("onnx")
     key = hashlib.sha1(json.dumps([asdict(r) for r in requests] + [language] + extra).encode()).hexdigest()[:12]

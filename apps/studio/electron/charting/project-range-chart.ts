@@ -16,7 +16,7 @@ import { Tools } from "../tools/tools";
 import { AlignFailed } from "./align-stage";
 import { decodeMono } from "./audio";
 import { chartEngines } from "./engines";
-import { CHART_LANGUAGES } from "./generate";
+import { chartLanguageOf } from "./generate";
 import { GAME_SAMPLE_RATE } from "./pipeline";
 import { PITCH_SAMPLE_RATE } from "./pitch-track";
 import { chartRange } from "./range-chart";
@@ -98,7 +98,7 @@ export function chartProjectRange(
             lines: input.lines,
             grid: { bpm: chart.bpm, gap: chart.gap },
             songMidi: Float32Array.from(song?.midi ?? [], (value) => value ?? Number.NaN),
-            language: CHART_LANGUAGES[input.language],
+            language: chartLanguageOf(input.language),
           },
           chartEngines(addon, models, signal),
           (step, done) => Effect.runFork(onProgress({ step: CHART_STEPS[step], done, total: 100, unit: "percent" })),

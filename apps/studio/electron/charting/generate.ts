@@ -1,9 +1,10 @@
 /**
  * Making a chart in setup (`drafts`): the vocals, song and lyrics through the chart pipeline (pipeline.ts), with the
- * chart models downloaded first if needed; and which languages a chart can be made in.
+ * chart models downloaded first if needed; and the language a chart is made in.
  */
 import { Effect, FileSystem } from "effect";
 
+import { languageName } from "../../src/lib/languages";
 import type { Progress } from "../../src/lib/native/types";
 import { CHART_STEPS, GETTING_CHART_MODELS, READING_SONG } from "../../src/lib/steps";
 import { abortable } from "../abortable";
@@ -19,25 +20,61 @@ import { chartEngines } from "./engines";
 import { GAME_SAMPLE_RATE, makeChart, type ChartLanguage, type ChartStep } from "./pipeline";
 import { PITCH_SAMPLE_RATE } from "./pitch-track";
 import { toProjectChart, type ChartSongDetails } from "./project-chart";
+import { languageKey } from "./syllables";
 
 const STEPS: Record<ChartStep, string> = CHART_STEPS;
 const BEAT_SAMPLE_RATE = 22_050;
 
-/** The languages charts can be made in so far, by ISO 639-1 code. */
-export const CHART_LANGUAGES = {
-  en: { name: "english", code: "eng" },
-  de: { name: "german", code: "deu" },
-} as const satisfies Record<string, ChartLanguage>;
+/**
+ * ISO 639-3 codes the aligner's romanization knows, by language as the syllable rules name it (`align.LANGUAGES` in
+ * training); any other language romanizes like English.
+ */
+const ALIGNER_CODES: Record<string, string> = {
+  english: "eng",
+  german: "deu",
+  french: "fra",
+  spanish: "spa",
+  dutch: "nld",
+  italian: "ita",
+  portuguese: "por",
+  swedish: "swe",
+  norwegian: "nor",
+  danish: "dan",
+  finnish: "fin",
+  polish: "pol",
+  czech: "ces",
+  hungarian: "hun",
+  romanian: "ron",
+  greek: "ell",
+  turkish: "tur",
+  russian: "rus",
+  ukrainian: "ukr",
+  arabic: "ara",
+  hebrew: "heb",
+  hindi: "hin",
+  indonesian: "ind",
+  malay: "zsm",
+  japanese: "jpn",
+  korean: "kor",
+  chinese: "cmn",
+  cantonese: "yue",
+};
 
-/** The chart language for a project's languages (its first one, by the name projects store), or why there is none. */
+/**
+ * The chart language for a project's languages (its first one, by the name projects store, e.g. "Portuguese (Brazil)"),
+ * or why there is none. Any language charts: those without rules of their own get the general ones.
+ */
 export function chartLanguage(languages: readonly string[]): ChartLanguage | string {
-  const first = languages[0];
+  const first = languages[0]?.trim();
   if (!first) return "Set the song's language first.";
-  const name = first.trim().toLowerCase();
-  return (
-    Object.values(CHART_LANGUAGES).find((language) => language.name === name) ??
-    `Charts can't be made in ${first} yet, only in English and German.`
-  );
+  const name = languageKey(first);
+  return { name, code: Object.hasOwn(ALIGNER_CODES, name) ? ALIGNER_CODES[name]! : "eng" };
+}
+
+/** The chart language of an ISO 639-1 code ("pt"), as the new-project steps and the editor pass it. */
+export function chartLanguageOf(code: string): ChartLanguage {
+  const language = chartLanguage([languageName(code)]);
+  return typeof language === "string" ? { name: "", code: "eng" } : language;
 }
 
 /** What a chart is made from: the vocal stem and the song as files, the lyrics and their language. */

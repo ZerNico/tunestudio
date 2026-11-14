@@ -91,9 +91,12 @@ export interface ChartResult {
   track: FullPitchTrack;
 }
 
-/** GAME's language ids (its config): English has its own, everything else is universal. */
+/** GAME's language ids (its config), by ISO 639-3 code: English, Japanese, Cantonese, Chinese; others are universal. */
+const GAME_LANGUAGES: Record<string, number> = { eng: 1, jpn: 2, yue: 3, cmn: 4 };
+
+/** GAME's id for the language (`game.language_id` in training). */
 export function gameLanguage(language: ChartLanguage): number {
-  return language.code === "eng" ? 1 : 0;
+  return Object.hasOwn(GAME_LANGUAGES, language.code) ? GAME_LANGUAGES[language.code]! : 0;
 }
 
 /** Backing vocals in brackets ("(oh oh)") left out: forcing them into the alignment drags the next lines along. */

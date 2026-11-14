@@ -322,7 +322,8 @@ export const ChartRangeInput = Schema.Struct({
   start: Schema.Number.check(Schema.isFinite(), Schema.isGreaterThanOrEqualTo(0)),
   end: Schema.Number.check(Schema.isFinite(), Schema.isGreaterThan(0)),
   lines: Schema.Array(Schema.String).check(Schema.isMinLength(1)),
-  language: Schema.Literals(["en", "de"]),
+  /** The lyrics' language (ISO 639-1). */
+  language: Schema.String.check(Schema.isPattern(/^[a-z]{2,3}$/)),
 });
 export type ChartRangeInput = typeof ChartRangeInput.Type;
 

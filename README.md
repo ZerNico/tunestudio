@@ -8,7 +8,7 @@ in the editor and export it for your games or for USDB.
 ## What it does
 
 - Start from a YouTube link, an audio file or an UltraStar song you already have
-- Charts the song automatically: lyrics, timing, pitch and line breaks (English and German for now)
+- Charts the song automatically: lyrics, timing, pitch and line breaks, in any language (best in English and German)
 - A piano-roll editor with the sung pitch behind the notes, a waveform, undo for everything and keys for everything
 - Duets, golden, rap and freestyle notes, and a list of problems to fix
 - Auto pitch for the notes you select, or chart a passage again from lyrics you type

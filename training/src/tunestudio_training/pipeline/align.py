@@ -15,11 +15,46 @@ from tunestudio_training import paths
 from . import onnx_models
 from .audio import load
 from .pitch import device
+from .syllables import language_key
 
 SR = 16000
 
-# ISO 639-3 codes the aligner's romanizer/normalizer expects.
-LANGUAGES = {"english": "eng", "german": "deu", "french": "fra", "spanish": "spa", "dutch": "nld", "italian": "ita"}
+# ISO 639-3 codes the aligner's romanizer/normalizer expects; any other language romanizes like English.
+LANGUAGES = {
+    "english": "eng",
+    "german": "deu",
+    "french": "fra",
+    "spanish": "spa",
+    "dutch": "nld",
+    "italian": "ita",
+    "portuguese": "por",
+    "swedish": "swe",
+    "norwegian": "nor",
+    "danish": "dan",
+    "finnish": "fin",
+    "polish": "pol",
+    "czech": "ces",
+    "hungarian": "hun",
+    "romanian": "ron",
+    "greek": "ell",
+    "turkish": "tur",
+    "russian": "rus",
+    "ukrainian": "ukr",
+    "arabic": "ara",
+    "hebrew": "heb",
+    "hindi": "hin",
+    "indonesian": "ind",
+    "malay": "zsm",
+    "japanese": "jpn",
+    "korean": "kor",
+    "chinese": "cmn",
+    "cantonese": "yue",
+}
+
+
+def romanization(language: str) -> str:
+    """The ISO 639-3 code the aligner romanizes `language` ("Portuguese (Brazil)") with."""
+    return LANGUAGES.get(language_key(language), "eng")
 
 
 @dataclass
@@ -166,7 +201,7 @@ def _align_tokens(em: torch.Tensor, stride: float, words: list[str], language: s
     from ctc_forced_aligner import get_alignments, get_spans, preprocess_text
 
     tokenizer = _tokenizer()
-    lang = LANGUAGES.get(language.lower(), language)
+    lang = romanization(language)
     tokens, text = preprocess_text(" ".join(words), romanize=True, language=lang, split_size="word")
     segments, scores, blank = get_alignments(em, tokens, tokenizer)
     spans = get_spans(tokens, segments, blank)

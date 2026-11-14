@@ -91,7 +91,7 @@ export function autoPitchNotes(
               notes: wanted,
               grid: { bpm: chart.bpm, gap: chart.gap },
               songMidi: Float32Array.from(song?.midi ?? [], (value) => value ?? Number.NaN),
-              // GAME only tells English from the rest; another language listens as "the rest".
+              // Without a language GAME listens with its universal model.
               language: typeof language === "string" ? { name: "other", code: "und" } : language,
             },
             chartEngines(addon, models, signal),

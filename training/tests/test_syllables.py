@@ -29,10 +29,36 @@ from conftest import write_chart
         ("übern", "german", ["ü", "bern"]),
         ("Schmetterling", "german", ["Schmet", "ter", "ling"]),
         ("a", "english", ["a"]),
+        ("corazón", "spanish", ["co", "ra", "zón"]),
+        ("silencio", "spanish", ["si", "len", "cio"]),
+        ("ayer", "spanish", ["a", "yer"]),
+        ("minha", "Portuguese (Brazil)", ["mi", "nha"]),
+        ("dia", "portuguese", ["di", "a"]),
+        ("memória", "portuguese", ["me", "mó", "ria"]),
+        ("danse", "french", ["danse"]),
+        ("allez", "french", ["a", "llez"]),
+        ("niin", "finnish", ["niin"]),
+        ("jibun", "japanese", ["ji", "bu", "n"]),
+        ("neomu", "korean", ["neo", "mu"]),
+        ("我爱你", "chinese", ["我", "爱", "你"]),
+        ("「ちょっと」", "japanese", ["「ちょっ", "と」"]),
+        ("любовь", "russian", ["лю", "бовь"]),
+        ("αγάπη", "greek", ["α", "γά", "πη"]),
+        # A language without rules of its own: each vowel of any Latin, Cyrillic or Greek letter is a syllable.
+        ("kaikki", "klingon", ["ka", "ik", "ki"]),
     ],
 )
 def test_rule_split(word, language, parts):
     assert syllables.rule_split(word, language) == parts
+
+
+def test_romanized_kpop_borrows_english_splits():
+    assert lyrics.syllabify("lonely", "Korean (romanized)") == lyrics.syllabify("lonely", "English")
+
+
+def test_committed_rules_are_the_rules():
+    committed = json.loads((paths.CHARTING / "data" / "syllable-rules.json").read_text())
+    assert committed == json.loads(json.dumps(syllables.rules_data()))
 
 
 def test_syllabifier_keeps_casing_and_punctuation():

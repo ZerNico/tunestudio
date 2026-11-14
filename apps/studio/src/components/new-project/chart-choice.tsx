@@ -1,7 +1,7 @@
 import { Show } from "solid-js";
 
 import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
-import { CHART_LANGUAGES, languageName } from "~/lib/languages";
+import { CHECKED_CHART_LANGUAGES, languageName } from "~/lib/languages";
 import type { Progress, MadeChart } from "~/lib/native/types";
 import { chartTasks } from "~/lib/steps";
 
@@ -13,10 +13,13 @@ export function chartUnavailable(language: string | null, hasLyrics: boolean): s
   if (!hasLyrics)
     return "There are no lyrics to make it from. Go back to add them, or chart the song yourself in the editor.";
   if (language === null) return "Choose the language the song is sung in first.";
-  if (!CHART_LANGUAGES.includes(language)) {
-    return `Charts can be made in English and German so far, not ${languageName(language)}. The project starts with an empty chart.`;
-  }
   return null;
+}
+
+/** What to expect of a chart in a language whose charts haven't been checked against hand-made ones, or null. */
+export function chartCaveat(language: string | null): string | null {
+  if (language === null || CHECKED_CHART_LANGUAGES.includes(language)) return null;
+  return `Charts in ${languageName(language)} are new: expect to fix more syllables and timing than in English or German.`;
 }
 
 /**
@@ -50,7 +53,8 @@ export function ChartChoice(props: {
       return `Chart made: ${props.made.notes} notes in ${props.made.lines} lines.`;
     }
     const download = props.modelsMissing ? " The chart models (about 1.6 GB) are downloaded first, once." : "";
-    return `Next makes the notes and timing from the vocals and the lyrics. Takes a minute or two.${download}`;
+    const caveat = chartCaveat(props.language);
+    return `Next makes the notes and timing from the vocals and the lyrics. Takes a minute or two.${download}${caveat ? ` ${caveat}` : ""}`;
   };
   return (
     <div class="flex flex-col gap-3" data-testid="chart-choice">

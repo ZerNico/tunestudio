@@ -14,7 +14,7 @@ import { AppLog } from "../services/app-log";
 import { fakeModels, fakeNative, recordingDesktop, soloChart, syntheticBytes, tempDir, writeSong } from "../testing";
 import { Tools } from "../tools/tools";
 import { importSong, inspectSong } from "../ultrastar/song-import";
-import { chartLanguage } from "./generate";
+import { chartLanguage, chartLanguageOf } from "./generate";
 import { autoPitchNotes } from "./project-auto-pitch";
 
 let cleanups: (() => void)[] = [];
@@ -64,12 +64,18 @@ function setup() {
 }
 
 describe("chartLanguage", () => {
-  it("supports English and German so far", () => {
+  it("charts in any language, by its first one", () => {
     expect(chartLanguage(["German", "English"])).toEqual({ name: "german", code: "deu" });
-    expect(chartLanguage(["Korean (romanized)"])).toBe(
-      "Charts can't be made in Korean (romanized) yet, only in English and German.",
-    );
+    expect(chartLanguage(["Portuguese (Brazil)"])).toEqual({ name: "portuguese", code: "por" });
+    expect(chartLanguage(["Korean (romanized)"])).toEqual({ name: "korean", code: "kor" });
+    // A language the aligner has no romanization of its own for romanizes like English.
+    expect(chartLanguage(["Klingon"])).toEqual({ name: "klingon", code: "eng" });
     expect(chartLanguage([])).toBe("Set the song's language first.");
+  });
+
+  it("knows a language by its ISO 639-1 code", () => {
+    expect(chartLanguageOf("pt")).toEqual({ name: "portuguese", code: "por" });
+    expect(chartLanguageOf("ja")).toEqual({ name: "japanese", code: "jpn" });
   });
 });
 

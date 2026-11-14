@@ -1,6 +1,7 @@
 /**
- * Song languages: the ones offered in the new-project steps, their names, and the ones charts can be made in. Shared
- * by the renderer and the main process (codes are ISO 639-1; projects store the English name).
+ * Song languages: the ones offered in the new-project steps, their names, and the ones whose charts have been checked
+ * against hand-made ones. Shared by the renderer and the main process (codes are ISO 639-1; projects store the English
+ * name).
  */
 
 /** The languages most songs are sung in, offered when choosing one. */
@@ -33,8 +34,8 @@ export const LANGUAGES = [
   "zh",
 ];
 
-/** The languages charts can be made in so far. */
-export const CHART_LANGUAGES = ["en", "de"];
+/** Languages whose made charts have been compared with hand-made ones; the others chart with less tested rules. */
+export const CHECKED_CHART_LANGUAGES = ["en", "de"];
 
 /** Made on first use: loading ICU's names slows starting main and the page. */
 let languageNames: Intl.DisplayNames | undefined;
@@ -49,9 +50,15 @@ export function languageName(code: string): string {
   }
 }
 
-/** The code of a language as projects store it ("English", or a code like "de"), or null when it isn't one. */
+/**
+ * The code of a language as projects store it ("English", "Portuguese (Brazil)", or a code like "de"), or null when it
+ * isn't one.
+ */
 export function codeOfLanguage(name: string | null | undefined): string | null {
-  const wanted = name?.trim().toLowerCase();
+  const wanted = name
+    ?.trim()
+    .toLowerCase()
+    .replace(/\s*\(.*\)$/u, "");
   if (!wanted) return null;
   return LANGUAGES.find((code) => languageName(code).toLowerCase() === wanted) ?? languageCode(wanted);
 }

@@ -48,7 +48,9 @@ def test_table_names_the_uroman_it_was_made_with():
 def test_syllable_words_skip_lines(monkeypatch):
     found = {"english": {"hello", "two words", "", "yes"}, "german": {"ja"}}
     words = fixtures.syllable_words(found, 10)
-    assert sorted(words) == [("hello", "english"), ("ja", "german"), ("yes", "english")]
+    native = {(w, lang) for lang, ws in fixtures.NATIVE_WORDS.items() for w in ws}
+    assert sorted(set(words) - native) == [("hello", "english"), ("ja", "german"), ("yes", "english")]
+    assert native <= set(words)
 
 
 @pytest.mark.parametrize("char_class, expected", [("a-c", "abc"), ("\\d", None)])
