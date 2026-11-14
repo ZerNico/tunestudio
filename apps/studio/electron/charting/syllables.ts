@@ -1,109 +1,33 @@
 /**
  * Splitting lyric words into sung syllables the way UltraStar charters do: the split learned from hand-made charts
- * where the word is known (`data/syllables-<language>.json`, read on first use), vowel-group rules otherwise. A port of the auto-tuner
- * PoC's `syllables.py` / `lyrics.syllabify`; tests check it against the PoC's output word for word.
+ * where the word is known (`data/syllables-<language>.json`, read on first use), each language's vowel-group rules
+ * otherwise (`data/syllable-rules.json`), and one syllable per character in Chinese, Hangul and kana. A port of the
+ * training pipeline's `syllables.py` / `lyrics.syllabify`; tests check it against its output word for word.
  *
  * Strings are handled as code points, like Python's: an emoji or other character outside the BMP counts once.
  */
 import { lazy, readTable } from "./tables";
 
-const VOWELS: Record<string, string> = {
-  english: "aeiouy",
-  german: "aeiouyäöü",
-};
+/** How one language's spelling marks its sung syllables (`syllables.Rules`). */
+interface Rules {
+  vowels: string;
+  /** Letter groups that are one vowel sound, longest first. */
+  digraphs: string[];
+  /** Consonant groups that stay together and start the next syllable, longest first. */
+  onsets: string[];
+  /** "english": silent final e, es, ed; "french": silent final e and es. */
+  finalE: "" | "english" | "french";
+  /** A y before a vowel is a consonant, and so is the y ending a group like "ay" before a vowel. */
+  yGlide: boolean;
+  /** Japanese: an n that no vowel or y follows is a syllable of its own. */
+  moraicN: boolean;
+  /** Portuguese: a final "ia", "io", "ua" (...) is two syllables in a word without an accent mark. */
+  finalHiatus: boolean;
+  /** A language whose learned splits also apply (romanized K-pop and J-pop charts are full of English words). */
+  loanwords: string;
+}
 
-/** Letter groups that are one vowel sound, longest first. */
-const DIGRAPHS: Record<string, string[]> = {
-  english: byLength([
-    "eau",
-    "ai",
-    "au",
-    "aw",
-    "ay",
-    "ea",
-    "ee",
-    "ei",
-    "eu",
-    "ew",
-    "ey",
-    "ie",
-    "oa",
-    "oe",
-    "oi",
-    "oo",
-    "ou",
-    "ow",
-    "oy",
-    "ue",
-    "ui",
-  ]),
-  german: byLength(["aa", "ai", "au", "äu", "ee", "ei", "eu", "ie", "oo", "ui"]),
-};
-
-/** Consonant groups that stay together and start the next syllable, longest first. */
-const ONSETS: Record<string, string[]> = {
-  english: byLength([
-    "sch",
-    "chr",
-    "thr",
-    "shr",
-    "spr",
-    "str",
-    "scr",
-    "ch",
-    "sh",
-    "th",
-    "ph",
-    "wh",
-    "ck",
-    "qu",
-    "bl",
-    "br",
-    "cl",
-    "cr",
-    "dr",
-    "fl",
-    "fr",
-    "gl",
-    "gr",
-    "pl",
-    "pr",
-    "sc",
-    "sk",
-    "sl",
-    "sm",
-    "sn",
-    "sp",
-    "st",
-    "sw",
-    "tr",
-    "tw",
-  ]),
-  german: byLength([
-    "schr",
-    "sch",
-    "chr",
-    "pf",
-    "ch",
-    "ck",
-    "qu",
-    "st",
-    "sp",
-    "bl",
-    "br",
-    "dr",
-    "fl",
-    "fr",
-    "gl",
-    "gr",
-    "kl",
-    "kr",
-    "pl",
-    "pr",
-    "tr",
-    "zw",
-  ]),
-};
+const RULES = lazy(() => readTable("syllable-rules.json") as { languages: Record<string, Rules>; default: Rules });
 
 type LearnedTable = Record<string, string[]>;
 
@@ -113,14 +37,31 @@ const TABLES: Record<string, () => LearnedTable> = {
   german: lazy(() => readTable("syllables-german.json") as LearnedTable),
 };
 
+/** Rising diphthongs a final hiatus splits, and the accented letters that rule it out. */
+const RISING = new Set(["ia", "ie", "io", "ua", "ue", "uo"]);
+const MARKED = new Set("áàâãéêíóôõú");
+
+/** Writing systems whose characters are syllables (Chinese characters, Hangul) or morae (kana). */
+const SYLLABIC = /[㐀-䶿一-鿿豈-﫿가-힣ぁ-ゖァ-ヺ]/u;
+/** Small kana and the long-vowel mark belong to the mora before them. */
+const SMALL_KANA = new Set("ぁぃぅぇぉっゃゅょゎゕゖァィゥェォッャュョヮヵヶー");
+
 /** `table[key]` only when it is the table's own: a word or language like "constructor" isn't one of Object's. */
 function own<T>(table: Record<string, T>, key: string): T | undefined {
   return Object.hasOwn(table, key) ? table[key] : undefined;
 }
 
-/** Python's `sorted(..., key=len, reverse=True)`: stable, so equal lengths keep their order. */
-function byLength(groups: string[]): string[] {
-  return groups.toSorted((a, b) => [...b].length - [...a].length);
+/** A language as the rules know it: lowercase, without a variant ("Portuguese (Brazil)" is "portuguese"). */
+export function languageKey(language: string): string {
+  return language
+    .trim()
+    .toLowerCase()
+    .replace(/\s*\(.*\)$/u, "");
+}
+
+function rulesFor(language: string): Rules {
+  const { languages, default: fallback } = RULES();
+  return own(languages, languageKey(language)) ?? fallback;
 }
 
 /** Python's Unicode `[^\w']+`: anything but letters, numbers, `_` and `'`. */
@@ -136,16 +77,37 @@ function startsWith(chars: string[], group: string, at: number): boolean {
   return parts.every((char, k) => chars[at + k] === char);
 }
 
+/** One syllable per Chinese character, Hangul block or kana mora; anything else stays with its neighbour. */
+function syllabicSplit(word: string): string[] | null {
+  if (!SYLLABIC.test(word)) return null;
+  const parts: string[] = [];
+  let prefix = "";
+  for (const char of word) {
+    if (SYLLABIC.test(char) && !SMALL_KANA.has(char)) {
+      parts.push(prefix + char);
+      prefix = "";
+    } else if (parts.length) {
+      parts[parts.length - 1] += char;
+    } else {
+      prefix += char;
+    }
+  }
+  if (prefix) parts.push(prefix);
+  return parts;
+}
+
 /** [start, end) of each vowel sound in the (lowercase) word, in code points. */
 export function nuclei(word: string[], language: string): [number, number][] {
-  const vowels = own(VOWELS, language) ?? VOWELS.english!;
-  const digraphs = own(DIGRAPHS, language) ?? DIGRAPHS.english!;
+  const rules = rulesFor(language);
+  const vowelAt = (k: number) => k < word.length && rules.vowels.includes(word[k]!);
   const out: [number, number][] = [];
   let i = 0;
   while (i < word.length) {
     const char = word[i]!;
-    if (vowels.includes(char) && !(char === "y" && i === 0)) {
-      const digraph = digraphs.find((d) => startsWith(word, d, i));
+    if (rules.vowels.includes(char) && !(char === "y" && (i === 0 || (rules.yGlide && vowelAt(i + 1))))) {
+      const digraph = rules.digraphs.find(
+        (d) => startsWith(word, d, i) && !(rules.yGlide && d.endsWith("y") && vowelAt(i + [...d].length)),
+      );
       if (digraph) {
         out.push([i, i + [...digraph].length]);
         i += [...digraph].length;
@@ -156,11 +118,21 @@ export function nuclei(word: string[], language: string): [number, number][] {
         out.push([i, i + 1]);
         i += 1;
       }
+    } else if (
+      rules.moraicN &&
+      char === "n" &&
+      out.length &&
+      out.at(-1)![1] === i &&
+      !vowelAt(i + 1) &&
+      word[i + 1] !== "y"
+    ) {
+      out.push([i, i + 1]);
+      i += 1;
     } else {
       i += 1;
     }
   }
-  if (language === "english" && out.length > 1) {
+  if (rules.finalE === "english" && out.length > 1) {
     // Silent final e ("make", "love"), but not "-le" ("little") or a word that is all vowels before it.
     const [s, e] = out.at(-1)!;
     const text = word.join("");
@@ -180,16 +152,34 @@ export function nuclei(word: string[], language: string): [number, number][] {
       out.pop(); // "loved", but keep "wanted"
     }
   }
+  if (rules.finalHiatus && out.length && !word.some((char) => MARKED.has(char))) {
+    const [s, e] = out.at(-1)!;
+    const rest = word.slice(e).join("");
+    if (
+      RISING.has(word.slice(s, e).join("")) &&
+      ["", "s", "m"].includes(rest) &&
+      !(s > 0 && "qg".includes(word[s - 1]!))
+    ) {
+      out.splice(-1, 1, [s, s + 1], [s + 1, e]);
+    }
+  }
+  if (rules.finalE === "french" && out.length > 1) {
+    // Charters leave a final e or es unsung ("danse", "elle", "aimes", "poupée").
+    const [s, e] = out.at(-1)!;
+    if (word.slice(s, e).join("") === "e" && ["", "s"].includes(word.slice(e).join(""))) out.pop();
+  }
   return out;
 }
 
 /** Split before the consonants leading into each vowel sound (one consonant or a known onset cluster). */
 export function ruleSplit(word: string, language: string): string[] {
+  const syllabic = syllabicSplit(word);
+  if (syllabic) return syllabic;
   const original = [...word];
   const low = [...word.toLowerCase()];
   const found = nuclei(low, language);
   if (found.length < 2) return [word];
-  const onsets = own(ONSETS, language) ?? ONSETS.english!;
+  const { onsets } = rulesFor(language);
   const cuts: number[] = [];
   for (let k = 1; k < found.length; k++) {
     const previousEnd = found[k - 1]![1];
@@ -212,11 +202,21 @@ export function ruleSplit(word: string, language: string): string[] {
   return parts.filter((part) => part);
 }
 
-/** A word's sung syllables, keeping its casing and punctuation; `language` is e.g. "english" (any case). */
+/** The learned split of a word: its language's, else the language it borrows words from. */
+function learned(word: string, language: string): string[] | undefined {
+  const key = normalize(word);
+  const ownSplit = own(TABLES, language)?.();
+  const found = ownSplit && own(ownSplit, key);
+  if (found) return found;
+  const { loanwords } = rulesFor(language);
+  const borrowed = loanwords ? own(TABLES, loanwords)?.() : undefined;
+  return borrowed && own(borrowed, key);
+}
+
+/** A word's sung syllables, keeping its casing and punctuation; `language` is e.g. "English" or "Portuguese (Brazil)". */
 export function syllabify(word: string, language: string): string[] {
-  const lang = language.toLowerCase();
-  const table = own(TABLES, lang)?.();
-  const pattern = table && own(table, normalize(word));
+  const lang = languageKey(language);
+  const pattern = learned(word, lang);
   if (!pattern) return ruleSplit(word, lang);
   // Map the learned split (on normalized letters) back onto the original word.
   const bounds = new Set(

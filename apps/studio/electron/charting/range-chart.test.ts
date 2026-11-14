@@ -121,7 +121,7 @@ describe("charting a passage", () => {
     }
   });
 
-  it.each([[], [""], ["---"], ["привет мир"], ["2 4 you"]].map((lines) => ({ lines })))(
+  it.each([[], [""], ["---"], ["ሰላም ዓለም"], ["2 4 you"]].map((lines) => ({ lines })))(
     "rejects unusable lyrics before model work: $lines",
     async ({ lines }) => {
       const run = engines();

@@ -5,13 +5,16 @@ and fixtures its tests compare against exactly (fixtures/). Words, never song ly
   alignment, as data: the normalization sets and mappings of norm_config["*"], and uroman's output per character
   (filtered the way `normalize_uroman` filters it: lowercase, only a-z and ') for every NFKC-stable character of the
   Latin, Hangul and CJK ranges plus symbols, as `base` (language "eng") and per-language differences. These scripts
-  romanize character by character (checked here: every pair of their characters gives the same tokens as uroman);
-  Cyrillic, Greek and kana have context rules and aren't covered yet.
+  romanize character by character (checked here: every pair of their characters gives the same tokens as uroman).
+  Greek, Cyrillic, Hebrew, Arabic, Devanagari, Thai, Armenian, Georgian and kana have context rules: their
+  characters are in the table one by one, close to what uroman makes of whole words but not always the same.
+- data/syllable-rules.json: each language's syllable rules (`syllables.rules_data`), which the app splits with.
 - data/syllables-<language>.json: the learned syllable splits (`syllable_tables`, from the train split only).
 - fixtures/aligner-text.json: [text, language, tokens] for lines of real lyric words (shuffled, no song's lyrics) and
   random strings, with the expected `preprocess_text` tokens (without the <star> tokens).
 - fixtures/syllables.json: [word, language, syllables] for words as charted (casing, punctuation, apostrophes),
-  English and German, plus French ones for the rule fallback of other languages.
+  English, German and French, a smaller sample of the other languages with charts, and a few words in scripts the
+  charts hardly use (Japanese, Korean, Chinese, Cyrillic, Greek).
 - fixtures/numpy.json: NumPy's results (pairwise sums, means, std, median, percentiles, complex means, arange,
   Python's round and %) on seeded random data, float64 and float32, for the app's numpy.ts.
 
@@ -31,7 +34,36 @@ import numpy as np
 from tunestudio_training import library, splits
 from tunestudio_training.pipeline import lyrics, syllables, ultrastar
 
-LANGUAGES = ["eng", "deu", "fra", "spa", "ita", "nld", "por", "pol", "swe", "fin", "tur", "kor", "cmn"]
+LANGUAGES = [
+    "eng",
+    "deu",
+    "fra",
+    "spa",
+    "ita",
+    "nld",
+    "por",
+    "pol",
+    "swe",
+    "fin",
+    "tur",
+    "kor",
+    "cmn",
+    "nor",
+    "dan",
+    "ces",
+    "hun",
+    "ron",
+    "ell",
+    "rus",
+    "ukr",
+    "ara",
+    "heb",
+    "hin",
+    "ind",
+    "zsm",
+    "jpn",
+    "yue",
+]
 RANGES = [
     (0x20, 0x24F),  # Basic Latin to Latin Extended-B
     (0x250, 0x2FF),  # IPA, modifier letters
@@ -42,7 +74,57 @@ RANGES = [
     (0x4E00, 0x9FFF),  # CJK unified ideographs
     (0xAC00, 0xD7A3),  # Hangul syllables
 ]
+# Scripts uroman romanizes with context rules (kana, Cyrillic, Greek, ...), added character by character: close
+# enough for the aligner, though not exactly what uroman makes of whole words, so the fixtures leave them out.
+APPROXIMATE_RANGES = [
+    (0x370, 0x3FF),  # Greek
+    (0x1F00, 0x1FFF),  # Greek Extended
+    (0x400, 0x4FF),  # Cyrillic
+    (0x530, 0x58F),  # Armenian
+    (0x590, 0x5FF),  # Hebrew
+    (0x600, 0x6FF),  # Arabic
+    (0x900, 0x97F),  # Devanagari
+    (0xE00, 0xE7F),  # Thai
+    (0x10A0, 0x10FF),  # Georgian
+    (0x3040, 0x30FF),  # Hiragana, Katakana
+]
 SYLLABLE_LANGUAGES = ("english", "german", "french")
+# Charts in other languages (mostly romanized), fewer words each.
+MORE_SYLLABLE_LANGUAGES = (
+    "spanish",
+    "portuguese",
+    "portuguese (brazil)",
+    "italian",
+    "dutch",
+    "swedish",
+    "finnish",
+    "polish",
+    "korean (romanized)",
+    "japanese (romanized)",
+    "chinese (romanized)",
+    "russian (romanized)",
+)
+MORE_PER_LANGUAGE = 1500
+# Words in scripts the library's charts hardly use (words, not lyrics).
+NATIVE_WORDS = {
+    "japanese": [
+        "ありがとう",
+        "こんにちは",
+        "きょう",
+        "がっこう",
+        "ちょっと",
+        "ラーメン",
+        "コーヒー",
+        "東京",
+        "愛してる",
+        "loveしてる",
+    ],
+    "korean": ["사랑해", "노래", "우리", "하늘", "보고싶어"],
+    "chinese": ["我爱你", "朋友", "唱歌", "「你好」", "月亮"],
+    "russian": ["любовь", "песня", "привет", "сердце", "ночь", "звёзды", "Москва"],
+    "ukrainian": ["пісня", "їжак", "серце", "Київ"],
+    "greek": ["αγάπη", "καρδιά", "θάλασσα", "τραγούδι", "ουρανός", "Ελλάδα"],
+}
 TABLE_LANGUAGES = ("english", "german")
 
 
@@ -63,12 +145,14 @@ def _chart_words() -> dict[str, set[str]]:
 def syllable_words(found: dict[str, set[str]], per_language: int) -> list[tuple[str, str]]:
     rng = random.Random(0)
     out = []
-    for lang in SYLLABLE_LANGUAGES:
+    for lang, count in [(lang, per_language) for lang in SYLLABLE_LANGUAGES] + [
+        (lang, MORE_PER_LANGUAGE) for lang in MORE_SYLLABLE_LANGUAGES
+    ]:
         ordered = sorted(w for w in found.get(lang, set()) if w)
-        sample = rng.sample(ordered, min(per_language, len(ordered)))
+        sample = rng.sample(ordered, min(count, len(ordered)))
         # Single words only: a "word" with spaces is a chart line kept whole, i.e. a piece of lyrics.
         out += [(w, lang) for w in sample if not any(c.isspace() for c in w)]
-    return out
+    return out + [(w, lang) for lang, words in NATIVE_WORDS.items() for w in words]
 
 
 def numpy_reference() -> dict:
@@ -114,9 +198,9 @@ class _Romanizer:
         return normalize_uroman(" ".join(self.uroman.romanize_string(text, lcode=lcode).strip())).replace(" ", "")
 
 
-def _characters() -> list[str]:
+def _characters(ranges: list[tuple[int, int]] = RANGES) -> list[str]:
     out = []
-    for lo, hi in RANGES:
+    for lo, hi in ranges:
         for c in map(chr, range(lo, hi + 1)):
             if unicodedata.category(c).startswith("C") or unicodedata.normalize("NFKC", c) != c:
                 continue
@@ -200,7 +284,7 @@ def aligner_text(charting: Path, found: dict[str, set[str]]) -> None:
 
     rom = _Romanizer()
     chars = _characters()
-    table = _tables(rom, chars)
+    table = _tables(rom, chars + _characters(APPROXIMATE_RANGES))
     languages = {k: len(v) for k, v in table["languages"].items()}
     print(f"{len(chars)} characters, {len(table['base'])} romanize to letters; languages with differences: {languages}")
     _check_pairs(rom, chars, table)
@@ -229,7 +313,8 @@ def aligner_text(charting: Path, found: dict[str, set[str]]) -> None:
 
 
 def export(charting: Path, per_language: int = 6000) -> None:
-    """Write data/aligner-text.json and the fixtures."""
+    """Write data/aligner-text.json, data/syllable-rules.json and the fixtures."""
+    _write(charting / "data" / "syllable-rules.json", syllables.rules_data())
     found = _chart_words()
     words = syllable_words(found, per_language)
     rows = [[w, lang, lyrics.syllabify(w, lang)] for w, lang in words]

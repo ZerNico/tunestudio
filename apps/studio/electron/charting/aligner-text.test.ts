@@ -24,4 +24,10 @@ describe("aligner text", () => {
     ]);
     expect(normalizeText("Hello,World!")).toBe("hello world");
   });
+
+  it("romanizes Cyrillic, Greek and kana character by character", () => {
+    expect(alignerTokens("привет", "rus")).toEqual(["p r i v y e t"]);
+    expect(alignerTokens("αγάπη", "ell")).toEqual(["a g a p e"]);
+    expect(alignerTokens("ありがとう", "jpn")).toEqual(["a r i g a t o u"]);
+  });
 });

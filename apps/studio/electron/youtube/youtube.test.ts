@@ -582,17 +582,16 @@ describe("makeDraftChart", () => {
     }).pipe(Effect.provide(layer));
   });
 
-  it.effect("doesn't try in a language charts can't be made in yet", () => {
+  it.effect("tries in any language", () => {
     const { layer } = setup();
     return Effect.gen(function* () {
       const { draftId } = yield* downloadIntoDraft("dQw4w9WgXcQ");
-      const error = yield* Effect.flip(
+      const english = yield* Effect.flip(makeDraftChart({ draftId, lines, language: "en" }));
+      const french = yield* Effect.flip(
         makeDraftChart({ draftId, lines: [{ start: null, text: "Bonjour" }], language: "fr" }),
       );
-      expect(error).toMatchObject({
-        _tag: "ChartFailed",
-        message: "Charts can't be made in French yet, only in English and German.",
-      });
+      // The fake song is too short to chart in any language: French gets as far as English.
+      expect(french).toMatchObject({ _tag: "ChartFailed", message: english.message });
     }).pipe(Effect.provide(layer));
   });
 });

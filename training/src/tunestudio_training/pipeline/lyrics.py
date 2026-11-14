@@ -51,8 +51,11 @@ def words_from_song(song: Song, voice: int = 0) -> list[Word]:
 def _syllabifier(language: str):
     from . import syllables
 
-    lang = language.lower()
+    lang = syllables.language_key(language)
     table = syllables.load(syllables.table_path(lang))
+    loanwords = syllables.rules_for(lang).loanwords
+    if loanwords:
+        table = {**syllables.load(syllables.table_path(loanwords)), **table}
     return syllables.Syllabifier(lang, table)
 
 

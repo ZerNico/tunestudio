@@ -19,13 +19,39 @@ describe("syllabify", () => {
 
   it("splits unknown words by vowel groups and onsets", () => {
     expect(ruleSplit("blorptastic", "english")).toEqual(["blorp", "ta", "stic"]);
-    // Other languages use the English rules.
-    expect(ruleSplit("chanson", "french")).toEqual(ruleSplit("chanson", "english"));
+  });
+
+  it("splits each language by its own vowels, vowel groups and onsets", () => {
+    expect(syllabify("corazón", "Spanish")).toEqual(["co", "ra", "zón"]);
+    expect(syllabify("silencio", "Spanish")).toEqual(["si", "len", "cio"]);
+    expect(syllabify("ayer", "Spanish")).toEqual(["a", "yer"]);
+    expect(syllabify("minha", "Portuguese (Brazil)")).toEqual(["mi", "nha"]);
+    // A final "ia" is two syllables unless an accent mark elsewhere takes the stress.
+    expect(syllabify("dia", "Portuguese")).toEqual(["di", "a"]);
+    expect(syllabify("memória", "Portuguese")).toEqual(["me", "mó", "ria"]);
+    expect(syllabify("danse", "French")).toEqual(["danse"]);
+    expect(syllabify("allez", "French")).toEqual(["a", "llez"]);
+    expect(syllabify("niin", "Finnish")).toEqual(["niin"]);
+    expect(syllabify("jibun", "Japanese (romanized)")).toEqual(["ji", "bu", "n"]);
+    expect(syllabify("neomu", "Korean (romanized)")).toEqual(["neo", "mu"]);
+    // Romanized K-pop and J-pop borrow English words.
+    expect(syllabify("lonely", "Korean (romanized)")).toEqual(syllabify("lonely", "English"));
+  });
+
+  it("gives Chinese characters, Hangul blocks and kana morae a syllable each", () => {
+    expect(syllabify("我爱你", "Chinese")).toEqual(["我", "爱", "你"]);
+    expect(syllabify("사랑해", "Korean")).toEqual(["사", "랑", "해"]);
+    expect(syllabify("「ちょっと」", "Japanese")).toEqual(["「ちょっ", "と」"]);
+  });
+
+  it("splits Cyrillic and Greek by their vowels", () => {
+    expect(syllabify("любовь", "Russian")).toEqual(["лю", "бовь"]);
+    expect(syllabify("αγάπη", "Greek")).toEqual(["α", "γά", "πη"]);
   });
 
   it("takes words and languages named like Object's own properties as any other", () => {
     expect(syllabify("constructor", "english")).toEqual(ruleSplit("constructor", "english"));
     expect(syllabify("__proto__", "german").join("")).toBe("__proto__");
-    expect(syllabify("hello", "constructor")).toEqual(syllabify("hello", "english"));
+    expect(syllabify("hello", "constructor")).toEqual(ruleSplit("hello", "klingon"));
   });
 });

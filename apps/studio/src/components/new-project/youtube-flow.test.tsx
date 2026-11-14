@@ -372,7 +372,7 @@ describe("lyrics stage and saving", () => {
     );
   });
 
-  it("can't make a chart in a language it doesn't support yet, but keeps the language", async () => {
+  it("makes the chart in a language whose charts are new, saying what to expect", async () => {
     native.youtube.findLyrics.mockResolvedValue({
       ...LYRICS,
       lines: [
@@ -390,12 +390,19 @@ describe("lyrics stage and saving", () => {
     expect(screen.getByRole("button", { name: "Make the chart now" })).toBeDisabled();
     await user.click(screen.getByRole("combobox", { name: "Language of the song" }));
     await user.click(await screen.findByRole("option", { name: "French" }));
-    expect(screen.getByTestId("chart-choice-hint")).toHaveTextContent("English and German so far, not French.");
+    expect(screen.getByTestId("chart-choice-hint")).toHaveTextContent(
+      "Charts in French are new: expect to fix more syllables and timing than in English or German.",
+    );
+    expect(screen.getByRole("button", { name: "Make the chart now" })).toBeEnabled();
     await user.click(screen.getByTestId("flow-next"));
     await user.click(await screen.findByTestId("flow-next"));
     await vi.waitFor(() => expect(onOpened).toHaveBeenCalled());
+    expect(native.drafts.makeChart).toHaveBeenCalledWith(
+      expect.objectContaining({ language: "fr" }),
+      expect.anything(),
+    );
     expect(native.drafts.create).toHaveBeenCalledWith(
-      expect.objectContaining({ language: "fr", chart: "empty" }),
+      expect.objectContaining({ language: "fr", chart: "made" }),
       expect.anything(),
     );
   });

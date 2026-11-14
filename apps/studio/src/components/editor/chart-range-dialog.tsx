@@ -18,6 +18,7 @@ import { lyricLines, rangeProblem, type TimeRange } from "~/lib/chart-range";
 import { rangeScope } from "~/lib/editor/chart-range";
 import type { ChartRangeJob } from "~/lib/editor/chart-range-job";
 import { formatTime } from "~/lib/editor/view";
+import { codeOfLanguage, LANGUAGES, languageName } from "~/lib/languages";
 import { percentOf } from "~/lib/native/progress";
 import type { EditorChart } from "~/lib/native/types";
 
@@ -32,9 +33,10 @@ export function ChartRangeDialog(props: {
   onClose: () => void;
 }) {
   const [singer, setSinger] = createSignal(untrack(() => props.singerId));
-  const [language, setLanguage] = createSignal<"en" | "de">(
-    untrack(() => (props.chart.song.language[0]?.toLowerCase() === "german" ? "de" : "en")),
+  const [language, setLanguage] = createSignal<string>(
+    untrack(() => codeOfLanguage(props.chart.song.language[0]) ?? "en"),
   );
+  const languages = () => (LANGUAGES.includes(language()) ? LANGUAGES : [language(), ...LANGUAGES]);
   const scope = createMemo(() => rangeScope(props.chart, singer(), props.range, props.duration));
   const [text, setText] = createSignal(untrack(() => scope()?.text ?? ""));
   let edited = false;
@@ -109,18 +111,17 @@ export function ChartRangeDialog(props: {
               value={language()}
               disabled={props.job.busy()}
               onValueChange={(value: unknown) => {
-                if (value === "en" || value === "de") {
+                if (typeof value === "string") {
                   setLanguage(value);
                   props.job.clearError();
                 }
               }}
             >
               <SelectTrigger size="sm" aria-label="Lyrics language">
-                <SelectValue>{(value: () => unknown) => <>{value() === "de" ? "German" : "English"}</>}</SelectValue>
+                <SelectValue>{(value: () => unknown) => <>{languageName(String(value()))}</>}</SelectValue>
               </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="en">English</SelectItem>
-                <SelectItem value="de">German</SelectItem>
+              <SelectContent class="min-w-40">
+                <For each={languages()}>{(code) => <SelectItem value={code}>{languageName(code)}</SelectItem>}</For>
               </SelectContent>
             </Select>
           </div>
