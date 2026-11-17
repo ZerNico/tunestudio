@@ -59,6 +59,11 @@ def test_fixtures_reproduce(real_data, tmp_path):
     for name in ("data/syllables-english.json", "data/syllables-german.json", "data/aligner-text.json",
                  "fixtures/numpy.json"):  # fmt: skip
         assert filecmp.cmp(out / name, paths.CHARTING / name, shallow=False), name
+    # The other tables also learn from TST_TEXTS, so they only reproduce with the charts they were made from.
+    if paths.texts():
+        for language in ("spanish", "portuguese", "french", "italian"):
+            name = f"data/syllables-{language}.json"
+            assert filecmp.cmp(out / name, paths.CHARTING / name, shallow=False), name
     sampled = [n for n in ("fixtures/syllables.json", "fixtures/aligner-text.json")
                if not filecmp.cmp(out / n, paths.CHARTING / n, shallow=False)]  # fmt: skip
     if sampled:

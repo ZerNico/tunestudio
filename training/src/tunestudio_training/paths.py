@@ -3,6 +3,8 @@ default in the git-ignored `training/.local/` (config.py has the rules, `tst sta
 
 - library_roots (TST_LIBRARY): song library roots, one folder per song ("Artist - Title") with a hand-made chart and
   its audio
+- texts (TST_TEXTS): folders of charts without audio (`<song>/*.txt`), only for the syllable tables of the
+  languages the library hardly has
 - data (TST_DATA): datasets and vocal stems (`stems/<song>/vocals.flac` + `pitch.npz`)
 - stem_dirs: data's stems, then the folders of TST_STEMS: more `<song>/vocals.flac` + `pitch.npz` to reuse
 - runs (TST_RUNS): evaluation runs, exports and goldens
@@ -32,6 +34,10 @@ CHARTING = TRAINING.parent / "apps" / "studio" / "electron" / "charting"
 
 def library_roots() -> list[Path]:
     return config.value("paths.library")
+
+
+def texts() -> list[Path]:
+    return config.value("paths.texts")
 
 
 def data() -> Path:

@@ -367,7 +367,7 @@ def learn(charts: list[Path], language: str, min_count: int = 1) -> dict[str, li
             song = parse(path)
         except Exception:  # noqa: BLE001
             continue
-        if song.headers.get("LANGUAGE", "").split(",")[0].strip().lower() != language:
+        if language_key(song.headers.get("LANGUAGE", "").split(",")[0]) != language:
             continue
         for w in words_from_song(song):
             parts = chart_split(w)

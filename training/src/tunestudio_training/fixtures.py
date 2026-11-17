@@ -9,7 +9,8 @@ and fixtures its tests compare against exactly (fixtures/). Words, never song ly
   Greek, Cyrillic, Hebrew, Arabic, Devanagari, Thai, Armenian, Georgian and kana have context rules: their
   characters are in the table one by one, close to what uroman makes of whole words but not always the same.
 - data/syllable-rules.json: each language's syllable rules (`syllables.rules_data`), which the app splits with.
-- data/syllables-<language>.json: the learned syllable splits (`syllable_tables`, from the train split only).
+- data/syllables-<language>.json: the learned syllable splits (`syllable_tables`, from the train split, plus the charts
+  without audio of TST_TEXTS for Spanish, Portuguese, French and Italian).
 - fixtures/aligner-text.json: [text, language, tokens] for lines of real lyric words (shuffled, no song's lyrics) and
   random strings, with the expected `preprocess_text` tokens (without the <star> tokens).
 - fixtures/syllables.json: [word, language, syllables] for words as charted (casing, punctuation, apostrophes),
@@ -31,7 +32,7 @@ from pathlib import Path
 
 import numpy as np
 
-from tunestudio_training import library, splits
+from tunestudio_training import library, paths, splits
 from tunestudio_training.pipeline import lyrics, syllables, ultrastar
 
 LANGUAGES = [
@@ -125,7 +126,10 @@ NATIVE_WORDS = {
     "ukrainian": ["пісня", "їжак", "серце", "Київ"],
     "greek": ["αγάπη", "καρδιά", "θάλασσα", "τραγούδι", "ουρανός", "Ελλάδα"],
 }
-TABLE_LANGUAGES = ("english", "german")
+TABLE_LANGUAGES = ("english", "german", "spanish", "portuguese", "french", "italian")
+# Languages train hardly has: their tables learn from TST_TEXTS too, and need this many words to be worth shipping.
+TEXT_LANGUAGES = ("spanish", "portuguese", "french", "italian")
+MIN_TABLE_WORDS = 2000
 
 
 def _chart_words() -> dict[str, set[str]]:
@@ -324,22 +328,57 @@ def export(charting: Path, per_language: int = 6000) -> None:
     aligner_text(charting, found)
 
 
+def _held_out_artists() -> set[str]:
+    """The primary artists of every song a split scores (dev, test, lang-*): no table learns from their charts."""
+    held = set()
+    for f in sorted(paths.SPLITS.glob("*.txt")):
+        if f.stem in ("dev", "test") or f.stem.startswith("lang-"):
+            for path in _charts(f.stem):
+                try:
+                    held.add(splits.primary_artist(ultrastar.parse(path), path.parent))
+                except Exception:  # noqa: BLE001
+                    continue
+    return held
+
+
+def _charts(split: str) -> list[Path]:
+    return [p for s in splits.songs(split) for p in library.folder(s).glob("*.txt")]
+
+
+def _texts(held: set[str]) -> list[Path]:
+    """The charts of TST_TEXTS whose artist no split scores."""
+    out = []
+    for root in paths.texts():
+        for path in sorted(root.glob("*/*.txt")):
+            try:
+                artist = splits.primary_artist(ultrastar.parse(path), path.parent)
+            except Exception:  # noqa: BLE001
+                continue
+            if artist not in held:
+                out.append(path)
+    return out
+
+
 def syllable_tables(folder: Path) -> None:
     """Learn the syllable tables from the train split's charts (so dev and test charts don't teach the splits they are
-    scored on) and report how often they split dev words like the charter."""
-
-    def charts(split: str) -> list[Path]:
-        return [p for s in splits.songs(split) for p in library.folder(s).glob("*.txt")]
-
-    train, dev = charts("train"), charts("dev")
+    scored on) and report how often they split held-out words like the charter. TEXT_LANGUAGES, which train hardly
+    has, also learn from the charts without audio of TST_TEXTS (minus every artist a split scores) and are scored on
+    their lang-<language> set."""
+    train, dev = _charts("train"), _charts("dev")
+    texts = _texts(_held_out_artists()) if paths.texts() else []
     folder.mkdir(parents=True, exist_ok=True)
     for language in TABLE_LANGUAGES:
-        table = syllables.learn(train, language)
+        extra = language in TEXT_LANGUAGES
+        source = train + texts if extra else train
+        table = syllables.learn(source, language)
+        if extra and len(table) < MIN_TABLE_WORDS:
+            print(f"{language}: only {len(table)} words (set TST_TEXTS to its charts), no table written")
+            continue
         split = syllables.Syllabifier(language, table)
         total = right = 0
-        for path in dev:
+        for path in _charts(f"lang-{language}") if extra else dev:
             song = ultrastar.parse(path)
-            if song.headers.get("LANGUAGE", "").split(",")[0].strip().lower() != language:
+            if syllables.language_key(song.headers.get("LANGUAGE", "").split(",")[0]) != language:
                 continue
             for w in lyrics.words_from_song(song):
                 truth = syllables.chart_split(w)
@@ -347,5 +386,6 @@ def syllable_tables(folder: Path) -> None:
                     total += 1
                     right += [syllables.normalize(p) for p in split.split("".join(truth))] == truth
         syllables.save(table, folder / f"syllables-{language}.json")
-        print(f"{language}: {len(table)} words from {len(train)} train charts; dev words split like the charter: "
+        scored = f"lang-{language}" if extra else "dev"
+        print(f"{language}: {len(table)} words from {len(source)} charts; {scored} words split like the charter: "
               f"{right / max(total, 1):.1%} of {total}")  # fmt: skip

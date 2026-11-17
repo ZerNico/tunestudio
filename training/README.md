@@ -182,8 +182,9 @@ m2's logistic regression instead (a JSON table, to measure the trees against). S
   unchanged (`beat-this-onnx`).
 - **GAME** by openvpi, release 1.0.3 large, used as released (weights CC BY-NC-SA 4.0): writes the notes of a line
   given its audio and syllable starts. Not retrained here: fine-tuning it on the charts made it worse on every metric.
-- **Syllable tables** (plain code): which syllables charters split common English and German words into, counted from the train
-  charts (`tst syllables`), with vowel-group rules for other words. Data and rules, no model.
+- **Syllable tables** (plain code): which syllables charters split common words into, counted from the train charts
+  (`tst syllables`) for English and German, and from charts without audio (`TST_TEXTS`) for Spanish, Portuguese,
+  French and Italian, with each language's vowel-group rules for other words. Data and rules, no model.
 
 ## Glossary
 
@@ -394,6 +395,7 @@ shows every value and where it came from.
 | `paths.library`  | `TST_LIBRARY`       | `.local/library`                      | song library roots: one folder per song with its chart and audio                                                                                                                              |
 | `paths.data`     | `TST_DATA`          | `.local/data`                         | vocal stems (`stems/<song>/`) and datasets                                                                                                                                                    |
 | `paths.stems`    | `TST_STEMS`         |                                       | more `<song>/vocals.flac` + `pitch.npz` folders to reuse                                                                                                                                      |
+| `paths.texts`    | `TST_TEXTS`         |                                       | charts without audio (`<song>/*.txt`), only for the syllable tables (see Data and splits)                                                                                                     |
 | `paths.models`   | `TST_MODELS`        | `.local/models`                       | `aligner/<name>/`, `boundary/<name>.pt`, `notefix/<name>.pkl`, `ends/<name>.pkl`, `game/GAME-1.0.3-large-onnx/` (openvpi's release, unzipped), the separation model (downloaded on first use) |
 | `paths.runs`     | `TST_RUNS`          | `.local/runs`                         | evaluation runs, exports, goldens                                                                                                                                                             |
 | `models.aligner` | `TST_ALIGNER`       | `<models>/aligner/aligner-ft2`        | the aligner the pipeline uses                                                                                                                                                                 |
@@ -407,6 +409,11 @@ shows every value and where it came from.
 The library is hand-made UltraStar charts with their audio, as USDB Syncer downloads them (English and German so
 far). Use what's local first and sync more only when a model is shown to be data-limited. Charts, lyrics, audio,
 stems, datasets, checkpoints and goldens never go into git: they stay in `.local/` (or wherever the settings point).
+
+The syllable tables of Spanish, Portuguese, French and Italian need far more charts than the library has in those
+languages, but only their text: `TST_TEXTS` names folders of charts without audio (one `<song>/` folder each, as USDB
+Syncer writes them with audio, video and images switched off). `tst syllables` learns from them minus every artist
+of dev, test and the `lang-*` sets, and scores each table on its `lang-<language>` set.
 
 `splits/` is frozen and committed (song folder names and chart hashes only), grouped by primary artist:
 

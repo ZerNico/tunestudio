@@ -21,21 +21,27 @@ describe("syllabify", () => {
     expect(ruleSplit("blorptastic", "english")).toEqual(["blorp", "ta", "stic"]);
   });
 
-  it("splits each language by its own vowels, vowel groups and onsets", () => {
-    expect(syllabify("corazón", "Spanish")).toEqual(["co", "ra", "zón"]);
-    expect(syllabify("silencio", "Spanish")).toEqual(["si", "len", "cio"]);
-    expect(syllabify("ayer", "Spanish")).toEqual(["a", "yer"]);
-    expect(syllabify("minha", "Portuguese (Brazil)")).toEqual(["mi", "nha"]);
+  it("splits words no table knows by their language's vowels, vowel groups and onsets", () => {
+    expect(ruleSplit("corazón", "Spanish")).toEqual(["co", "ra", "zón"]);
+    expect(ruleSplit("silencio", "Spanish")).toEqual(["si", "len", "cio"]);
+    expect(ruleSplit("ayer", "Spanish")).toEqual(["a", "yer"]);
+    expect(ruleSplit("minha", "Portuguese (Brazil)")).toEqual(["mi", "nha"]);
     // A final "ia" is two syllables unless an accent mark elsewhere takes the stress.
-    expect(syllabify("dia", "Portuguese")).toEqual(["di", "a"]);
-    expect(syllabify("memória", "Portuguese")).toEqual(["me", "mó", "ria"]);
-    expect(syllabify("danse", "French")).toEqual(["danse"]);
-    expect(syllabify("allez", "French")).toEqual(["a", "llez"]);
-    expect(syllabify("niin", "Finnish")).toEqual(["niin"]);
-    expect(syllabify("jibun", "Japanese (romanized)")).toEqual(["ji", "bu", "n"]);
-    expect(syllabify("neomu", "Korean (romanized)")).toEqual(["neo", "mu"]);
+    expect(ruleSplit("dia", "Portuguese")).toEqual(["di", "a"]);
+    expect(ruleSplit("memória", "Portuguese")).toEqual(["me", "mó", "ria"]);
+    expect(ruleSplit("danse", "French")).toEqual(["danse"]);
+    expect(ruleSplit("allez", "French")).toEqual(["a", "llez"]);
+    expect(ruleSplit("niin", "Finnish")).toEqual(["niin"]);
+    expect(ruleSplit("jibun", "Japanese (romanized)")).toEqual(["ji", "bu", "n"]);
+    expect(ruleSplit("neomu", "Korean (romanized)")).toEqual(["neo", "mu"]);
     // Romanized K-pop and J-pop borrow English words.
     expect(syllabify("lonely", "Korean (romanized)")).toEqual(syllabify("lonely", "English"));
+  });
+
+  it("splits words the way charters of the language do where a table knows them", () => {
+    // The rule splits "a-llez"; French charters write "al-lez".
+    expect(syllabify("allez", "French")).toEqual(["al", "lez"]);
+    expect(syllabify("Allez,", "French")).toEqual(["Al", "lez,"]);
   });
 
   it("gives Chinese characters, Hangul blocks and kana morae a syllable each", () => {

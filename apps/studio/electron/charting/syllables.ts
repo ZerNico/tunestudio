@@ -35,6 +35,10 @@ type LearnedTable = Record<string, string[]>;
 const TABLES: Record<string, () => LearnedTable> = {
   english: lazy(() => readTable("syllables-english.json") as LearnedTable),
   german: lazy(() => readTable("syllables-german.json") as LearnedTable),
+  spanish: lazy(() => readTable("syllables-spanish.json") as LearnedTable),
+  portuguese: lazy(() => readTable("syllables-portuguese.json") as LearnedTable),
+  french: lazy(() => readTable("syllables-french.json") as LearnedTable),
+  italian: lazy(() => readTable("syllables-italian.json") as LearnedTable),
 };
 
 /** Rising diphthongs a final hiatus splits, and the accented letters that rule it out. */
