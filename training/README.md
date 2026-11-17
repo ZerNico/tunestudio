@@ -186,7 +186,8 @@ m2's logistic regression instead (a JSON table, to measure the trees against). S
   (`tst syllables`) for English and German, and from charts without audio (`TST_TEXTS`) for the languages where that
   beats the rules (Spanish, Portuguese, French, Italian, Japanese, Polish, Swedish, Finnish, Chinese and Croatian;
   Japanese and Chinese as romanized charts write them), with each language's vowel-group rules, corrected by patterns learned from its
-  table, for other words. Data and rules, no model.
+  table, for other words. The app gets only the words the patterns split otherwise (a sixth of each table). Data
+  and rules, no model.
 
 ## Glossary
 
@@ -508,7 +509,7 @@ The goldens the app was ported against used GAME re-exported from the pretrained
 byte-identical charts to openvpi's release. Generated files the app commits (no lyrics: words and tables):
 
 ```bash
-uv run tst syllables    # apps/studio/electron/charting/data/syllables-*.json, from train (and TST_TEXTS)
+uv run tst syllables    # apps/studio/electron/charting/data/syllables-*.json and syllable-patterns.json
 uv run tst fixtures     # data/aligner-text.json and fixtures/{aligner-text,syllables,numpy}.json
 ```
 

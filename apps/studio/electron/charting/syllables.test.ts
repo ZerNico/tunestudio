@@ -35,7 +35,8 @@ describe("syllabify", () => {
     expect(ruleSplit("jibun", "Japanese (romanized)")).toEqual(["ji", "bu", "n"]);
     expect(ruleSplit("neomu", "Korean (romanized)")).toEqual(["neo", "mu"]);
     // Romanized K-pop and J-pop borrow English words.
-    expect(syllabify("lonely", "Korean (romanized)")).toEqual(syllabify("lonely", "English"));
+    expect(syllabify("actually", "Korean (romanized)")).toEqual(syllabify("actually", "English"));
+    expect(syllabify("actually", "Korean (romanized)")).not.toEqual(ruleSplit("actually", "Korean (romanized)"));
   });
 
   it("splits words the way charters of the language do where a table knows them", () => {

@@ -477,6 +477,13 @@ def learn(charts: list[Path], language: str, min_count: int = 1) -> dict[str, li
     return {w: list(c.most_common(1)[0][0]) for w, c in counts.items() if c.most_common(1)[0][1] >= min_count}
 
 
+def prune(table: dict[str, list[str]], language: str, patterns: Patterns, borrowed: dict[str, list[str]]) -> dict:
+    """The words of a table the rest would split otherwise (the loanword table, else the patterns or the rules): all
+    the app needs, as the other words split the same without it."""
+    rest = Syllabifier(language, borrowed, patterns)
+    return {w: parts for w, parts in table.items() if rest.split(w) != parts}
+
+
 def table_path(language: str) -> Path:
     """The learned table Tune Studio ships (`tst syllables` rebuilds it from the train split)."""
     return paths.CHARTING / "data" / f"syllables-{language}.json"

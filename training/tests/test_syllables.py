@@ -53,7 +53,9 @@ def test_rule_split(word, language, parts):
 
 
 def test_romanized_kpop_borrows_english_splits():
-    assert lyrics.syllabify("lonely", "Korean (romanized)") == lyrics.syllabify("lonely", "English")
+    # The English table the app ships (only what its patterns miss) splits "actually" like charters.
+    assert lyrics.syllabify("actually", "Korean (romanized)") == lyrics.syllabify("actually", "English")
+    assert lyrics.syllabify("actually", "Korean (romanized)") != syllables.rule_split("actually", "korean")
 
 
 def test_committed_rules_are_the_rules():
@@ -61,11 +63,23 @@ def test_committed_rules_are_the_rules():
     assert committed == json.loads(json.dumps(syllables.rules_data()))
 
 
-def test_committed_patterns_are_learned_from_the_committed_tables():
+def test_committed_tables_hold_only_the_words_the_rest_splits_otherwise():
     committed = json.loads(syllables.patterns_path().read_text())
     for language, patterns in committed.items():
-        learned = syllables.learn_patterns(syllables.load(syllables.table_path(language)), language)
-        assert patterns == learned, language
+        loanwords = syllables.rules_for(language).loanwords
+        borrowed = syllables.load(syllables.table_path(loanwords)) if loanwords else {}
+        table = syllables.load(syllables.table_path(language))
+        assert table and syllables.prune(table, language, patterns, borrowed) == table, language
+
+
+def test_pruning_keeps_every_split():
+    table = {w: [w[: w.index("ss")], w[w.index("ss") :]] for w in ("assa", "esse", "isso", "osso", "ussa", "assi")}
+    table["missa"] = ["mis", "sa"]  # the exception the patterns don't learn
+    patterns = syllables.learn_patterns(table, "portuguese")
+    pruned = syllables.prune(table, "portuguese", patterns, {})
+    assert pruned == {"missa": ["mis", "sa"]}
+    whole, shipped = syllables.Syllabifier("pt", table, patterns), syllables.Syllabifier("pt", pruned, patterns)
+    assert all(whole.split(w) == shipped.split(w) for w in table)
 
 
 def test_patterns_correct_the_rules():
