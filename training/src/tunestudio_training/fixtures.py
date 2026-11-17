@@ -10,10 +10,10 @@ and fixtures its tests compare against exactly (fixtures/). Words, never song ly
   characters are in the table one by one, close to what uroman makes of whole words but not always the same.
 - data/syllable-rules.json: each language's syllable rules (`syllables.rules_data`), which the app splits with.
 - data/syllable-patterns.json: per learned table, the patterns that correct the rules toward its splits
-  (`syllables.learn_patterns`), for the words it doesn't know. Made from the committed tables, so any library
-  reproduces them.
+  (`syllables.learn_patterns`), for the words it doesn't know (`syllable_tables`).
 - data/syllables-<language>.json: the learned syllable splits (`syllable_tables`, from the train split, plus the charts
-  without audio of TST_TEXTS for TEXT_LANGUAGES, where the table beats the rules).
+  without audio of TST_TEXTS for TEXT_LANGUAGES, where the table beats the rules), only the words the patterns or
+  the loanword table split otherwise (`syllables.prune`).
 - fixtures/aligner-text.json: [text, language, tokens] for lines of real lyric words (shuffled, no song's lyrics) and
   random strings, with the expected `preprocess_text` tokens (without the <star> tokens).
 - fixtures/syllables.json: [word, language, syllables] for words as charted (casing, punctuation, apostrophes),
@@ -325,20 +325,9 @@ def aligner_text(charting: Path, found: dict[str, set[str]]) -> None:
     print(f"aligner-text.json: {len(cases)} cases", flush=True)
 
 
-def syllable_patterns(data: Path) -> dict[str, syllables.Patterns]:
-    """Each learned table's corrections to the rules (`syllables.learn_patterns`), for the words it doesn't know."""
-    out = {}
-    for path in sorted(data.glob("syllables-*.json")):
-        language = path.stem.removeprefix("syllables-")
-        out[language] = syllables.learn_patterns(syllables.load(path), language)
-        print(f"syllable-patterns.json: {language}, {len(out[language])} patterns")
-    return out
-
-
 def export(charting: Path, per_language: int = 6000) -> None:
-    """Write data/aligner-text.json, data/syllable-rules.json, data/syllable-patterns.json and the fixtures."""
+    """Write data/aligner-text.json, data/syllable-rules.json and the fixtures."""
     _write(charting / "data" / "syllable-rules.json", syllables.rules_data())
-    _write(charting / "data" / "syllable-patterns.json", syllable_patterns(charting / "data"))
     lyrics._syllabifier.cache_clear()
     found = _chart_words()
     words = syllable_words(found, per_language)
@@ -410,13 +399,13 @@ def syllable_tables(folder: Path) -> None:
     like the charter more often than the rules and the loanword table alone, by MIN_GAIN, on MIN_SCORED_WORDS."""
     train, dev = _charts("train"), _charts("dev")
     texts, scored = _texts(_held_out_artists()) if paths.texts() else ([], [])
-    folder.mkdir(parents=True, exist_ok=True)
+    tables: dict[str, dict[str, list[str]]] = {}
     for language in TABLE_LANGUAGES:
         extra = language in TEXT_LANGUAGES
         source = train + texts if extra else train
         table = syllables.learn(source, language)
         loanwords = syllables.rules_for(language).loanwords
-        borrowed = syllables.load(syllables.table_path(loanwords)) if loanwords else {}
+        borrowed = tables.get(loanwords, {})
         split = syllables.Syllabifier(language, {**borrowed, **table}, syllables.learn_patterns(table, language))
         right, total = _agreement(scored if extra else dev, language, split)
         line = f"{language}: {len(table)} words from {len(source)} charts; held-out words split like the charter: "
@@ -427,5 +416,23 @@ def syllable_tables(folder: Path) -> None:
             if total < MIN_SCORED_WORDS or right - before < MIN_GAIN * total:
                 print(f"{line}: no table written")
                 continue
-        syllables.save(table, folder / f"syllables-{language}.json")
+        tables[language] = table
         print(line, flush=True)
+    ship_tables(tables, folder)
+
+
+def ship_tables(tables: dict[str, dict[str, list[str]]], folder: Path) -> None:
+    """Write each table's patterns (learned from the whole table) and the table pruned to the words they and the
+    loanword table don't split the same (`syllables.prune`): the app splits every word as with the whole table, but
+    for words of a loanword language the borrowed table no longer has (its patterns or rules split those)."""
+    folder.mkdir(parents=True, exist_ok=True)
+    patterns = {language: syllables.learn_patterns(table, language) for language, table in sorted(tables.items())}
+    shipped: dict[str, dict[str, list[str]]] = {}
+    # The languages others borrow from first: a loanword language is pruned against the table the app will have.
+    for language in sorted(tables, key=lambda language: (bool(syllables.rules_for(language).loanwords), language)):
+        borrowed = shipped.get(syllables.rules_for(language).loanwords, {})
+        shipped[language] = syllables.prune(tables[language], language, patterns[language], borrowed)
+        syllables.save(shipped[language], folder / f"syllables-{language}.json")
+        print(f"syllables-{language}.json: {len(shipped[language])} of {len(tables[language])} words, "
+              f"{len(patterns[language])} patterns")  # fmt: skip
+    _write(folder / "syllable-patterns.json", patterns)
