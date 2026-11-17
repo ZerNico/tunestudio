@@ -44,6 +44,14 @@ describe("syllabify", () => {
     expect(syllabify("Allez,", "French")).toEqual(["Al", "lez,"]);
   });
 
+  it("corrects the rules with the patterns learned from the table for words it doesn't know", () => {
+    expect(ruleSplit("Reißverschlussverkauf", "German")).toEqual(["Reiß", "versch", "luss", "ver", "kauf"]);
+    expect(syllabify("Reißverschlussverkauf", "German")).toEqual(["Reiß", "ver", "schluss", "ver", "kauf"]);
+    expect(syllabify("Inconditionnel!", "French")).toEqual(["In", "con", "di", "tion", "nel!"]);
+    // Languages without a table have no patterns: the rules alone.
+    expect(syllabify("kaikki", "Finnish")).toEqual(ruleSplit("kaikki", "Finnish"));
+  });
+
   it("gives Chinese characters, Hangul blocks and kana morae a syllable each", () => {
     expect(syllabify("我爱你", "Chinese")).toEqual(["我", "爱", "你"]);
     expect(syllabify("사랑해", "Korean")).toEqual(["사", "랑", "해"]);

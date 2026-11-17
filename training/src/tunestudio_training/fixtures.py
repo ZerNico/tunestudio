@@ -9,6 +9,9 @@ and fixtures its tests compare against exactly (fixtures/). Words, never song ly
   Greek, Cyrillic, Hebrew, Arabic, Devanagari, Thai, Armenian, Georgian and kana have context rules: their
   characters are in the table one by one, close to what uroman makes of whole words but not always the same.
 - data/syllable-rules.json: each language's syllable rules (`syllables.rules_data`), which the app splits with.
+- data/syllable-patterns.json: per learned table, the patterns that correct the rules toward its splits
+  (`syllables.learn_patterns`), for the words it doesn't know. Made from the committed tables, so any library
+  reproduces them.
 - data/syllables-<language>.json: the learned syllable splits (`syllable_tables`, from the train split, plus the charts
   without audio of TST_TEXTS for Spanish, Portuguese, French and Italian).
 - fixtures/aligner-text.json: [text, language, tokens] for lines of real lyric words (shuffled, no song's lyrics) and
@@ -316,9 +319,21 @@ def aligner_text(charting: Path, found: dict[str, set[str]]) -> None:
     print(f"aligner-text.json: {len(cases)} cases", flush=True)
 
 
+def syllable_patterns(data: Path) -> dict[str, syllables.Patterns]:
+    """Each learned table's corrections to the rules (`syllables.learn_patterns`), for the words it doesn't know."""
+    out = {}
+    for path in sorted(data.glob("syllables-*.json")):
+        language = path.stem.removeprefix("syllables-")
+        out[language] = syllables.learn_patterns(syllables.load(path), language)
+        print(f"syllable-patterns.json: {language}, {len(out[language])} patterns")
+    return out
+
+
 def export(charting: Path, per_language: int = 6000) -> None:
-    """Write data/aligner-text.json, data/syllable-rules.json and the fixtures."""
+    """Write data/aligner-text.json, data/syllable-rules.json, data/syllable-patterns.json and the fixtures."""
     _write(charting / "data" / "syllable-rules.json", syllables.rules_data())
+    _write(charting / "data" / "syllable-patterns.json", syllable_patterns(charting / "data"))
+    lyrics._syllabifier.cache_clear()
     found = _chart_words()
     words = syllable_words(found, per_language)
     rows = [[w, lang, lyrics.syllabify(w, lang)] for w, lang in words]
