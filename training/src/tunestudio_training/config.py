@@ -39,6 +39,7 @@ SETTINGS = (
     Setting("paths.library", "TST_LIBRARY", "paths", "song library roots, one folder per song", [LOCAL / "library"]),
     Setting("paths.data", "TST_DATA", "path", "vocal stems (stems/<song>/) and the datasets", LOCAL / "data"),
     Setting("paths.stems", "TST_STEMS", "paths", "more <song>/vocals.flac + pitch.npz folders to reuse", []),
+    Setting("paths.texts", "TST_TEXTS", "paths", "charts without audio, for the syllable tables (<song>/*.txt)", []),
     Setting("paths.models", "TST_MODELS", "path", "checkpoints, GAME, the separation model", LOCAL / "models"),
     Setting("paths.runs", "TST_RUNS", "path", "evaluation runs, exports, goldens", LOCAL / "runs"),
     Setting(
@@ -163,6 +164,7 @@ TEMPLATE = """\
 library = {library}  # TST_LIBRARY: one folder per song
 data = {data}  # TST_DATA: stems/<song>/ and the datasets
 stems = {stems}  # TST_STEMS: more <song>/vocals.flac + pitch.npz folders to reuse
+# texts = []  # TST_TEXTS: charts without audio (<song>/*.txt), for the syllable tables of languages train lacks
 models = {models}  # TST_MODELS: checkpoints, GAME, the separation model
 runs = {runs}  # TST_RUNS: evaluation runs, exports, goldens
 
