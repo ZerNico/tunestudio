@@ -183,8 +183,10 @@ m2's logistic regression instead (a JSON table, to measure the trees against). S
 - **GAME** by openvpi, release 1.0.3 large, used as released (weights CC BY-NC-SA 4.0): writes the notes of a line
   given its audio and syllable starts. Not retrained here: fine-tuning it on the charts made it worse on every metric.
 - **Syllable tables** (plain code): which syllables charters split common words into, counted from the train charts
-  (`tst syllables`) for English and German, and from charts without audio (`TST_TEXTS`) for Spanish, Portuguese,
-  French and Italian, with each language's vowel-group rules for other words. Data and rules, no model.
+  (`tst syllables`) for English and German, and from charts without audio (`TST_TEXTS`) for the languages where that
+  beats the rules (Spanish, Portuguese, French, Italian, Japanese, Polish, Swedish, Finnish, Chinese and Croatian;
+  Japanese and Chinese as romanized charts write them), with each language's vowel-group rules, corrected by patterns learned from its
+  table, for other words. Data and rules, no model.
 
 ## Glossary
 
@@ -410,10 +412,14 @@ The library is hand-made UltraStar charts with their audio, as USDB Syncer downl
 far). Use what's local first and sync more only when a model is shown to be data-limited. Charts, lyrics, audio,
 stems, datasets, checkpoints and goldens never go into git: they stay in `.local/` (or wherever the settings point).
 
-The syllable tables of Spanish, Portuguese, French and Italian need far more charts than the library has in those
+The syllable tables of languages other than English and German need far more charts than the library has in those
 languages, but only their text: `TST_TEXTS` names folders of charts without audio (one `<song>/` folder each, as USDB
 Syncer writes them with audio, video and images switched off). `tst syllables` learns from them minus every artist
-of dev, test and the `lang-*` sets, and scores each table on its `lang-<language>` set.
+of dev, test and the `lang-*` sets (by song name where the chart is gone) and every tenth artist (by a hash of the
+name), scores each table on that tenth, and writes it only where it splits more of those words like the charter
+than the rules do (by half a point, on at least 1,000 words). Dutch, Hungarian, Danish, Norwegian, Slovenian and
+Turkish don't pass: their spelling already says where syllables go, and the tables learned from a few hundred
+charts mostly add noise. Korean, Russian and Hindi have too few charts to tell.
 
 `splits/` is frozen and committed (song folder names and chart hashes only), grouped by primary artist:
 
@@ -502,7 +508,7 @@ The goldens the app was ported against used GAME re-exported from the pretrained
 byte-identical charts to openvpi's release. Generated files the app commits (no lyrics: words and tables):
 
 ```bash
-uv run tst syllables    # apps/studio/electron/charting/data/syllables-{english,german}.json, from the train split
+uv run tst syllables    # apps/studio/electron/charting/data/syllables-*.json, from train (and TST_TEXTS)
 uv run tst fixtures     # data/aligner-text.json and fixtures/{aligner-text,syllables,numpy}.json
 ```
 

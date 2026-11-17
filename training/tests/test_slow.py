@@ -61,9 +61,14 @@ def test_fixtures_reproduce(real_data, tmp_path):
         assert filecmp.cmp(out / name, paths.CHARTING / name, shallow=False), name
     # The other tables also learn from TST_TEXTS, so they only reproduce with the charts they were made from.
     if paths.texts():
-        names = [f"data/syllables-{language}.json" for language in ("spanish", "portuguese", "french", "italian")]
+        from tunestudio_training import fixtures
+
+        names = [f"data/syllables-{language}.json" for language in fixtures.TEXT_LANGUAGES]
         for name in [*names, "data/syllable-patterns.json"]:
-            assert filecmp.cmp(out / name, paths.CHARTING / name, shallow=False), name
+            # A language whose table didn't beat the rules has none, here or committed.
+            assert (out / name).exists() == (paths.CHARTING / name).exists(), name
+            if (out / name).exists():
+                assert filecmp.cmp(out / name, paths.CHARTING / name, shallow=False), name
     sampled = [n for n in ("fixtures/syllables.json", "fixtures/aligner-text.json")
                if not filecmp.cmp(out / n, paths.CHARTING / n, shallow=False)]  # fmt: skip
     if sampled:

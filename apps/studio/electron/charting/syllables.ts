@@ -40,6 +40,12 @@ const TABLES: Record<string, () => LearnedTable> = {
   portuguese: lazy(() => readTable("syllables-portuguese.json") as LearnedTable),
   french: lazy(() => readTable("syllables-french.json") as LearnedTable),
   italian: lazy(() => readTable("syllables-italian.json") as LearnedTable),
+  japanese: lazy(() => readTable("syllables-japanese.json") as LearnedTable),
+  polish: lazy(() => readTable("syllables-polish.json") as LearnedTable),
+  swedish: lazy(() => readTable("syllables-swedish.json") as LearnedTable),
+  finnish: lazy(() => readTable("syllables-finnish.json") as LearnedTable),
+  chinese: lazy(() => readTable("syllables-chinese.json") as LearnedTable),
+  croatian: lazy(() => readTable("syllables-croatian.json") as LearnedTable),
 };
 
 /**
