@@ -1,7 +1,8 @@
 /**
  * Splitting lyric words into sung syllables the way UltraStar charters do: the split learned from hand-made charts
  * where the word is known (`data/syllables-<language>.json`, read on first use), each language's vowel-group rules
- * otherwise (`data/syllable-rules.json`), and one syllable per character in Chinese, Hangul and kana. A port of the
+ * otherwise (`data/syllable-rules.json`), corrected by patterns learned from its table where it has one
+ * (`data/syllable-patterns.json`), and one syllable per character in Chinese, Hangul and kana. A port of the
  * training pipeline's `syllables.py` / `lyrics.syllabify`; tests check it against its output word for word.
  *
  * Strings are handled as code points, like Python's: an emoji or other character outside the BMP counts once.
@@ -40,6 +41,15 @@ const TABLES: Record<string, () => LearnedTable> = {
   french: lazy(() => readTable("syllables-french.json") as LearnedTable),
   italian: lazy(() => readTable("syllables-italian.json") as LearnedTable),
 };
+
+/**
+ * Liang hyphenation patterns that correct the rules (`syllables.learn_patterns`): letters ("." a word edge) and a
+ * value per gap between them. A word's gap takes the highest value of every pattern around it; odd is a cut.
+ */
+type Patterns = Record<string, number[]>;
+
+const PATTERNS = lazy(() => readTable("syllable-patterns.json") as Record<string, Patterns>);
+const LONGEST = new Map<Patterns, number>();
 
 /** Rising diphthongs a final hiatus splits, and the accented letters that rule it out. */
 const RISING = new Set(["ia", "ie", "io", "ua", "ue", "uo"]);
@@ -206,6 +216,54 @@ export function ruleSplit(word: string, language: string): string[] {
   return parts.filter((part) => part);
 }
 
+/** The rules' cuts of a normalized word as gap values of ".key.": a cut before letter i is gap i + 1. */
+function ruleValues(key: string, language: string): number[] {
+  const values = Array.from<number>({ length: [...key].length + 3 }).fill(0);
+  let position = 0;
+  for (const part of ruleSplit(key, language).slice(0, -1)) {
+    position += [...part].length;
+    values[position + 1] = 1;
+  }
+  return values;
+}
+
+/** A normalized word's split: the rules' cuts corrected by the patterns, then parts without a vowel joined on. */
+function patternSplit(key: string, language: string, patterns: Patterns): string[] {
+  const dotted = [".", ...key, "."];
+  const values = ruleValues(key, language);
+  let longest = LONGEST.get(patterns);
+  if (longest === undefined) {
+    longest = Math.max(0, ...Object.keys(patterns).map((k) => [...k].length));
+    LONGEST.set(patterns, longest);
+  }
+  for (let a = 0; a < dotted.length; a++) {
+    for (let b = a + 1; b <= Math.min(dotted.length, a + longest); b++) {
+      const found = own(patterns, dotted.slice(a, b).join(""));
+      found?.forEach((x, t) => {
+        if (x > values[a + t]!) values[a + t] = x;
+      });
+    }
+  }
+  const letters = [...key];
+  const parts: string[] = [];
+  let last = 0;
+  for (let gap = 2; gap <= letters.length; gap++) {
+    if (values[gap]! % 2 === 1) {
+      parts.push(letters.slice(last, gap - 1).join(""));
+      last = gap - 1;
+    }
+  }
+  parts.push(letters.slice(last).join(""));
+  const vowels = new Set([...rulesFor(language).vowels, "y"]);
+  const voiced = (part: string) => [...part].some((char) => vowels.has(char));
+  const out: string[] = [];
+  for (const part of parts) {
+    if (out.length && (!voiced(part) || !voiced(out.at(-1)!))) out[out.length - 1] += part;
+    else out.push(part);
+  }
+  return out;
+}
+
 /** The learned split of a word: its language's, else the language it borrows words from. */
 function learned(word: string, language: string): string[] | undefined {
   const key = normalize(word);
@@ -220,7 +278,12 @@ function learned(word: string, language: string): string[] | undefined {
 /** A word's sung syllables, keeping its casing and punctuation; `language` is e.g. "English" or "Portuguese (Brazil)". */
 export function syllabify(word: string, language: string): string[] {
   const lang = languageKey(language);
-  const pattern = learned(word, lang);
+  let pattern = learned(word, lang);
+  const key = normalize(word);
+  const patterns = own(PATTERNS(), lang);
+  if (!pattern && patterns && Object.keys(patterns).length && key && !syllabicSplit(key)) {
+    pattern = patternSplit(key, lang, patterns);
+  }
   if (!pattern) return ruleSplit(word, lang);
   // Map the learned split (on normalized letters) back onto the original word.
   const bounds = new Set(

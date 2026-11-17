@@ -56,7 +56,7 @@ def _syllabifier(language: str):
     loanwords = syllables.rules_for(lang).loanwords
     if loanwords:
         table = {**syllables.load(syllables.table_path(loanwords)), **table}
-    return syllables.Syllabifier(lang, table)
+    return syllables.Syllabifier(lang, table, syllables.load_patterns(lang))
 
 
 def syllabify(word: str, language: str) -> list[str]:

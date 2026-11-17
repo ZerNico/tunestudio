@@ -61,6 +61,30 @@ def test_committed_rules_are_the_rules():
     assert committed == json.loads(json.dumps(syllables.rules_data()))
 
 
+def test_committed_patterns_are_learned_from_the_committed_tables():
+    committed = json.loads(syllables.patterns_path().read_text())
+    for language, patterns in committed.items():
+        learned = syllables.learn_patterns(syllables.load(syllables.table_path(language)), language)
+        assert patterns == learned, language
+
+
+def test_patterns_correct_the_rules():
+    # A table that splits every "ss" word before the ss: the rules cut "pas-sa", the patterns learn "pa-ssa".
+    table = {w: [w[: w.index("ss")], w[w.index("ss") :]] for w in ("assa", "esse", "isso", "osso", "ussa", "assi")}
+    patterns = syllables.learn_patterns(table, "portuguese")
+    assert syllables.rule_split("passa", "portuguese") == ["pas", "sa"]
+    assert syllables.pattern_split("passa", "portuguese", patterns) == ["pa", "ssa"]
+    # A part without a vowel joins its neighbour.
+    assert syllables.pattern_split("rhythm", "english", {".rh1": [0, 0, 0, 1]}) == ["rhythm"]
+
+
+def test_unknown_words_are_split_by_the_corrected_rules():
+    assert lyrics.syllabify("Reißverschlussverkauf", "German") == ["Reiß", "ver", "schluss", "ver", "kauf"]
+    assert lyrics.syllabify("inconditionnel", "French") == ["in", "con", "di", "tion", "nel"]
+    # Languages without a table have no patterns: the rules alone.
+    assert lyrics.syllabify("kaikki", "Finnish") == syllables.rule_split("kaikki", "finnish")
+
+
 def test_syllabifier_keeps_casing_and_punctuation():
     s = syllables.Syllabifier("english", {"don't": ["do", "n't"], "hello": ["hel", "lo"]})
     assert s.split("Hello,") == ["Hel", "lo,"]
