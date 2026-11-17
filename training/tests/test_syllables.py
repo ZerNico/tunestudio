@@ -82,7 +82,7 @@ def test_unknown_words_are_split_by_the_corrected_rules():
     assert lyrics.syllabify("Reißverschlussverkauf", "German") == ["Reiß", "ver", "schluss", "ver", "kauf"]
     assert lyrics.syllabify("inconditionnel", "French") == ["in", "con", "di", "tion", "nel"]
     # Languages without a table have no patterns: the rules alone.
-    assert lyrics.syllabify("kaikki", "Finnish") == syllables.rule_split("kaikki", "finnish")
+    assert lyrics.syllabify("gezellig", "Dutch") == syllables.rule_split("gezellig", "dutch")
 
 
 def test_syllabifier_keeps_casing_and_punctuation():

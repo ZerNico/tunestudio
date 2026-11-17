@@ -49,7 +49,7 @@ describe("syllabify", () => {
     expect(syllabify("Reißverschlussverkauf", "German")).toEqual(["Reiß", "ver", "schluss", "ver", "kauf"]);
     expect(syllabify("Inconditionnel!", "French")).toEqual(["In", "con", "di", "tion", "nel!"]);
     // Languages without a table have no patterns: the rules alone.
-    expect(syllabify("kaikki", "Finnish")).toEqual(ruleSplit("kaikki", "Finnish"));
+    expect(syllabify("gezellig", "Dutch")).toEqual(ruleSplit("gezellig", "Dutch"));
   });
 
   it("gives Chinese characters, Hangul blocks and kana morae a syllable each", () => {
